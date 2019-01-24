@@ -1,0 +1,11 @@
+torch
+bidict
+tqdm
+arrow
+itchat
+nltk
+toolz
+pytorch-ignite
+pillow
+xmltodict
+torchvision
