@@ -1,10 +1,10 @@
 import torch
 
 
-def one_hot(tensor, C=None):
+def one_hot(tensor, C=None, dtype=torch.float):
     d = tensor.dim()
     C = C or tensor.max() + 1
-    t = tensor.new_zeros(*tensor.size(), C, dtype=torch.float)
+    t = tensor.new_zeros(*tensor.size(), C, dtype=dtype)
     return t.scatter_(d, tensor.unsqueeze(d), 1)
 
 

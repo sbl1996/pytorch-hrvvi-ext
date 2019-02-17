@@ -1,14 +1,13 @@
-from hutil.train.trainer import Trainer
+from hutil.train.trainer import Trainer, Args
 from hutil.train.gan_trainer import GANTrainer
-from hutil.train.metrics import Loss, LossD, LossG, Accuracy
 
 from toolz import curry
 import torch.nn as nn
 
 
 @curry
-def init_weights(m, nonlinearity='leaky_relu', mode='fan_in'):
-    typ = type(m)
-    if typ == nn.Linear or typ == nn.Conv2d:
+def init_weights(m, a=0, nonlinearity='leaky_relu', mode='fan_in'):
+    name = type(m).__name__
+    if name.find("Linear") != -1 or name.find("Conv") != -1:
         nn.init.kaiming_uniform_(
-            m.weight, mode=mode, nonlinearity=nonlinearity)
+            m.weight, a=a, mode=mode, nonlinearity=nonlinearity)

@@ -110,18 +110,14 @@ class VOCDetection(Dataset):
         self.image_set = image_set
 
         base_dir = DATASET_YEAR_DICT[year]['base_dir']
-        voc_root = os.path.join(self.root, base_dir)
-        image_dir = os.path.join(voc_root, 'JPEGImages')
-        annotation_dir = os.path.join(voc_root, 'Annotations')
+        self.voc_root = os.path.join(self.root, base_dir)
+        image_dir = os.path.join(self.voc_root, 'JPEGImages')
+        annotation_dir = os.path.join(self.voc_root, 'Annotations')
 
         if download:
-            download_extract(self.url, self.root, self.filename, self.md5)
+            self.download()
 
-        if not os.path.isdir(voc_root):
-            raise RuntimeError('Dataset not found or corrupted.' +
-                               ' You can use download=True to download it')
-
-        splits_dir = os.path.join(voc_root, 'ImageSets', "Main")
+        splits_dir = os.path.join(self.voc_root, 'ImageSets', "Main")
 
         split_f = os.path.join(splits_dir, image_set + '.txt')
 
@@ -134,7 +130,8 @@ class VOCDetection(Dataset):
         with open(os.path.join(split_f), "r") as f:
             file_names = [x.strip() for x in f.readlines()]
 
-        self.images = [os.path.join(image_dir, x + ".jpg") for x in file_names]
+        self.images = [os.path.join(image_dir, x + ".jpg")
+                       for x in file_names]
         self.annotations = [os.path.join(
             annotation_dir, x + ".xml") for x in file_names]
         assert (len(self.images) == len(self.annotations))
@@ -151,12 +148,23 @@ class VOCDetection(Dataset):
         target = self.parse_voc_xml(self.annotations[index])
 
         if self.transform is not None:
-            img, *target = self.transform(img, target)
+            img, target = self.transform(img, target)
 
         return img, target
 
     def __len__(self):
         return len(self.images)
+
+    def download(self):
+        import tarfile
+        if os.path.isdir(self.voc_root):
+            print("Dataset found. Skip download or extract")
+            return
+
+        download_url(self.url, self.root, self.filename, self.md5)
+
+        with tarfile.open(os.path.join(self.root, self.filename), "r") as tar:
+            tar.extractall(path=self.root)
 
     def parse_object(self, obj):
         x1 = int(obj['bndbox']['xmin'])
@@ -179,9 +187,3 @@ class VOCDetection(Dataset):
         if isinstance(objects, OrderedDict):
             objects = [objects]
         return [self.parse_object(obj) for obj in objects]
-
-
-def download_extract(url, root, filename, md5):
-    download_url(url, root, filename, md5)
-    with tarfile.open(os.path.join(root, filename), "r") as tar:
-        tar.extractall(path=root)

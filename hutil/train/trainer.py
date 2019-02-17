@@ -1,3 +1,5 @@
+import re
+import traceback
 import time
 import os
 from collections import defaultdict
@@ -12,13 +14,16 @@ import torch.nn as nn
 from ignite.engine import Engine, Events
 from ignite.metrics import Accuracy as IgniteAccuracy
 from ignite._utils import convert_tensor
-from ignite.handlers import Timer, ModelCheckpoint
+from ignite.handlers import Timer
 
+from hutil.common import CUDA
 from hutil.functools import find, lmap
-from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event
+from hutil.ext.checkpoint import ModelCheckpoint
+from hutil.train.metrics import TrainLoss, Loss
+from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event, detach, Args
 
 
-def create_supervised_evaluator(model, criterion, metrics={},
+def create_supervised_evaluator(model, metrics={},
                                 device=None, prepare_batch=_prepare_batch):
     if device:
         model.to(device)
@@ -30,11 +35,10 @@ def create_supervised_evaluator(model, criterion, metrics={},
             y_pred = model(*x)
             if torch.is_tensor(y_pred):
                 y_pred = (y_pred,)
-            loss = criterion(*y_pred, *y)
             output = {
-                "y_pred": lmap(torch.detach, y_pred),
-                "y": lmap(torch.detach, y),
-                "loss": loss.item(),
+                "y_pred": detach(y_pred),
+                "y": detach(y),
+                'batch_size': x[0].size(0),
             }
             return output
 
@@ -64,9 +68,10 @@ def create_supervised_trainer(
         loss.backward()
         optimizer.step()
         output = {
-            "y_pred": lmap(torch.detach, y_pred),
-            "y": lmap(torch.detach, y),
+            "y_pred": detach(y_pred),
+            "y": detach(y),
             "loss": loss.item(),
+            "batch_size": x[0].size(0),
         }
         return output
 
@@ -80,15 +85,19 @@ def create_supervised_trainer(
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics={}, device=None, save_path=".", name="Net"):
+                 metrics={}, evaluate_metrics=None, device=None, save_path=".", name="Net"):
 
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.metrics = metrics
-        self.device = device or (
-            'cuda' if torch.cuda.is_available() else 'cpu')
+        self.evaluate_metrics = evaluate_metrics
+        if evaluate_metrics is None:
+            self.evaluate_metrics = metrics.copy()
+            if 'loss' in metrics and isinstance(metrics['loss'], TrainLoss):
+                self.evaluate_metrics['loss'] = Loss(criterion=criterion)
+        self.device = device or ('cuda' if CUDA else 'cpu')
         self.save_path = save_path
         self.name = name
 
@@ -98,33 +107,14 @@ class Trainer:
         self._timer = Timer()
         self._epochs = 0
 
-        self._create_evaluator()
-
-    def _create_engine(self):
-        engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer, self.lr_scheduler,
-            self.metrics, self.device)
-        if self.lr_scheduler:
-            engine.add_event_handler(
-                Events.EPOCH_STARTED, self._lr_scheduler_step)
-        self._timer.attach(engine,
-                           start=Events.EPOCH_STARTED)
-        return engine
-
-    def _create_evaluator(self):
         self.evaluator = create_supervised_evaluator(
-            self.model, self.criterion,
-            self.metrics, self.device)
-
-    def _on(self, event_name, f, *args, **kwargs):
-        cancel_event(self.engine, event_name, f)
-        self.engine.add_event_handler(event_name, f, *args, **kwargs)
+            self.model, self.evaluate_metrics, self.device)
 
     def _fprint(self, msg):
         for f in self._print_callbacks:
             try:
                 f(msg)
-            except Exception as e:
+            except Exception:
                 pass
 
     def _enable_send_weixin(self):
@@ -136,16 +126,18 @@ class Trainer:
     def _disable_send_weixin(self):
         self._print_callbacks.discard(send_weixin)
 
+    def _log_epochs(self, engine, epochs):
+        self._fprint("Epoch %d/%d\n" %
+                     (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
+
     def _lr_scheduler_step(self, engine):
         self.lr_scheduler.step()
 
-    def _log_epochs(self, engine, epochs):
-        self._epochs += 1
-        self._fprint("Epoch %d/%d\n" %
-                     (self._epochs, self._epochs + epochs - engine.state.epoch))
-
     def _evaluate(self, engine, val_loader):
         self.evaluator.run(val_loader)
+
+    def _increment_epoch(self, engine):
+        self._epochs += 1
 
     def _log_results(self, engine, validate):
         elapsed = int(self._timer.value())
@@ -163,27 +155,54 @@ class Trainer:
             msg += "\n"
         self._fprint(msg)
 
-    def fit(self, train_loader, epochs, val_loader=None, send_weixin=False, save_per_epochs=None, callbacks=[]):
+    def fit(self, train_loader, epochs, val_loader=None, send_weixin=False, save_per_epochs=None, save_by_metric=None, patience=0, callbacks=[]):
         validate = val_loader is not None
         # Weixin
         if send_weixin:
             self._enable_send_weixin()
+        else:
+            self._disable_send_weixin()
 
-        # Create engine
-        engine = self._create_engine()
-
-        # Register events
+        engine = create_supervised_trainer(
+            self.model, self.criterion, self.optimizer, self.lr_scheduler,
+            self.metrics, self.device)
+        if self.lr_scheduler:
+            engine.add_event_handler(
+                Events.EPOCH_STARTED, self._lr_scheduler_step)
+        self._timer.attach(engine,
+                           start=Events.EPOCH_STARTED)
         engine.add_event_handler(Events.EPOCH_STARTED,
                                  self._log_epochs, epochs)
 
         if validate:
             engine.add_event_handler(
                 Events.EPOCH_COMPLETED, self._evaluate, val_loader)
+        engine.add_event_handler(Events.EPOCH_COMPLETED,
+                                 self._increment_epoch)
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, self._log_results, validate)
 
         # Set checkpoint
-        if save_per_epochs:
+        if save_by_metric:
+            mat = re.match(
+                "(?P<sign>-?)(?P<metric>val_[a-zA-Z]+)", save_by_metric)
+            assert mat, "save by metric must be of form `-?val_<evaluate_metric>`"
+            sign = -1 if mat.group('sign') else 1
+            save_metric = mat.group('metric')
+            assert save_metric[4:] in self.evaluate_metrics, "the metric used must be one of \
+                evaluate_metrics"
+
+            def score_function(e): return sign * \
+                self.metric_history[save_metric][-1]
+            checkpoint_handler = ModelCheckpoint(
+                self.save_path, self.name,
+                score_name=save_metric, patience=patience,
+                score_function=score_function,
+                save_as_state_dict=True, require_empty=False)
+            checkpoint_handler._iteration = self.epochs()
+            engine.add_event_handler(
+                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
+        elif save_per_epochs:
             checkpoint_handler = ModelCheckpoint(
                 self.save_path, self.name, save_per_epochs, save_as_state_dict=True, require_empty=False)
             checkpoint_handler._iteration = self.epochs()
@@ -196,9 +215,6 @@ class Trainer:
 
         # Run
         engine.run(train_loader, epochs)
-
-        # Destroy
-        self._disable_send_weixin()
 
         # Return history
         hist = {metric: hist[-epochs:]

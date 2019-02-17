@@ -6,6 +6,8 @@ itchat
 nltk
 toolz
 pytorch-ignite
-pillow
+Pillow>5.0.0
 xmltodict
 torchvision
+pycocotools
+googledrivedownloader

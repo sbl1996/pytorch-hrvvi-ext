@@ -1,25 +1,51 @@
+from collections.abc import Sequence
+
 import torch
-from ignite._utils import convert_tensor
 from hutil.functools import find
 
 import itchat
 
 
-def _prepare_batch(batch, device=None, non_blocking=False):
+class Args(tuple):
+    def __new__(cls, *args):
+        return super().__new__(cls, tuple(args))
+
+    def __repr__(self):
+        return "Args" + super().__repr__()
+
+
+def detach(xs):
+    return [
+        torch.detach(x) if torch.is_tensor(x) else x
+        for x in xs
+    ]
+
+
+def to_device(args, device):
+    if torch.is_tensor(args):
+        return args.to(device=device)
+    if isinstance(args, Args):
+        return args
+    return [
+        to_device(arg, device)
+        for arg in args
+    ]
+
+
+def wrap(x):
+    if torch.is_tensor(x):
+        return (x,)
+    return x
+
+
+def _prepare_batch(batch, device=None):
     """Prepare batch for training: pass to a device with options
 
     """
-    if len(batch) == 2:
-        x, y = batch
-        if torch.is_tensor(x):
-            x = (x,)
-        if torch.is_tensor(y):
-            y = (y,)
-    else:
-        *x, y = batch
-        y = (y,)
-    return (convert_tensor(x, device=device, non_blocking=non_blocking),
-            convert_tensor(y, device=device, non_blocking=non_blocking))
+    x, y = batch
+    x = wrap(x)
+    y = wrap(y)
+    return to_device(x, device), to_device(y, device)
 
 
 def cancel_event(engine, event_name, f):

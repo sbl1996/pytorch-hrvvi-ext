@@ -111,7 +111,7 @@ class ImageCaptcha(_Captcha):
             number -= 1
         return image
 
-    def create_captcha_image(self, chars, background, return_bbox=False):
+    def create_captcha_image(self, chars, background, rotate, return_bbox=False):
         """Create the CAPTCHA image itself.
 
         :param chars: text to be generated.
@@ -135,7 +135,8 @@ class ImageCaptcha(_Captcha):
 
             # rotate
             im = im.crop(im.getbbox())
-            im = im.rotate(random.uniform(-30, 30), Image.BILINEAR, expand=1)
+            im = im.rotate(random.uniform(-rotate, rotate),
+                           Image.BILINEAR, expand=1)
 
             # warp
             dx = w * random.uniform(0.1, 0.3)
@@ -167,7 +168,13 @@ class ImageCaptcha(_Captcha):
             img = _draw_character(c)
             images.append(img)
             if return_bbox:
-                bboxes.append(list(img.getbbox()))
+                bbox = list(img.getbbox())
+                bbox[2] -= bbox[0]
+                bbox[3] -= bbox[1]
+                bboxes.append(bbox)
+        images.append(_draw_character(" "))
+        if return_bbox:
+            bboxes.append(None)
 
         text_width = sum([im.size[0] for im in images])
 
@@ -177,25 +184,20 @@ class ImageCaptcha(_Captcha):
         average = int(text_width / len(chars))
         rand = int(0.25 * average)
         x_offset = int(average * 0.1)
-
         if return_bbox:
             real_bboxes = []
         for i, im in enumerate(images):
             w, h = im.size
+            x_offset = min(x_offset, width - 1 - w)
             mask = im.convert('L').point(table)
-            y_offset = int((self._height - h) / 2)
+            y_offset = (self._height - h) // 2
             image.paste(im, (x_offset, y_offset), mask)
             if return_bbox and bboxes[i]:
                 bbox = bboxes[i]
                 bbox[0] += x_offset
                 bbox[1] += y_offset
-                bbox[2] += x_offset
-                bbox[3] += y_offset
                 real_bboxes.append(bbox)
-                # image.show()
-                # print(bbox)
-                # raise Exception
-            x_offset = x_offset + w + random.randint(-rand, 0)
+            x_offset += w + random.randint(-rand, rand)
 
         if width > self._width:
             image = image.resize((self._width, self._height))
@@ -210,7 +212,7 @@ class ImageCaptcha(_Captcha):
         else:
             return image
 
-    def generate_image(self, chars, noise_dots=1.0, noise_curve=1.0, return_bbox=False):
+    def generate_image(self, chars, noise_dots=1.0, noise_curve=1.0, rotate=30, return_bbox=False):
         """Generate the image of the given characters.
 
         :param chars: text to be generated.
@@ -219,9 +221,9 @@ class ImageCaptcha(_Captcha):
         color = random_color(10, 200, random.randint(220, 255))
         if return_bbox:
             im, bboxes = self.create_captcha_image(
-                chars, background, return_bbox=True)
+                chars, background, rotate=rotate, return_bbox=True)
         else:
-            im = self.create_captcha_image(chars, background)
+            im = self.create_captcha_image(chars, background, rotate=rotate)
         if random.random() < noise_dots:
             self.create_noise_dots(im, color)
         if random.random() < noise_dots:

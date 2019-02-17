@@ -52,37 +52,36 @@ class Captcha(Dataset):
 
 class CaptchaOnline(Dataset):
 
-    def __init__(self, image, size=50000, letters=ALPHABET_DIGITS, transform=None, target_transform=None, online=True):
-        self.size = size
+    def __init__(self, image, size=50000, nchars=4, letters=ALPHABET_DIGITS, transform=None, online=True, **kwargs):
         self.image = image
+        self.size = size
+        self.nchars = nchars
         self.letters = letters
         self.transform = transform
-        self.target_transform = target_transform
-        self.letters = string.digits + string.ascii_letters
+        self.letters = letters
         self.num_classes = len(self.letters)
         self.online = online
+        self.kwargs = kwargs
 
         if not self.online:
-            self.data = [self.gen_captcha(4) for _ in range(size)]
+            self.data = [self.gen_captcha(nchars) for _ in range(size)]
 
     def gen_captcha(self, nchars):
         labels = [random.randrange(self.num_classes) for _ in range(nchars)]
         labels = np.array(labels, dtype=np.int64)
         chars = [self.letters[i] for i in labels]
-        img = self.image.generate_image(chars, noise_dots=.3, noise_curve=.3)
+        img = self.image.generate_image(
+            chars, noise_dots=.3, noise_curve=.3, **self.kwargs)
         return img, labels
 
     def __getitem__(self, index):
         if self.online:
-            img, target = self.gen_captcha(4)
+            img, target = self.gen_captcha(self.nchars)
         else:
             img, target = self.data[index]
 
         if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
+            img, target = self.transform(img, target)
 
         return img, target
 
@@ -92,7 +91,7 @@ class CaptchaOnline(Dataset):
 
 class CaptchaDetectionOnline(Dataset):
 
-    def __init__(self, image, size=50000, nchars=4, letters=ALPHABET_DIGITS, transform=None, online=True):
+    def __init__(self, image, size=50000, nchars=4, letters=ALPHABET_DIGITS, transform=None, online=True, **kwargs):
         self.image = image
         self.size = size
         self.nchars = nchars
@@ -100,6 +99,7 @@ class CaptchaDetectionOnline(Dataset):
         self.num_classes = len(self.letters)
         self.transform = transform
         self.online = online
+        self.kwargs = kwargs
 
         if not self.online:
             self.data = [self.gen_captcha(self.nchars) for _ in range(size)]
@@ -108,7 +108,7 @@ class CaptchaDetectionOnline(Dataset):
         labels = [random.randrange(self.num_classes) for _ in range(nchars)]
         chars = [self.letters[i] for i in labels]
         img, bboxes = self.image.generate_image(
-            chars, noise_dots=.3, noise_curve=.3, return_bbox=True)
+            chars, noise_dots=.3, noise_curve=.3, return_bbox=True, **self.kwargs)
         annotations = [
             {
                 "category_id": labels[i],
