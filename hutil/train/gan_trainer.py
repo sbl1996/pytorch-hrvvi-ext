@@ -18,7 +18,7 @@ from hutil.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event
 
 
 def create_gan_trainer(
-        G, D, criterion, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None, metrics={},
+        G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None, metrics={},
         device=None, prepare_batch=_prepare_batch):
 
     def _update(engine, batch):
@@ -31,19 +31,17 @@ def create_gan_trainer(
 
         D.zero_grad()
         y_pred_real = D(real)
-        loss_real = criterion(y_pred_real, y_real)
 
         fake = G(noise)
         y_pred_fake = D(fake.detach())
-        loss_fake = criterion(y_pred_fake, y_fake)
+        lossD = criterionD(y_pred_real, y_pred_fake, y_real, y_fake)
 
-        lossD = loss_real + loss_fake
         lossD.backward()
         optimizerD.step()
 
         G.zero_grad()
         y_pred_fake = D(fake)
-        lossG = criterion(y_pred_fake, y_real)
+        lossG = criterionG(y_pred_fake, y_real)
         lossG.backward()
         optimizerG.step()
 
@@ -63,12 +61,13 @@ def create_gan_trainer(
 
 class GANTrainer:
 
-    def __init__(self, G, D, criterion, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None,
+    def __init__(self, G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None,
                  metrics={}, device=None, save_path=".", name="Net"):
 
         self.G = G
         self.D = D
-        self.criterion = criterion
+        self.criterionG = criterionG
+        self.criterionD = criterionD
         self.optimizerG = optimizerG
         self.optimizerD = optimizerD
         self.lr_schedulerG = lr_schedulerG
@@ -91,7 +90,7 @@ class GANTrainer:
 
     def _create_engine(self):
         engine = create_gan_trainer(
-            self.G, self.D, self.criterion, self.optimizerG, self.optimizerD,
+            self.G, self.D, self.criterionG, self.criterionD, self.optimizerG, self.optimizerD,
             self.lr_schedulerG, self.lr_schedulerD, self.metrics, self.device)
         engine.add_event_handler(
             Events.EPOCH_STARTED, self._lr_scheduler_step)
