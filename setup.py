@@ -29,6 +29,7 @@ REQUIRED = requirements
 
 # What packages are optional?
 EXTRAS = {
+    'coco': ['pycocotools']
     # 'fancy feature': ['django'],
 }
 
@@ -128,7 +129,6 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: Implementation :: CPython',
     ],
     # $ setup.py publish support.
