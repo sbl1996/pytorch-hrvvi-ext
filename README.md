@@ -2,6 +2,12 @@
 [pytorch-hrvvi-ext](https://github.com/sbl1996/pytorch-hrvvi-ext) is my extension to PyTorch, which contains many "out of the box" tools to facilitate my everyday study. It is very easy to use them and integrate them to your projects.
 I will call it `hutil` below because of `import hutil`.
 
+# Install
+
+```python
+pip3 install -U --no-cache-dir --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple pytorch-hrvvi-ext
+```
+
 # Hightlights
 
 ## Trainer
