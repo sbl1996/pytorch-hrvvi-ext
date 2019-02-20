@@ -4,7 +4,7 @@ I will call it `hutil` below because of `import hutil`.
 
 # Install
 
-```python
+```bash
 pip3 install -U --no-cache-dir --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple pytorch-hrvvi-ext
 ```
 
