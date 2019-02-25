@@ -1,5 +1,6 @@
 import numbers
 from toolz import curry
+from PIL import Image
 
 
 def draw_box(im, anns):
@@ -122,5 +123,85 @@ def to_absolute_coords(img, anns):
         bbox[1] *= h
         bbox[2] *= w
         bbox[3] *= h
+        new_anns.append({**ann, "bbox": bbox})
+    return img, new_anns
+
+
+def hflip(img, anns):
+    """Horizontally flip the given PIL Image and transform the bounding boxes.
+
+    Args:
+        img (PIL Image): Image to be flipped.
+        anns (sequences of dict): sequences of annotation of objects, containing `bbox` of 
+            (xmin, ymin, w, h) or (cx, cy, w, h)
+    """
+    w, h = img.size
+    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    new_anns = []
+
+    for ann in anns:
+        bbox = list(ann['bbox'])
+        bbox[0] = w - (bbox[0] + bbox[2])
+        new_anns.append({**ann, "bbox": bbox})
+    return img, new_anns
+
+
+def hflip2(img, anns):
+    """Horizontally flip the given PIL Image and transform the bounding boxes.
+
+    Args:
+        img (PIL Image): Image to be flipped.
+        anns (sequences of dict): sequences of annotation of objects, containing `bbox` of 
+            (xmin, ymin, xmax, ymax)
+    """
+    w, h = img.size
+    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    new_anns = []
+
+    for ann in anns:
+        bbox = list(ann['bbox'])
+        l = bbox[0]
+        bbox[0] = w - bbox[2]
+        bbox[2] = w - l
+        new_anns.append({**ann, "bbox": bbox})
+    return img, new_anns
+
+
+def vflip(img, anns):
+    """Vertically flip the given PIL Image and transform the bounding boxes.
+
+    Args:
+        img (PIL Image): Image to be flipped.
+        anns (sequences of dict): sequences of annotation of objects, containing `bbox` of 
+            (xmin, ymin, w, h) or (cx, cy, w, h)
+    """
+    w, h = img.size
+    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    new_anns = []
+
+    for ann in anns:
+        bbox = list(ann['bbox'])
+        bbox[1] = h - (bbox[1] + bbox[3])
+        new_anns.append({**ann, "bbox": bbox})
+    return img, new_anns
+
+
+def vflip2(img, anns):
+    """Vertically flip the given PIL Image and transform the bounding boxes.
+
+    Args:
+        img (PIL Image): Image to be flipped.
+        anns (sequences of dict): sequences of annotation of objects, containing `bbox` of 
+            (xmin, ymin, xmax, ymax)
+    """
+    w, h = img.size
+    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    new_anns = []
+
+    for ann in anns:
+        bbox = list(ann['bbox'])
+        t = bbox[1]
+        bbox[1] = h - bbox[3]
+        bbox[3] = h - t
         new_anns.append({**ann, "bbox": bbox})
     return img, new_anns

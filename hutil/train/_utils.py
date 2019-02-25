@@ -6,14 +6,6 @@ from hutil.functools import find
 import itchat
 
 
-class Args(tuple):
-    def __new__(cls, *args):
-        return super().__new__(cls, tuple(args))
-
-    def __repr__(self):
-        return "Args" + super().__repr__()
-
-
 def detach(xs):
     return [
         torch.detach(x) if torch.is_tensor(x) else x

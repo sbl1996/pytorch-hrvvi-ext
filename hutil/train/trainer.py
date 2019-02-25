@@ -20,7 +20,7 @@ from hutil.common import CUDA
 from hutil.functools import find, lmap
 from hutil.ext.checkpoint import ModelCheckpoint
 from hutil.train.metrics import TrainLoss, Loss
-from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event, detach, Args
+from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event, detach
 
 
 def create_supervised_evaluator(model, metrics={},
@@ -32,6 +32,7 @@ def create_supervised_evaluator(model, metrics={},
         model.eval()
         with torch.no_grad():
             x, y = prepare_batch(batch, device=device)
+            s1 = time.time()
             y_pred = model(*x)
             if torch.is_tensor(y_pred):
                 y_pred = (y_pred,)

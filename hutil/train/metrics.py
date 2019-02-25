@@ -1,4 +1,4 @@
-
+import time
 from toolz import curry
 from toolz.curried import get
 
@@ -13,7 +13,7 @@ from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
 from hutil.functools import lmap
-from hutil.detection import BoundingBoxFormat, iou_11, BoundingBox, mAP
+from hutil.detection import iou_11, BoundingBox, mAP
 
 
 class Average(Metric):
@@ -183,5 +183,7 @@ class MeanAveragePrecision(Average):
         y, y_pred, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
         ground_truths = y[0]
-        detections = self.predict(y_pred[0])
-        return mAP(detections, ground_truths, iou_threshold=self.iou_threshold), batch_size
+        detections = self.predict(*y_pred)
+        ret = mAP(detections, ground_truths,
+                  iou_threshold=self.iou_threshold), batch_size
+        return ret

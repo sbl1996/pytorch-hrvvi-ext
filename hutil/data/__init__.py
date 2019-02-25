@@ -1,5 +1,7 @@
 import numpy as np
 from torch.utils.data import Dataset
+from torchvision.transforms import Compose
+from hutil.transformers import InputTransform
 
 __all__ = ["train_test_split", "Subset", "CachedDataset", "Fullset"]
 
@@ -48,6 +50,10 @@ class Subset(Dataset):
 
 
 def train_test_split(dataset, test_ratio, random=False, transform=None, test_transform=None):
+    if isinstance(transform, Compose):
+        transform = InputTransform(transform)
+    if isinstance(test_transform, Compose):
+        test_transform = InputTransform(test_transform)
     num_examples = len(dataset)
     num_test_examples = int(num_examples * test_ratio)
     num_train_examples = num_examples - num_test_examples

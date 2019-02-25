@@ -111,7 +111,7 @@ class ImageCaptcha(_Captcha):
             number -= 1
         return image
 
-    def create_captcha_image(self, chars, background, rotate, return_bbox=False):
+    def create_captcha_image(self, chars, color, background, rotate, return_bbox=False):
         """Create the CAPTCHA image itself.
 
         :param chars: text to be generated.
@@ -130,7 +130,6 @@ class ImageCaptcha(_Captcha):
             dx = random.randint(0, 4)
             dy = random.randint(0, 6)
             im = Image.new('RGBA', (w + dx, h + dy))
-            color = random_color(10, 200, random.randint(220, 255))
             Draw(im).text((dx, dy), c, font=font, fill=color)
 
             # rotate
@@ -221,9 +220,10 @@ class ImageCaptcha(_Captcha):
         color = random_color(10, 200, random.randint(220, 255))
         if return_bbox:
             im, bboxes = self.create_captcha_image(
-                chars, background, rotate=rotate, return_bbox=True)
+                chars, color, background, rotate=rotate, return_bbox=True)
         else:
-            im = self.create_captcha_image(chars, background, rotate=rotate)
+            im = self.create_captcha_image(
+                chars, color, background, rotate=rotate)
         if random.random() < noise_dots:
             self.create_noise_dots(im, color)
         if random.random() < noise_dots:

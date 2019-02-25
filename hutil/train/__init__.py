@@ -1,4 +1,4 @@
-from hutil.train.trainer import Trainer, Args
+from hutil.train.trainer import Trainer
 from hutil.train.gan_trainer import GANTrainer
 
 from toolz import curry

@@ -7,28 +7,52 @@ from toolz.curried import get, countby, identity, valmap, groupby
 import numpy as np
 
 import torch
+from torch.utils.data.dataloader import default_collate
+
+from hutil.common import Args
 
 
-class BoundingBoxFormat(Enum):
-    r"""Bounding box formats.
-        Enum:
-            LTWH(0): [xmin, ymin, width, height]
-            LTRB(1): [xmin, ymin, xmax,  ymax]
-            XYWH(2): [cx,   cy,   width, height]
+def non_max_suppression(boxes, confidences, max_boxes, iou_threshold, inplace=False):
+    r"""
+    Args:
+        boxes (tensor of shape `(N, 4)`): [xmin, ymin, xmax, ymax]
+        confidences: (N,)
+        max_boxes (int): 
+        iou_threshold (float):
+    Returns:
+        indices: (N,)
     """
-    LTWH = 0
-    LTRB = 1
-    XYWH = 2
+    N = len(boxes)
+    if N <= max_boxes:
+        return list(range(N))
+    if not inplace:
+        boxes = boxes.clone()
+        confidences = confidences.clone()
+    boxes = boxes.view(-1, 4)
+    confidences = confidences.view(-1)
+    indices = []
+    while True:
+        ind = confidences.argmax()
+        indices.append(ind.item())
+        boxes_iou = iou_1m(boxes[ind], boxes)
+        mask = boxes_iou > iou_threshold
+        boxes.masked_fill_(mask.unsqueeze(-1), 0)
+        confidences.masked_fill_(mask, 0)
+        if len(indices) >= max_boxes or confidences.sum() == 0:
+            return indices
 
 
 class BoundingBox:
+    LTWH = 0  # [xmin, ymin, width, height]
+    LTRB = 1  # [xmin, ymin, xmax,  ymax]
+    XYWH = 2  # [cx,   cy,   width, height]
 
-    def __init__(self, image_name, class_id, box, confidence=None, box_format=BoundingBoxFormat.LTRB):
+    def __init__(self, image_name, class_id, box, confidence=None, box_format=1):
         self.image_name = image_name
         self.class_id = class_id
         self.confidence = confidence
         self.box = transform_bbox(
-            box, format=box_format, to=BoundingBoxFormat.LTRB)
+            box, format=box_format, to=1)
 
     def __repr__(self):
         return "BoundingBox(image_name=%s, class_id=%s, box=%s, confidence=%s)" % (
@@ -163,66 +187,66 @@ def box_xywh_to_ltrb(box):
     return [l, t, r, b]
 
 
-def transform_bbox(box, format=BoundingBoxFormat.LTWH, to=BoundingBoxFormat.XYWH):
+def transform_bbox(box, format=BoundingBox.LTWH, to=BoundingBox.XYWH):
     r"""Transform the bounding box between different formats.
 
     Args:
-        box (sequences of int): For detail of the box and formats, see `BoundingBoxFormat`.
+        box (sequences of int): For detail of the box and formats, see `BoundingBox`.
         format: Format of given bounding box.
         to: Target format.
 
     """
-    if format == BoundingBoxFormat.LTWH:
-        if to == BoundingBoxFormat.LTWH:
+    if format == BoundingBox.LTWH:
+        if to == BoundingBox.LTWH:
             return list(box)
-        elif to == BoundingBoxFormat.LTRB:
+        elif to == BoundingBox.LTRB:
             return box_ltwh_to_ltrb(box)
         else:
             return box_ltwh_to_xywh(box)
-    elif format == BoundingBoxFormat.LTRB:
-        if to == BoundingBoxFormat.LTWH:
+    elif format == BoundingBox.LTRB:
+        if to == BoundingBox.LTWH:
             return box_ltrb_to_ltwh(box)
-        elif to == BoundingBoxFormat.LTRB:
+        elif to == BoundingBox.LTRB:
             return list(box)
         else:
             return box_ltrb_to_xywh(box)
     else:
-        if to == BoundingBoxFormat.LTWH:
+        if to == BoundingBox.LTWH:
             return box_xywh_to_ltwh(box)
-        elif to == BoundingBoxFormat.LTRB:
+        elif to == BoundingBox.LTRB:
             return box_xywh_to_ltrb(box)
         else:
             return list(box)
 
 
-def transform_bboxes(boxes, format=BoundingBoxFormat.LTWH, to=BoundingBoxFormat.XYWH, inplace=False):
+def transform_bboxes(boxes, format=BoundingBox.LTWH, to=BoundingBox.XYWH, inplace=False):
     r"""
     Transform the bounding box between different formats.
 
     Args:
-        boxes (*, 4): For detail of the box and formats, see `BoundingBoxFormat`.
+        boxes (*, 4): For detail of the box and formats, see `BoundingBox`.
         format: Format of given bounding box.
         to: Target format.
 
     """
-    if format == BoundingBoxFormat.LTWH:
-        if to == BoundingBoxFormat.LTWH:
+    if format == BoundingBox.LTWH:
+        if to == BoundingBox.LTWH:
             return boxes
-        elif to == BoundingBoxFormat.LTRB:
+        elif to == BoundingBox.LTRB:
             return boxes_ltwh_to_ltrb(boxes, inplace=inplace)
         else:
             return boxes_ltwh_to_xywh(boxes, inplace=inplace)
-    elif format == BoundingBoxFormat.LTRB:
-        if to == BoundingBoxFormat.LTWH:
+    elif format == BoundingBox.LTRB:
+        if to == BoundingBox.LTWH:
             return boxes_ltrb_to_ltwh(boxes, inplace=inplace)
-        elif to == BoundingBoxFormat.LTRB:
+        elif to == BoundingBox.LTRB:
             return boxes
         else:
             return boxes_ltrb_to_xywh(boxes, inplace=inplace)
     else:
-        if to == BoundingBoxFormat.LTWH:
+        if to == BoundingBox.LTWH:
             return boxes_xywh_to_ltwh(boxes, inplace=inplace)
-        elif to == BoundingBoxFormat.LTRB:
+        elif to == BoundingBox.LTRB:
             return boxes_xywh_to_ltrb(boxes, inplace=inplace)
         else:
             return boxes
@@ -373,8 +397,8 @@ def average_precision(recall, precision):
     return ap, mpre[:-1], mrec[:-1], ii
 
 
-def scale_box(bbox, src_size, dst_size, format=BoundingBoxFormat.LTWH):
-    if format == BoundingBoxFormat.LTWH:
+def scale_box(bbox, src_size, dst_size, format=BoundingBox.LTWH):
+    if format == BoundingBox.LTWH:
         iw, ih = src_size
         ow, oh = dst_size
         sw = ow / iw
@@ -386,3 +410,19 @@ def scale_box(bbox, src_size, dst_size, format=BoundingBoxFormat.LTWH):
         return bbox
     else:
         raise NotImplementedError
+
+
+def box_collate_fn(batch, label_field="category_id", box_field='bbox'):
+    x, y = zip(*batch)
+    ground_truths = []
+    for i in range(len(y)):
+        for ann in y[i]:
+            ground_truths.append(
+                BoundingBox(
+                    image_name=i,
+                    class_id=ann[label_field],
+                    box=ann[box_field],
+                    box_format=BoundingBox.LTWH,
+                )
+            )
+    return default_collate(x), Args(ground_truths)

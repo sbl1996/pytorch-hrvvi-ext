@@ -1,5 +1,9 @@
+import random
+
 import torchvision.transforms.functional as TF
-from hutil.transformers.detection import resize, center_crop, to_percent_coords, to_absolute_coords
+
+import hutil.transformers.detection as DF
+from hutil.detection import BoundingBox
 
 
 class Transform:
@@ -87,11 +91,11 @@ class Resize(JointTransform):
     """
 
     def __init__(self, size):
-        super().__init__(resize(size=size))
+        super().__init__(DF.resize(size=size))
         self.size = size
 
     def __repr__(self):
-        return "Resize(size=%s)" % self.size
+        return self.__class__.__name__ + "(size=%s)".format(self.size)
 
 
 class CenterCrop(JointTransform):
@@ -108,11 +112,11 @@ class CenterCrop(JointTransform):
     """
 
     def __init__(self, size):
-        super().__init__(center_crop(output_size=size))
+        super().__init__(DF.center_crop(output_size=size))
         self.size = size
 
     def __repr__(self):
-        return "CenterCrop(size=%s)" % self.size
+        return self.__class__.__name__ + "(size=%s)".format(self.size)
 
 
 class ToTensor(JointTransform):
@@ -121,22 +125,84 @@ class ToTensor(JointTransform):
         super().__init__(lambda x, y: (TF.to_tensor(x), y))
 
     def __repr__(self):
-        return "ToTensor()"
+        return self.__class__.__name__ + "()"
 
 
 class ToPercentCoords(JointTransform):
 
     def __init__(self):
-        super().__init__(to_percent_coords)
+        super().__init__(DF.to_percent_coords)
 
     def __repr__(self):
-        return "ToPercentCoords()"
+        return self.__class__.__name__ + "()"
 
 
 class ToAbsoluteCoords(JointTransform):
 
     def __init__(self):
-        super().__init__(to_absolute_coords)
+        super().__init__(DF.to_absolute_coords)
 
     def __repr__(self):
-        return "ToAbsoluteCoords()"
+        return self.__class__.__name__ + "()"
+
+
+class RandomHorizontalFlip(object):
+    """Horizontally flip the given PIL Image randomly with a given probability.
+
+    Args:
+        p (float): probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5, format=BoundingBox.LTWH):
+        self.p = p
+        if format == BoundingBox.LTWH or format == BoundingBox.XYWH:
+            self.f = DF.hflip
+        elif format == BoundingBox.LTRB:
+            self.f = DF.hflip2
+        else:
+            raise ValueError("invalid bounding box format")
+
+    def __call__(self, img, anns):
+        """
+        Args:
+            img (PIL Image): Image to be flipped.
+            anns (sequences of dict): sequences of annotation of objects, containing `bbox` of 
+                (xmin, ymin, xmax, ymax) or (xmin, ymin, w, h) or (cx, cy, w, h)
+        """
+        if random.random() < self.p:
+            return self.f(img, anns)
+        return img, anns
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
+
+class RandomVerticalFlip(object):
+    """Vertically flip the given PIL Image randomly with a given probability.
+
+    Args:
+        p (float): probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5, format=BoundingBox.LTWH):
+        self.p = p
+        if format == BoundingBox.LTWH or format == BoundingBox.XYWH:
+            self.f = DF.vflip
+        elif format == BoundingBox.LTRB:
+            self.f = DF.vflip2
+        else:
+            raise ValueError("invalid bounding box format")
+
+    def __call__(self, img, anns):
+        """
+        Args:
+            img (PIL Image): Image to be flipped.
+            anns (sequences of dict): sequences of annotation of objects, containing `bbox` of 
+                (xmin, ymin, xmax, ymax) or (xmin, ymin, w, h) or (cx, cy, w, h)
+        """
+        if random.random() < self.p:
+            return self.f(img, anns)
+        return img, anns
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
