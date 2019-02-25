@@ -1,7 +1,7 @@
 import numpy as np
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose
-from hutil.transformers import InputTransform
+from hutil.transforms import InputTransform
 
 __all__ = ["train_test_split", "Subset", "CachedDataset", "Fullset"]
 

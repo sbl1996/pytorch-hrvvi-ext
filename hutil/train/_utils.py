@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 import torch
+from hutil.common import Args
 from hutil.functools import find
 
 import itchat

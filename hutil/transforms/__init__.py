@@ -2,7 +2,7 @@ import random
 
 import torchvision.transforms.functional as TF
 
-import hutil.transformers.detection as DF
+import hutil.transforms.detection as DF
 from hutil.detection import BoundingBox
 
 
