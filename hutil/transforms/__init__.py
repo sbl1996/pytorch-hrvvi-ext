@@ -2,7 +2,7 @@ import random
 
 import torchvision.transforms.functional as TF
 
-import hutil.transforms.detection as DF
+from hutil.transforms.detection import resize, center_crop, hflip, hflip2, vflip, vflip2, to_absolute_coords, to_percent_coords
 from hutil.detection import BoundingBox
 
 
@@ -91,7 +91,7 @@ class Resize(JointTransform):
     """
 
     def __init__(self, size):
-        super().__init__(DF.resize(size=size))
+        super().__init__(resize(size=size))
         self.size = size
 
     def __repr__(self):
@@ -112,7 +112,7 @@ class CenterCrop(JointTransform):
     """
 
     def __init__(self, size):
-        super().__init__(DF.center_crop(output_size=size))
+        super().__init__(center_crop(output_size=size))
         self.size = size
 
     def __repr__(self):
@@ -131,7 +131,7 @@ class ToTensor(JointTransform):
 class ToPercentCoords(JointTransform):
 
     def __init__(self):
-        super().__init__(DF.to_percent_coords)
+        super().__init__(to_percent_coords)
 
     def __repr__(self):
         return self.__class__.__name__ + "()"
@@ -140,7 +140,7 @@ class ToPercentCoords(JointTransform):
 class ToAbsoluteCoords(JointTransform):
 
     def __init__(self):
-        super().__init__(DF.to_absolute_coords)
+        super().__init__(to_absolute_coords)
 
     def __repr__(self):
         return self.__class__.__name__ + "()"
@@ -156,9 +156,9 @@ class RandomHorizontalFlip(object):
     def __init__(self, p=0.5, format=BoundingBox.LTWH):
         self.p = p
         if format == BoundingBox.LTWH or format == BoundingBox.XYWH:
-            self.f = DF.hflip
+            self.f = hflip
         elif format == BoundingBox.LTRB:
-            self.f = DF.hflip2
+            self.f = hflip2
         else:
             raise ValueError("invalid bounding box format")
 
@@ -187,9 +187,9 @@ class RandomVerticalFlip(object):
     def __init__(self, p=0.5, format=BoundingBox.LTWH):
         self.p = p
         if format == BoundingBox.LTWH or format == BoundingBox.XYWH:
-            self.f = DF.vflip
+            self.f = vflip
         elif format == BoundingBox.LTRB:
-            self.f = DF.vflip2
+            self.f = vflip2
         else:
             raise ValueError("invalid bounding box format")
 
