@@ -13,7 +13,7 @@ from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
 from hutil.functools import lmap
-from hutil.detection import iou_11, BoundingBox, mAP
+from hutil.detection import iou_11, mAP
 
 
 class Average(Metric):
@@ -169,7 +169,7 @@ class MeanAveragePrecision(Average):
     Args:
 
     Inputs:
-        y (list of list of hutil.detection.BoundingBox): ground truth bounding boxes
+        y (list of list of hutil.detection.BBox): ground truth bounding boxes
         y_pred: (batch_size, h, w, c)
         predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
     """

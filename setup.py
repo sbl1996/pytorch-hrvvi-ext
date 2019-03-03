@@ -10,6 +10,7 @@ import sys
 from shutil import rmtree
 
 from setuptools import find_packages, setup, Command
+from torch.utils.cpp_extension import CppExtension, BuildExtension
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
@@ -55,6 +56,10 @@ if not VERSION:
         exec(f.read(), about)
 else:
     about['__version__'] = VERSION
+
+
+def csrc(path):
+    return "/".join([".", IMPORT_NAME, "_C", path])
 
 
 class UploadCommand(Command):
@@ -131,8 +136,14 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: Implementation :: CPython',
     ],
+    ext_modules=[
+        CppExtension(
+            name='hutil._C.detection',
+            sources=[csrc("detection.cpp")],
+            extra_compile_args=["-g", "-stdlib=libc++", "-std=c++11"])],
     # $ setup.py publish support.
     cmdclass={
         'upload': UploadCommand,
+        'build_ext': BuildExtension,
     },
 )

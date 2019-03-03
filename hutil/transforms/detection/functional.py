@@ -2,16 +2,7 @@ import numbers
 from toolz import curry
 from PIL import Image
 
-
-def draw_box(im, anns):
-    from matplotlib.patches import Rectangle
-    fig, ax = plt.subplots(1)
-    ax.imshow(im)
-    for ann in anns:
-        bbox = ann["bbox"]
-        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=1,
-                         edgecolor='r', facecolor='none')
-        ax.add_patch(rect)
+from torchvision.transforms import RandomResizedCrop
 
 
 @curry

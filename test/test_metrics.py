@@ -1,6 +1,6 @@
 import numpy as np
 
-from hutil.detection import BoundingBox
+from hutil.detection import BBox
 from hutil.train.metrics import mAP
 
 
@@ -31,12 +31,12 @@ def test_mAP():
         (7, 0, [16, 20, 101, 88], .48),
         (7, 0, [33, 116, 37, 49], .95),
     ]
-    detections = [BoundingBox(
+    detections = [BBox(
         image_name=d[0],
         class_id=d[1],
         box=d[2],
         confidence=d[3],
-        box_format=BoundingBox.LTWH,
+        box_format=BBox.LTWH,
     ) for d in detections]
 
     ground_truths = [
@@ -56,11 +56,11 @@ def test_mAP():
         (7, 0, [28, 31, 55, 63]),
         (7, 0, [58, 67, 50, 58]),
     ]
-    ground_truths = [BoundingBox(
+    ground_truths = [BBox(
         image_name=d[0],
         class_id=d[1],
         box=d[2],
-        box_format=BoundingBox.LTWH,
+        box_format=BBox.LTWH,
     ) for d in ground_truths]
     np.testing.assert_allclose(
         mAP(detections, ground_truths, iou_threshold=0.295), 0.2456867)

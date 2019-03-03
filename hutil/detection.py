@@ -1,7 +1,9 @@
+import warnings
 import sys
 from typing import List, Any
 from enum import Enum
 
+from toolz import curry
 from toolz.curried import get, countby, identity, valmap, groupby
 
 import numpy as np
@@ -10,21 +12,34 @@ import torch
 from torch.utils.data.dataloader import default_collate
 
 from hutil.common import Args
+import hutil._C.detection as CD
 
 
-def non_max_suppression(boxes, confidences, max_boxes, iou_threshold, inplace=False):
+def nms_cpu(boxes, confidences, iou_threshold=0.5):
     r"""
     Args:
         boxes (tensor of shape `(N, 4)`): [xmin, ymin, xmax, ymax]
-        confidences: (N,)
-        max_boxes (int): 
-        iou_threshold (float):
+        confidences: Same length as boxes
+        iou_threshold (float): Default value is 0.5
     Returns:
         indices: (N,)
     """
-    N = len(boxes)
-    if N <= max_boxes:
-        return list(range(N))
+    return CD.nms_cpu(boxes, confidences, iou_threshold)
+
+
+def non_max_suppression(boxes, confidences, max_boxes=0, iou_threshold=0.5, inplace=False):
+    r"""
+    Args:
+        boxes(tensor of shape `(N, 4)`): [xmin, ymin, xmax, ymax]
+        confidences: (N,)
+        max_boxes(int):
+        iou_threshold(float):
+    Returns:
+        indices: (N,)
+    """
+    num = len(boxes)
+    if num <= max_boxes:
+        return list(range(num))
     if not inplace:
         boxes = boxes.clone()
         confidences = confidences.clone()
@@ -38,11 +53,18 @@ def non_max_suppression(boxes, confidences, max_boxes, iou_threshold, inplace=Fa
         mask = boxes_iou > iou_threshold
         boxes.masked_fill_(mask.unsqueeze(-1), 0)
         confidences.masked_fill_(mask, 0)
-        if len(indices) >= max_boxes or confidences.sum() == 0:
+
+        if max_boxes != 0 and len(indices) >= max_boxes:
             return indices
+        m = confidences.mean().item()
+        if m == 0:
+            return indices
+        elif not np.isfinite(m):
+            warnings.warn("infinite confidences encountered.")
+            return []
 
 
-class BoundingBox:
+class BBox:
     LTWH = 0  # [xmin, ymin, width, height]
     LTRB = 1  # [xmin, ymin, xmax,  ymax]
     XYWH = 2  # [cx,   cy,   width, height]
@@ -55,7 +77,7 @@ class BoundingBox:
             box, format=box_format, to=1)
 
     def __repr__(self):
-        return "BoundingBox(image_name=%s, class_id=%s, box=%s, confidence=%s)" % (
+        return "BBox(image_name=%s, class_id=%s, box=%s, confidence=%s)" % (
             self.image_name, self.class_id, self.box, self.confidence
         )
 
@@ -187,74 +209,74 @@ def box_xywh_to_ltrb(box):
     return [l, t, r, b]
 
 
-def transform_bbox(box, format=BoundingBox.LTWH, to=BoundingBox.XYWH):
+def transform_bbox(box, format=BBox.LTWH, to=BBox.XYWH):
     r"""Transform the bounding box between different formats.
 
     Args:
-        box (sequences of int): For detail of the box and formats, see `BoundingBox`.
+        box(sequences of int): For detail of the box and formats, see `BBox`.
         format: Format of given bounding box.
         to: Target format.
 
     """
-    if format == BoundingBox.LTWH:
-        if to == BoundingBox.LTWH:
+    if format == BBox.LTWH:
+        if to == BBox.LTWH:
             return list(box)
-        elif to == BoundingBox.LTRB:
+        elif to == BBox.LTRB:
             return box_ltwh_to_ltrb(box)
         else:
             return box_ltwh_to_xywh(box)
-    elif format == BoundingBox.LTRB:
-        if to == BoundingBox.LTWH:
+    elif format == BBox.LTRB:
+        if to == BBox.LTWH:
             return box_ltrb_to_ltwh(box)
-        elif to == BoundingBox.LTRB:
+        elif to == BBox.LTRB:
             return list(box)
         else:
             return box_ltrb_to_xywh(box)
     else:
-        if to == BoundingBox.LTWH:
+        if to == BBox.LTWH:
             return box_xywh_to_ltwh(box)
-        elif to == BoundingBox.LTRB:
+        elif to == BBox.LTRB:
             return box_xywh_to_ltrb(box)
         else:
             return list(box)
 
 
-def transform_bboxes(boxes, format=BoundingBox.LTWH, to=BoundingBox.XYWH, inplace=False):
+def transform_bboxes(boxes, format=BBox.LTWH, to=BBox.XYWH, inplace=False):
     r"""
     Transform the bounding box between different formats.
 
     Args:
-        boxes (*, 4): For detail of the box and formats, see `BoundingBox`.
+        boxes(*, 4): For detail of the box and formats, see `BBox`.
         format: Format of given bounding box.
         to: Target format.
 
     """
-    if format == BoundingBox.LTWH:
-        if to == BoundingBox.LTWH:
+    if format == BBox.LTWH:
+        if to == BBox.LTWH:
             return boxes
-        elif to == BoundingBox.LTRB:
+        elif to == BBox.LTRB:
             return boxes_ltwh_to_ltrb(boxes, inplace=inplace)
         else:
             return boxes_ltwh_to_xywh(boxes, inplace=inplace)
-    elif format == BoundingBox.LTRB:
-        if to == BoundingBox.LTWH:
+    elif format == BBox.LTRB:
+        if to == BBox.LTWH:
             return boxes_ltrb_to_ltwh(boxes, inplace=inplace)
-        elif to == BoundingBox.LTRB:
+        elif to == BBox.LTRB:
             return boxes
         else:
             return boxes_ltrb_to_xywh(boxes, inplace=inplace)
     else:
-        if to == BoundingBox.LTWH:
+        if to == BBox.LTWH:
             return boxes_xywh_to_ltwh(boxes, inplace=inplace)
-        elif to == BoundingBox.LTRB:
+        elif to == BBox.LTRB:
             return boxes_xywh_to_ltrb(boxes, inplace=inplace)
         else:
             return boxes
 
 
-def iou_1m(box, boxes):
+def iou_1m(box, boxes, format=BBox.LTRB):
     r"""
-    Calculates one-to-many ious by corners ([xmin, ymin, xmax, ymax]).
+    Calculates one-to-many ious by corners([xmin, ymin, xmax, ymax]).
 
     Args:
         box: (4,)
@@ -263,6 +285,8 @@ def iou_1m(box, boxes):
     Returns:
         ious: (*,)
     """
+    box = transform_bboxes(box, format=format, to=BBox.LTRB)
+    boxes = transform_bboxes(boxes, format=format, to=BBox.LTRB)
     xi1 = torch.max(boxes[..., 0], box[0])
     yi1 = torch.max(boxes[..., 1], box[1])
     xi2 = torch.min(boxes[..., 2], box[2])
@@ -281,7 +305,7 @@ def iou_1m(box, boxes):
 
 def iou_b11(boxes1, boxes2):
     r"""
-    Calculates batch one-to-one ious by corners ([xmin, ymin, xmax, ymax]).
+    Calculates batch one-to-one ious by corners([xmin, ymin, xmax, ymax]).
 
     Args:
         boxes1: (*, 4)
@@ -331,11 +355,11 @@ def iou_11(box1, box2):
     return iou
 
 
-def mAP(detections: List[BoundingBox], ground_truths: List[BoundingBox], iou_threshold=.5):
+def mAP(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5):
     r"""
     Args:
-        detections: sequences of BoundingBox with `confidence`
-        ground_truths: same size sequences of BoundingBox
+        detections: sequences of BBox with `confidence`
+        ground_truths: same size sequences of BBox
     """
     ret = []
     class_detections = groupby(lambda b: b.class_id, detections)
@@ -397,8 +421,8 @@ def average_precision(recall, precision):
     return ap, mpre[:-1], mrec[:-1], ii
 
 
-def scale_box(bbox, src_size, dst_size, format=BoundingBox.LTWH):
-    if format == BoundingBox.LTWH:
+def scale_box(bbox, src_size, dst_size, format=BBox.LTWH):
+    if format == BBox.LTWH:
         iw, ih = src_size
         ow, oh = dst_size
         sw = ow / iw
@@ -412,17 +436,18 @@ def scale_box(bbox, src_size, dst_size, format=BoundingBox.LTWH):
         raise NotImplementedError
 
 
+@curry
 def box_collate_fn(batch, label_field="category_id", box_field='bbox'):
     x, y = zip(*batch)
     ground_truths = []
     for i in range(len(y)):
         for ann in y[i]:
             ground_truths.append(
-                BoundingBox(
+                BBox(
                     image_name=i,
                     class_id=ann[label_field],
                     box=ann[box_field],
-                    box_format=BoundingBox.LTWH,
+                    box_format=BBox.LTWH,
                 )
             )
     return default_collate(x), Args(ground_truths)

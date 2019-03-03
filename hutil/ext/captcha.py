@@ -19,9 +19,7 @@ DEFAULT_FONTS = []
 __all__ = ['ImageCaptcha']
 
 
-table = []
-for i in range(256):
-    table.append(i * 1.97)
+table = [i * 1.97 for i in range(256)]
 
 
 class _Captcha(object):
@@ -111,7 +109,7 @@ class ImageCaptcha(_Captcha):
             number -= 1
         return image
 
-    def create_captcha_image(self, chars, color, background, rotate, return_bbox=False):
+    def create_captcha_image(self, chars, color, background, rotate, return_bbox=False, return_mask=False):
         """Create the CAPTCHA image itself.
 
         :param chars: text to be generated.
