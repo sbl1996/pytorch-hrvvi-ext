@@ -106,6 +106,12 @@ class UploadCommand(Command):
         sys.exit()
 
 
+PLATFORM = sys.platform
+if PLATFORM == 'darwin':
+    ext_compile_args = ["-g", "-stdlib=libc++", "-std=c++11"]
+else:
+    ext_compile_args = ["-g", "-std=c++11"]
+
 # Where the magic happens:
 setup(
     name=NAME,
@@ -140,7 +146,7 @@ setup(
         CppExtension(
             name='hutil._C.detection',
             sources=[csrc("detection.cpp")],
-            extra_compile_args=["-g", "-stdlib=libc++", "-std=c++11"])],
+            extra_compile_args=ext_compile_args)],
     # $ setup.py publish support.
     cmdclass={
         'upload': UploadCommand,
