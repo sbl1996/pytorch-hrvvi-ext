@@ -1,6 +1,6 @@
 import time
 from toolz import curry
-from toolz.curried import get
+from toolz.curried import get, groupby
 
 import torch
 import numpy as np
@@ -184,6 +184,9 @@ class MeanAveragePrecision(Average):
             ["y", "y_pred", "batch_size"], output)
         ground_truths = y[0]
         detections = self.predict(*y_pred)
-        ret = mAP(detections, ground_truths,
-                  iou_threshold=self.iou_threshold), batch_size
-        return ret
+
+        image_dets = groupby(lambda b: b.image_name, detections)
+        image_gts = groupby(lambda b: b.image_name, ground_truths)
+        values = np.mean([mAP(image_dets[i], image_gts[i],
+                              self.iou_threshold) for i in range(batch_size)])
+        return values, batch_size

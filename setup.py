@@ -142,6 +142,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: Implementation :: CPython',
     ],
+    data_files=[("requirements", "requirements.txt")],
     ext_modules=[
         CppExtension(
             name='hutil._C.detection',
