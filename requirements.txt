@@ -1,12 +1,10 @@
 torch
+torchvision
 bidict
-tqdm
-arrow
 itchat
 nltk
 toolz
 pytorch-ignite
 Pillow>5.0.0
 xmltodict
-torchvision
 googledrivedownloader

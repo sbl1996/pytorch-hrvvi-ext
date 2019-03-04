@@ -12,8 +12,8 @@ from shutil import rmtree
 from setuptools import find_packages, setup, Command
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 
-with open('requirements.txt') as f:
-    requirements = f.read().splitlines()
+# with open('requirements.txt') as f:
+#     requirements = f.read().splitlines()
 
 # Package meta-data.
 NAME = 'pytorch-hrvvi-ext'
@@ -26,7 +26,18 @@ REQUIRES_PYTHON = '>=3.6.0'
 VERSION = None
 
 # What packages are required for this module to be executed?
-REQUIRED = requirements
+REQUIRED = [
+    "torch",
+    "torchvision",
+    "bidict",
+    "itchat",
+    "nltk",
+    "toolz",
+    "pytorch-ignite",
+    "Pillow>5.0.0",
+    "xmltodict",
+    "googledrivedownloader",
+]
 
 # What packages are optional?
 EXTRAS = {
@@ -142,7 +153,6 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: Implementation :: CPython',
     ],
-    data_files=[(".", "requirements.txt")],
     ext_modules=[
         CppExtension(
             name='hutil._C.detection',

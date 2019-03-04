@@ -5,7 +5,6 @@ import os
 from collections import defaultdict
 
 import itchat
-from tqdm import tqdm
 from toolz.curried import get, identity, curry, keyfilter
 
 import torch
