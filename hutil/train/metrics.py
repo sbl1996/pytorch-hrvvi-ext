@@ -186,6 +186,9 @@ class MeanAveragePrecision(Average):
         detections = self.predict(*y_pred)
 
         image_dets = groupby(lambda b: b.image_name, detections)
+        for i in range(batch_size):
+            if i not in image_dets:
+                image_dets[i] = []
         image_gts = groupby(lambda b: b.image_name, ground_truths)
         values = np.mean([mAP(image_dets[i], image_gts[i],
                               self.iou_threshold) for i in range(batch_size)])
