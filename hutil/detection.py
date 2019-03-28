@@ -27,7 +27,7 @@ def nms_cpu(boxes, confidences, iou_threshold=0.5):
     return CD.nms_cpu(boxes, confidences, iou_threshold)
 
 
-def non_max_suppression(boxes, confidences, max_boxes=0, iou_threshold=0.5, inplace=False):
+def non_max_suppression(boxes, confidences, iou_threshold=0.5):
     r"""
     Args:
         boxes(tensor of shape `(N, 4)`): [xmin, ymin, xmax, ymax]
@@ -37,31 +37,50 @@ def non_max_suppression(boxes, confidences, max_boxes=0, iou_threshold=0.5, inpl
     Returns:
         indices: (N,)
     """
-    num = len(boxes)
-    if num <= max_boxes:
-        return list(range(num))
-    if not inplace:
-        boxes = boxes.clone()
-        confidences = confidences.clone()
-    boxes = boxes.view(-1, 4)
-    confidences = confidences.view(-1)
-    indices = []
-    while True:
-        ind = confidences.argmax()
-        indices.append(ind.item())
-        boxes_iou = iou_1m(boxes[ind], boxes)
-        mask = boxes_iou > iou_threshold
-        boxes.masked_fill_(mask.unsqueeze(-1), 0)
-        confidences.masked_fill_(mask, 0)
+    N = len(boxes)
+    confs, orders = confidences.sort(descending=True)
+    boxes = boxes[orders]
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    suppressed = confidences.new_zeros(N, dtype=torch.uint8)
 
-        if max_boxes != 0 and len(indices) >= max_boxes:
-            return indices
-        m = confidences.mean().item()
-        if m == 0:
-            return indices
-        elif not np.isfinite(m):
-            warnings.warn("infinite confidences encountered.")
-            return []
+    zero = boxes.new_tensor(0)
+
+    for i in range(N):
+        if suppressed[i] == 1:
+            continue
+        xx1 = torch.max(x1[i], x1[i+1:])
+        yy1 = torch.max(y1[i], y1[i+1:])
+        xx2 = torch.min(x2[i], x2[i+1:])
+        yy2 = torch.min(y2[i], y2[i+1:])
+
+        w = torch.max(zero, xx2 - xx1 + 1)
+        h = torch.max(zero, yy2 - yy1 + 1)
+
+        inter = w * h
+        iou = inter / (areas[i] + areas[i+1:] - inter)
+        suppressed[i+1:][iou > iou_threshold] = 1
+    return orders[torch.nonzero(suppressed == 0).squeeze(1)]
+    # indices = []
+    # while True:
+    #     ind = confidences.argmax()
+    #     indices.append(ind.item())
+    #     boxes_iou = iou_1m(boxes[ind], boxes)
+    #     mask = boxes_iou > iou_threshold
+    #     boxes.masked_fill_(mask.unsqueeze(-1), 0)
+    #     confidences.masked_fill_(mask, 0)
+
+    #     if max_boxes != 0 and len(indices) >= max_boxes:
+    #         return indices
+    #     m = confidences.mean().item()
+    #     if m == 0:
+    #         return indices
+    #     elif not np.isfinite(m):
+    #         warnings.warn("infinite confidences encountered.")
+    #         return []
 
 
 class BBox:
@@ -437,7 +456,7 @@ def scale_box(bbox, src_size, dst_size, format=BBox.LTWH):
 
 
 @curry
-def box_collate_fn(batch, label_field="category_id", box_field='bbox'):
+def box_collate_fn(batch, get_label=get("category_id"), get_bbox=get('bbox')):
     x, y = zip(*batch)
     ground_truths = []
     for i in range(len(y)):
@@ -445,8 +464,8 @@ def box_collate_fn(batch, label_field="category_id", box_field='bbox'):
             ground_truths.append(
                 BBox(
                     image_name=i,
-                    class_id=ann[label_field],
-                    box=ann[box_field],
+                    class_id=get_label(ann),
+                    box=get_bbox(ann),
                     box_format=BBox.LTWH,
                 )
             )

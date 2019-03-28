@@ -85,7 +85,11 @@ def summary(model, input_size, batch_size=-1, dtype=None, device=None):
             "{0:,}".format(summary[layer]["nb_params"]),
         )
         total_params += summary[layer]["nb_params"]
-        total_output += np.prod(summary[layer]["output_shape"])
+        output_shape = summary[layer]["output_shape"]
+        if isinstance(output_shape[0], list):
+            total_output += np.sum([np.prod(out) for out in output_shape])
+        else:
+            total_output += np.prod(summary[layer]["output_shape"])
         if "trainable" in summary[layer]:
             if summary[layer]["trainable"] == True:
                 trainable_params += summary[layer]["nb_params"]
