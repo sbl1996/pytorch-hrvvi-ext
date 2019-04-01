@@ -11,8 +11,8 @@ class SameTransform(JointTransform):
         super().__init__()
         self.t = t
 
-    def __call__(self, img, seg_img):
-        return self.t(img), self.t(seg_img)
+    def __call__(self, img, seg):
+        return self.t(img), self.t(seg)
 
 
 class ToTensor(JointTransform):
@@ -25,9 +25,9 @@ class ToTensor(JointTransform):
         super().__init__()
         self.num_classes = num_classes
 
-    def __call__(self, img, seg_img):
-        input = TF.to_tensor(input)
-        target = np.array(seg_img)
+    def __call__(self, img, seg):
+        input = TF.to_tensor(img)
+        target = np.array(seg)
         target[target == 255] = self.num_classes + 1
         target = torch.from_numpy(target).long()
-        return self.transform(input, target)
+        return input, target
