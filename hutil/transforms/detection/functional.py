@@ -2,7 +2,27 @@ import numbers
 from toolz import curry
 from PIL import Image
 
-from torchvision.transforms import RandomResizedCrop
+
+@curry
+def resized_crop(img, anns, i, j, h, w, size, interpolation, drop=True):
+    img, anns = crop(img, anns, i, j, h, w)
+    if drop:
+        img, anns = drop_out_objects(img, anns)
+    img, anns = resize(img, anns, size)
+    return img, anns
+
+
+@curry
+def drop_out_objects(img, anns):
+    w, h = img.size
+    new_anns = []
+    for ann in anns:
+        bbox = list(ann['bbox'])
+        cx = bbox[0] + bbox[2] / 2
+        cy = bbox[1] + bbox[3] / 2
+        if cx >= 0 and cx <= w and cy >= 0 and cy <= h:
+            new_anns.append({**ann, "bbox": bbox})
+    return img, new_anns
 
 
 @curry
@@ -33,7 +53,7 @@ def crop(img, anns, i, j, h, w):
     Args:
         img (PIL.Image): Image to be cropped.
         anns (sequences of dict): Sequences of annotation of objects, containing `bbox` of 
-            (xmin, ymin, w, h) or (cx, cy, w, h).
+            (xmin, ymin, w, h) or (cx, cy, w, h). If drop out objects, `bbox` must be (xmin, ymin, w, h).
         i: Upper pixel coordinate.
         j: Left pixel coordinate.
         h: Height of the cropped image.
