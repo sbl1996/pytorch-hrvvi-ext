@@ -28,6 +28,6 @@ class ToTensor(JointTransform):
     def __call__(self, img, seg):
         input = TF.to_tensor(img)
         target = np.array(seg)
-        target[target == 255] = self.num_classes + 1
+        target[target == 255] = 0
         target = torch.from_numpy(target).long()
         return input, target
