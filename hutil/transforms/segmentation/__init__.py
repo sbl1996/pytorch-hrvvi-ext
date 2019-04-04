@@ -17,8 +17,6 @@ class SameTransform(JointTransform):
 
 class ToTensor(JointTransform):
     """Convert the input ``PIL Image`` to tensor and the target segmentation image to labels.
-
-    For the segmentation labels, 0 represents background and `num_classes` + 1 represents border.
     """
 
     def __init__(self, num_classes):
@@ -28,6 +26,5 @@ class ToTensor(JointTransform):
     def __call__(self, img, seg):
         input = TF.to_tensor(img)
         target = np.array(seg)
-        target[target == 255] = 0
         target = torch.from_numpy(target).long()
         return input, target

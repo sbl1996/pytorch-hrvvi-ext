@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Sequence, Mapping
 
 import torch
 
@@ -16,9 +16,12 @@ CUDA = torch.cuda.is_available()
 def cuda(t):
     if torch.is_tensor(t):
         return t.cuda() if CUDA else t
-    if isinstance(t, Sequence):
+    elif isinstance(t, Sequence):
         return t.__class__(cuda(x) for x in t)
-    return t
+    elif isinstance(t, Mapping):
+        return t.__class__((k, cuda(v)) for k, v in t.items())
+    else:
+        return t
 
 
 class Args(tuple):
