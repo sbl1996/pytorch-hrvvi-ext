@@ -5,7 +5,8 @@ import tarfile
 
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision.datasets.utils import download_url, check_integrity
+from torchvision.datasets.utils import download_url
+from hutil.datasets.utils import download_google_drive
 
 SPLIT_FILES = {
     "train": {
@@ -104,19 +105,3 @@ class SVHNDetection(Dataset):
         file_path = self.root / self.filename
         with tarfile.open(file_path, "r") as tar:
             tar.extractall(path=self.detection_dir)
-
-
-def download_google_drive(file_id, root, filename, md5):
-    fpath = root / filename
-
-    root.mkdir(exist_ok=True)
-
-    # downloads file
-    if fpath.is_file() and check_integrity(fpath, md5):
-        print('Using downloaded and verified file: %s' % fpath)
-    else:
-        from google_drive_downloader import GoogleDriveDownloader as gdd
-        gdd.download_file_from_google_drive(
-            file_id=file_id,
-            dest_path=fpath,
-        )

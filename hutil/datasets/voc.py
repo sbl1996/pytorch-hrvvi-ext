@@ -1,13 +1,15 @@
 import os
+import re
 import sys
-import tarfile
-import time
 from collections import OrderedDict
+from pathlib import Path
 
 import xmltodict
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.datasets.utils import download_url, check_integrity
+
+from hutil.datasets.utils import download_google_drive
 
 # https://github.com/pytorch/vision/blob/master/torchvision/datasets/voc.py
 
@@ -91,8 +93,6 @@ class VOCDetection(Dataset):
             (default: alphabetic indexing of VOC's 20 classes).
         transform (callable, optional): A function/transform that  takes in an PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
-        target_transform (callable, required): A function/transform that takes in the
-            target and transforms it.
     """
 
     def __init__(self,
@@ -187,3 +187,113 @@ class VOCDetection(Dataset):
         if isinstance(objects, OrderedDict):
             objects = [objects]
         return [self.parse_object(obj) for obj in objects]
+
+
+TRAINAUG_FILE = {
+    "name": "trainaug.tar",
+    "md5": "7677cd72fdefc1f4d23beb556c0e87dc",
+    "url": "https://drive.google.com/open?id=1inOFikLz9oOW85s4nuAlCZ_1XesU_zn2",
+}
+
+
+class VOCSegmentation(Dataset):
+    """`Pascal VOC <http://host.robots.ox.ac.uk/pascal/VOC/>`_ Segmentation Dataset.
+
+    Args:
+        root (string): Root directory of the VOC Dataset.
+        year (string, optional): The dataset year, supports years 2007 to 2012.
+        image_set (string, optional): Select the image_set to use, ``train``, ``trainval`` or ``val`` or ``trainaug``
+        download (bool, optional): If true, downloads the dataset from the internet and
+            puts it in root directory. If dataset is already downloaded, it is not
+            downloaded again.
+        transform (callable, optional): A function/transform that  takes in an PIL image
+            and returns a transformed version. E.g, ``transforms.RandomCrop``
+    """
+
+    def __init__(self,
+                 root,
+                 year='2012',
+                 image_set='train',
+                 download=False,
+                 transform=None):
+        self.root = Path(root).expanduser().absolute()
+        self.year = year
+        self.url = DATASET_YEAR_DICT[year]['url']
+        self.filename = DATASET_YEAR_DICT[year]['filename']
+        self.md5 = DATASET_YEAR_DICT[year]['md5']
+        self.transform = transform
+        self.image_set = image_set
+        self.augmented = image_set == 'trainaug'
+
+        base_dir = DATASET_YEAR_DICT[year]['base_dir']
+        self.voc_root = self.root / base_dir
+        image_dir = self.voc_root / 'JPEGImages'
+        mask_dir = self.voc_root / 'SegmentationClass'
+        if self.augmented:
+            mask_dir = self.voc_root / 'SegmentationClassAug'
+
+        if download:
+            self.download()
+
+        splits_dir = self.voc_root / 'ImageSets' / 'Segmentation'
+        split_f = splits_dir / (image_set.rstrip('\n') + '.txt')
+
+        if not split_f.exists():
+            raise ValueError(
+                'Wrong image_set entered! Please use image_set="train" '
+                'or image_set="trainval" or image_set="val" or image_set="trainaug"')
+
+        with open(split_f, "r") as f:
+            file_names = [x.strip() for x in f.readlines()]
+
+        self.images = [image_dir / (x + ".jpg") for x in file_names]
+        self.masks = [mask_dir / (x + ".png") for x in file_names]
+        assert (len(self.images) == len(self.masks))
+
+    def download(self):
+        import tarfile
+
+        if self.voc_root.is_dir():
+            print("VOC found. Skip download or extract")
+        else:
+            download_url(self.url, self.root, self.filename, self.md5)
+
+            with tarfile.open(self.root / self.filename, "r") as tar:
+                tar.extractall(path=self.root)
+
+        if self.augmented:
+            mask_dir = self.voc_root / 'SegmentationClassAug'
+            if mask_dir.is_dir():
+                print("SBT found. Skip download or extract")
+            else:
+                file_id = re.match(
+                    r"https://drive.google.com/open\?id=(.*)", TRAINAUG_FILE['url']).group(1)
+                filename = TRAINAUG_FILE['name']
+                download_google_drive(
+                    file_id, self.voc_root, filename, TRAINAUG_FILE['md5'])
+
+                file_path = self.voc_root / filename
+                with tarfile.open(file_path, "r") as tar:
+                    tar.extractall(path=self.voc_root)
+                split_f = self.voc_root / 'trainaug.txt'
+                splits_dir = self.voc_root / 'ImageSets' / 'Segmentation'
+                split_f.rename(splits_dir / split_f.name)
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (image, target) where target is the image segmentation.
+        """
+        img = Image.open(self.images[index]).convert('RGB')
+        target = Image.open(self.masks[index])
+
+        if self.transform is not None:
+            img, target = self.transform(img, target)
+
+        return img, target
+
+    def __len__(self):
+        return len(self.images)
