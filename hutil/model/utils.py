@@ -1,4 +1,5 @@
 import torch
+from toolz import curry
 
 
 def get_last_conv(m):
