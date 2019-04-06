@@ -19,9 +19,8 @@ class ToTensor(JointTransform):
     """Convert the input ``PIL Image`` to tensor and the target segmentation image to labels.
     """
 
-    def __init__(self, num_classes):
+    def __init__(self):
         super().__init__()
-        self.num_classes = num_classes
 
     def __call__(self, img, seg):
         input = TF.to_tensor(img)

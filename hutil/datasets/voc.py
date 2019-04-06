@@ -73,7 +73,6 @@ DETECTION_CATEGORIES = [
     "sofa",
     "train",
     "tvmonitor",
-    "total",
 ]
 
 DETECTION_CATEGORY_TO_IDX = {name: i for i,
