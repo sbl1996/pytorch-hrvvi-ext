@@ -14,7 +14,7 @@ def get_out_channels(m):
     r"""
     Get the output channels of the last conv layer of a block.
     """
-    return last_conv(m).out_channels
+    return get_last_conv(m).out_channels
 
 
 @curry

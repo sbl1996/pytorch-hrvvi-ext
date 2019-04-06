@@ -52,6 +52,16 @@ DATASET_YEAR_DICT = {
     }
 }
 
+TEST_DATASET_YEAR_DICT = {
+    '2007': {
+        'url': 'http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar',
+        'filename': 'VOCtest_06-Nov-2007.tar',
+        'md5': 'b6e924de25625d8de591ea690078ad9f',
+        'base_dir': 'VOCdevkit/VOC2007'
+    }
+}
+
+
 DETECTION_CATEGORIES = [
     "aeroplane",
     "bicycle",
@@ -85,7 +95,7 @@ class VOCDetection(Dataset):
     Args:
         root (string): Root directory of the VOC Dataset.
         year (string, optional): The dataset year, supports years 2007 to 2012.
-        image_set (string, optional): Select the image_set to use, ``train``, ``trainval`` or ``val``
+        image_set (string, optional): Select the image_set to use, ``train``, ``trainval`` or ``val`` or ``test``
         download (bool, optional): If true, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
@@ -100,39 +110,41 @@ class VOCDetection(Dataset):
                  image_set='train',
                  download=False,
                  transform=None):
-        self.root = os.path.expanduser(root)
+        self.root = Path(root).expanduser().absolute()
         self.year = year
-        self.url = DATASET_YEAR_DICT[year]['url']
-        self.filename = DATASET_YEAR_DICT[year]['filename']
-        self.md5 = DATASET_YEAR_DICT[year]['md5']
-        self.transform = transform
         self.image_set = image_set
+        if image_set == 'test':
+            dataset_dict = TEST_DATASET_YEAR_DICT
+        else:
+            dataset_dict = DATASET_YEAR_DICT
+        self.url = dataset_dict[year]['url']
+        self.filename = dataset_dict[year]['filename']
+        self.md5 = dataset_dict[year]['md5']
+        self.transform = transform
 
-        base_dir = DATASET_YEAR_DICT[year]['base_dir']
-        self.voc_root = os.path.join(self.root, base_dir)
-        image_dir = os.path.join(self.voc_root, 'JPEGImages')
-        annotation_dir = os.path.join(self.voc_root, 'Annotations')
+        base_dir = dataset_dict[year]['base_dir']
+        self.voc_root = self.root / base_dir
+        image_dir = self.voc_root / 'JPEGImages'
+        annotation_dir = self.voc_root / 'Annotations'
 
         if download:
             self.download()
 
-        splits_dir = os.path.join(self.voc_root, 'ImageSets', "Main")
+        splits_dir = self.voc_root / 'ImageSets' / "Main"
 
-        split_f = os.path.join(splits_dir, image_set + '.txt')
+        split_f = splits_dir / (image_set + '.txt')
 
-        if not os.path.exists(split_f):
+        if not split_f.exists():
             raise ValueError(
                 'Wrong image_set entered! Please use image_set="train" '
                 'or image_set="trainval" or image_set="val" or a valid'
                 'image_set from the VOC ImageSets/Main folder.')
 
-        with open(os.path.join(split_f), "r") as f:
+        with open(split_f, "r") as f:
             file_names = [x.strip() for x in f.readlines()]
 
-        self.images = [os.path.join(image_dir, x + ".jpg")
-                       for x in file_names]
-        self.annotations = [os.path.join(
-            annotation_dir, x + ".xml") for x in file_names]
+        self.images = [image_dir / (x + ".jpg") for x in file_names]
+        self.annotations = [annotation_dir / (x + ".xml") for x in file_names]
         assert (len(self.images) == len(self.annotations))
 
     def __getitem__(self, index):
@@ -156,13 +168,13 @@ class VOCDetection(Dataset):
 
     def download(self):
         import tarfile
-        if os.path.isdir(self.voc_root):
+        if self.voc_root.is_dir():
             print("Dataset found. Skip download or extract")
             return
 
         download_url(self.url, self.root, self.filename, self.md5)
 
-        with tarfile.open(os.path.join(self.root, self.filename), "r") as tar:
+        with tarfile.open(self.root / self.filename, "r") as tar:
             tar.extractall(path=self.root)
 
     def parse_object(self, obj):
