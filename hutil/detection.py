@@ -117,7 +117,7 @@ def nms_cpu(boxes, confidences, iou_threshold=0.5):
     return CD.nms_cpu(boxes, confidences, iou_threshold)
 
 
-def softnms_cpu(boxes, confidences, iou_threshold=0.5, topk=100, conf_threshold=0.01):
+def soft_nms_cpu(boxes, confidences, iou_threshold=0.5, topk=100, conf_threshold=0.01):
     r"""
     Args:
         boxes (tensor of shape `(N, 4)`): [xmin, ymin, xmax, ymax]
