@@ -5,7 +5,7 @@ from collections import OrderedDict
 import numpy as np
 
 
-def summary(model, input_size, batch_size=-1, dtype=None, device=None):
+def summary(model, input_size, batch_size=-1, dtype=None):
 
     def register_hook(module):
 
@@ -41,7 +41,9 @@ def summary(model, input_size, batch_size=-1, dtype=None, device=None):
             hooks.append(module.register_forward_hook(hook))
 
     dtype = dtype or torch.float32
-    if torch.cuda.is_available() and device != 'cpu':
+
+    device = model.parameters().__next__().device.type
+    if device != 'cpu':
         if dtype == torch.float32:
             dtype = torch.cuda.FloatTensor
         elif dtype == torch.long:

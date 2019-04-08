@@ -24,6 +24,17 @@ def cuda(t):
         return t
 
 
+def cpu(t):
+    if torch.is_tensor(t):
+        return t.cpu()
+    elif isinstance(t, Sequence):
+        return t.__class__(cpu(x) for x in t)
+    elif isinstance(t, Mapping):
+        return t.__class__((k, cpu(v)) for k, v in t.items())
+    else:
+        return t
+
+
 class Args(tuple):
     def __new__(cls, *args):
         return super().__new__(cls, tuple(args))
