@@ -5,7 +5,7 @@ I will call it `hutil` below because of `import hutil`.
 # Install
 
 ```bash
-pip3 install -U --no-cache-dir --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple pytorch-hrvvi-ext
+!pip3 install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
 ```
 
 # Hightlights
@@ -20,26 +20,34 @@ pip3 install -U --no-cache-dir --index-url https://test.pypi.org/simple/ --extra
 - Send metric history to WeChat
 
 ## Datasets
-`hutil` contains many datasets wrapped by me providing `torchvison.datasets` style API. Some of them is much easier to train than VOC or COCO and more suitable for *BEGINNERS* in object detection. Now it contains the following datasets:
+`hutil` contains many datasets wrapped by me providing `torchvison.datasets` style API. Some of them is much easier to train than VOC or COCO and more suitable for *BEGINNERS* in object detection.
 
 - CaptchaDetectionOnline: generate captcha image and bounding boxes of chars online
 - SVHNDetection: [SVHN](http://ufldl.stanford.edu/housenumbers/) dataset for object detection
-- CocoDetection: unreleased dataset of torchvison with `hutil`'s transforms
-- VOCDetection: unreleased dataset of torchvison with `hutil`'s transforms
+- VOCDetection: enhanced `torchvision.datasets.VOCDetection` with test set
+- VOCSegmentation: enhanced `torchvision.datasets.VOCVOCSegmentation` with [trainaug](http://home.bharathh.info/pubs/codes/SBD/download.html) set
 
 ## Transforms
-Transoforms in `hutil` transform inputs and targets of datasets simultaneously, which is more flexible than `torchvison.transforms` and makes it easier to do data augmentation for object detection with `torchvision.transforms` style API. The following transoforms is provided now:
+Transoforms in `hutil` transform inputs and targets of datasets simultaneously, which is more flexible than `torchvison.transforms` and makes it easier to do data augmentation for object detection with `torchvision.transforms` style API.
 
 - Resize
 - CenterCrop
+- RandomResizedCrop
 - ToPercentCoords
-- Compose
-- InputTransform
-- TargetTransform
+- RandomHorizontalFlip
 
-## Others
+### Detection
+`hutil.detection` provides many useful functions for object detection includeing:
+
+- BBox: bounding box class supporting three formats (LTRB, XYWH, LTWH)
+- transform_bbox: transform bounding box between three formats
+- iou_1m: calculate IOU between 1 and many
+- non_max_suppression
+
+### Others
 - train_test_split: Split a dataset to a train set and a test set with different (or same) transforms
-- Fullset: Transform your dataset to `hutil`' style dataset
+- init_weights: Initialize weights of your model in the right and easy way
+- Fullset: Transform your dataset to `hutil` style dataset
 
 # Examples
 
@@ -72,7 +80,6 @@ ds_train, ds_val = train_test_split(
     transform=train_transforms,
     test_transform=test_transform,
 )
-ds_test = CIFAR10(data_home, train=False, download=True)
 
 
 # Define network, loss and optimizer
@@ -102,7 +109,6 @@ summary(net, (3,32,32))
 # Define batch size
 
 train_loader = DataLoader(ds_train, batch_size=32, shuffle=True, num_workers=1, pin_memory=True)
-test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
 # Train and save good models by val loss (lower is better) after first 40 epochs

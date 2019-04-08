@@ -15,6 +15,96 @@ from hutil.common import Args
 import hutil._C.detection as CD
 
 
+def coords_to_target(gt_box, anchors):
+    box_txty = (gt_box[:2] - anchors[..., :2]) \
+        / anchors[..., 2:]
+    box_twth = torch.log(gt_box[2:] / anchors[..., 2:])
+    return torch.cat((box_txty, box_twth), dim=-1)
+
+
+class MultiBoxTransform:
+    r"""
+
+    Args:
+        f_anchors: List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
+        max_iou: Whether assign anchors with max ious with ground truth boxes as positive anchors.
+        pos_thresh: IOU threshold of positive anchors.
+        neg_thresh: If provided, only non-positive anchors whose ious with all ground truth boxes are 
+            lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
+        get_label: Function to extract label from annotations.
+        get_bbox: Function to extract bounding box from annotations. The bounding box must be a sequence
+            containing [xmin, ymin, width, height].
+    Inputs:
+        img: Input image.
+        anns: Sequences of annotations containing label and bounding box.
+    Outputs:
+        img: Input image.
+        targets:
+            loc_targets: 
+            cls_targets:
+            negs (optional): Returned when neg_thresh is provided.
+    """
+
+    def __init__(self, f_anchors, max_iou=True, pos_thresh=0.5, neg_thresh=None, get_label=get("category_id"), get_bbox=get("bbox")):
+        if torch.is_tensor(f_anchors):
+            f_anchors = [f_anchors]
+        self.f_anchors = f_anchors
+        self.max_iou = max_iou
+        self.pos_thresh = pos_thresh
+        self.neg_thresh = neg_thresh
+        self.get_label = get_label
+        self.get_bbox = get_bbox
+
+    def __call__(self, img, anns):
+        f_anchors = []
+        loc_targets = []
+        cls_targets = []
+        negs = []
+        for anchors in self.f_anchors:
+            anchors = anchors.view(-1, 4)
+            f_anchors.append(anchors)
+            num_anchors = anchors.size(0)
+            loc_targets.append(torch.zeros(num_anchors, 4))
+            cls_targets.append(torch.zeros((num_anchors,), dtype=torch.long))
+            if self.neg_thresh:
+                negs.append(torch.ones(num_anchors, dtype=torch.uint8))
+            else:
+                negs.append(None)
+
+        for ann in anns:
+            label = self.get_label(ann)
+            bbox = torch.tensor(transform_bbox(
+                self.get_bbox(ann), BBox.LTWH, BBox.XYWH))
+
+            max_ious = []
+            for anchors, loc_t, cls_t, neg in zip(f_anchors, loc_targets, cls_targets, negs):
+                ious = iou_1m(bbox, anchors, format=BBox.XYWH)
+                max_ious.append(ious.max(dim=0))
+
+                iou_mask = ious > self.pos_thresh
+                if iou_mask.sum() != 0:
+                    cls_t[iou_mask] = label
+                    loc_t[iou_mask] = coords_to_target(bbox, anchors[iou_mask])
+
+                if self.neg_thresh:
+                    neg &= ious < self.neg_thresh
+
+            f_i, (max_iou, ind) = max(
+                enumerate(max_ious), key=lambda x: x[1][0])
+            loc_targets[f_i][ind] = coords_to_target(
+                bbox, f_anchors[f_i][ind])
+            cls_targets[f_i][ind] = label
+
+        if len(f_anchors) == 1:
+            loc_targets = loc_targets[0]
+            cls_targets = cls_targets[0]
+            negs = negs[0]
+        targets = [loc_targets, cls_targets]
+        if self.neg_thresh:
+            targets.append(negs)
+        return img, targets
+
+
 def nms_cpu(boxes, confidences, iou_threshold=0.5):
     r"""
     Args:
