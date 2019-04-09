@@ -129,3 +129,44 @@ class CaptchaDetectionOnline(Dataset):
 
     def __len__(self):
         return self.size
+
+
+class CaptchaSegmentationOnline(Dataset):
+
+    def __init__(self, image, size=50000, nchars=4, letters=ALPHABET_DIGITS, transform=None, online=True, **kwargs):
+        self.image = image
+        self.size = size
+        self.nchars = nchars
+        self.letters = letters
+        self.num_classes = len(self.letters)
+        self.transform = transform
+        self.online = online
+        self.kwargs = kwargs
+        self.table = [0] * 256
+        for i, c in enumerate(letters):
+            self.table[ord(c)] = i
+
+        if not self.online:
+            self.data = [self.gen_captcha(self.nchars) for _ in range(size)]
+
+    def gen_captcha(self, nchars):
+        labels = [random.randrange(self.num_classes) for _ in range(nchars)]
+        chars = [self.letters[i] for i in labels]
+        img, bboxes, mask = self.image.generate_image(
+            chars, noise_dots=.3, noise_curve=.3, return_bbox=True, return_mask=True, **self.kwargs)
+        mask.point(self.table)
+        return img, mask
+
+    def __getitem__(self, index):
+        if self.online:
+            img, target = self.gen_captcha(self.nchars)
+        else:
+            img, target = self.data[index]
+
+        if self.transform is not None:
+            img, target = self.transform(img, target)
+
+        return img, target
+
+    def __len__(self):
+        return self.size

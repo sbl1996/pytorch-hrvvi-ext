@@ -20,6 +20,7 @@ __all__ = ['ImageCaptcha']
 
 
 table = [i * 1.97 for i in range(256)]
+m_table = [0] + [255] * 255
 
 
 class _Captcha(object):
@@ -109,6 +110,39 @@ class ImageCaptcha(_Captcha):
             number -= 1
         return image
 
+    def _draw_character(self, draw, c, color, rotate):
+        font = random.choice(self.truefonts)
+        w, h = draw.textsize(c, font=font)
+
+        dx = random.randint(0, 4)
+        dy = random.randint(0, 6)
+        im = Image.new('RGBA', (w + dx, h + dy))
+        Draw(im).text((dx, dy), c, font=font, fill=color)
+
+        # rotate
+        im = im.crop(im.getbbox())
+        im = im.rotate(random.uniform(-rotate, rotate),
+                       Image.BILINEAR, expand=1)
+
+        # warp
+        dx = w * random.uniform(0.1, 0.3)
+        dy = h * random.uniform(0.2, 0.3)
+        x1 = int(random.uniform(-dx, dx))
+        y1 = int(random.uniform(-dy, dy))
+        x2 = int(random.uniform(-dx, dx))
+        y2 = int(random.uniform(-dy, dy))
+        w2 = w + abs(x1) + abs(x2)
+        h2 = h + abs(y1) + abs(y2)
+        data = (
+            x1, y1,
+            -x1, h2 - y2,
+            w2 + x2, h2 + y2,
+            w2 - x2, -y1,
+        )
+        im = im.resize((w2, h2))
+        im = im.transform((w, h), Image.QUAD, data)
+        return im
+
     def create_captcha_image(self, chars, color, background, rotate, return_bbox=False, return_mask=False):
         """Create the CAPTCHA image itself.
 
@@ -120,56 +154,25 @@ class ImageCaptcha(_Captcha):
         """
         image = Image.new('RGB', (self._width, self._height), background)
         draw = Draw(image)
-
-        def _draw_character(c):
-            font = random.choice(self.truefonts)
-            w, h = draw.textsize(c, font=font)
-
-            dx = random.randint(0, 4)
-            dy = random.randint(0, 6)
-            im = Image.new('RGBA', (w + dx, h + dy))
-            Draw(im).text((dx, dy), c, font=font, fill=color)
-
-            # rotate
-            im = im.crop(im.getbbox())
-            im = im.rotate(random.uniform(-rotate, rotate),
-                           Image.BILINEAR, expand=1)
-
-            # warp
-            dx = w * random.uniform(0.1, 0.3)
-            dy = h * random.uniform(0.2, 0.3)
-            x1 = int(random.uniform(-dx, dx))
-            y1 = int(random.uniform(-dy, dy))
-            x2 = int(random.uniform(-dx, dx))
-            y2 = int(random.uniform(-dy, dy))
-            w2 = w + abs(x1) + abs(x2)
-            h2 = h + abs(y1) + abs(y2)
-            data = (
-                x1, y1,
-                -x1, h2 - y2,
-                w2 + x2, h2 + y2,
-                w2 - x2, -y1,
-            )
-            im = im.resize((w2, h2))
-            im = im.transform((w, h), Image.QUAD, data)
-            return im
+        if return_mask:
+            mask = Image.new('L', (self._width, self._height), 0)
 
         images = []
         if return_bbox:
             bboxes = []
         for c in chars:
             if random.random() > 0.5:
-                images.append(_draw_character(" "))
+                images.append(self._draw_character(draw, " ", color, rotate))
                 if return_bbox:
                     bboxes.append(None)
-            img = _draw_character(c)
+            img = self._draw_character(draw, c, color, rotate)
             images.append(img)
             if return_bbox:
                 bbox = list(img.getbbox())
                 bbox[2] -= bbox[0]
                 bbox[3] -= bbox[1]
                 bboxes.append(bbox)
-        images.append(_draw_character(" "))
+        images.append(self._draw_character(draw, " ", color, rotate))
         if return_bbox:
             bboxes.append(None)
 
@@ -177,6 +180,8 @@ class ImageCaptcha(_Captcha):
 
         width = max(text_width, self._width)
         image = image.resize((width, self._height))
+        if return_mask:
+            mask = mask.resize((width, self._height))
 
         average = int(text_width / len(chars))
         rand = int(0.25 * average)
@@ -186,37 +191,50 @@ class ImageCaptcha(_Captcha):
         for i, im in enumerate(images):
             w, h = im.size
             x_offset = min(x_offset, width - 1 - w)
-            mask = im.convert('L').point(table)
+            im_l = im.convert('L')
+            cmask = im_l.point(table)
             y_offset = (self._height - h) // 2
-            image.paste(im, (x_offset, y_offset), mask)
+            image.paste(im, (x_offset, y_offset), cmask)
             if return_bbox and bboxes[i]:
                 bbox = bboxes[i]
                 bbox[0] += x_offset
                 bbox[1] += y_offset
                 real_bboxes.append(bbox)
+                if return_mask:
+                    c = chars[len(real_bboxes) - 1]
+                    mask.paste(ord(c), (x_offset, y_offset),
+                               im_l.point(m_table))
+
             x_offset += w + random.randint(-rand, rand)
 
         if width > self._width:
             image = image.resize((self._width, self._height))
+            if return_mask:
+                mask = mask.resize((self._width, self._height))
             if return_bbox:
                 sw = self._width / width
                 for bbox in real_bboxes:
                     bbox[0] *= sw
                     bbox[2] *= sw
 
-        if return_bbox:
+        if return_bbox and return_mask:
+            return image, real_bboxes, mask
+        elif return_bbox:
             return image, real_bboxes
         else:
             return image
 
-    def generate_image(self, chars, noise_dots=1.0, noise_curve=1.0, rotate=30, return_bbox=False):
+    def generate_image(self, chars, noise_dots=1.0, noise_curve=1.0, rotate=30, return_bbox=False, return_mask=False):
         """Generate the image of the given characters.
 
         :param chars: text to be generated.
         """
         background = random_color(238, 255)
         color = random_color(10, 200, random.randint(220, 255))
-        if return_bbox:
+        if return_bbox and return_mask:
+            im, bboxes, mask = self.create_captcha_image(
+                chars, color, background, rotate=rotate, return_bbox=True, return_mask=True)
+        elif return_bbox:
             im, bboxes = self.create_captcha_image(
                 chars, color, background, rotate=rotate, return_bbox=True)
         else:
@@ -227,7 +245,10 @@ class ImageCaptcha(_Captcha):
         if random.random() < noise_dots:
             self.create_noise_curve(im, color)
         im = im.filter(ImageFilter.SMOOTH)
-        if return_bbox:
+
+        if return_bbox and return_mask:
+            return im, bboxes, mask
+        elif return_bbox:
             return im, bboxes
         else:
             return im
