@@ -5,7 +5,7 @@ from PIL import Image
 import torchvision.transforms.functional as TF
 
 from hutil.detection import BBox
-from hutil.transforms import JointTransform
+from hutil.transforms import JointTransform, Compose
 from hutil.transforms.detection.functional import resize, center_crop, hflip, hflip2, vflip, vflip2, to_absolute_coords, to_percent_coords, resized_crop
 
 

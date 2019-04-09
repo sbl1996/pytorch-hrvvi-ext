@@ -30,3 +30,21 @@ def conv_to_atrous(m, rate):
         m.stride = (1, 1)
         m.dilation = (rate, rate)
     return m
+
+
+def freeze(model):
+    for p in model.parameters():
+        p.requires_grad = False
+    return model
+
+
+def unfreeze(model):
+    for p in model.parameters():
+        p.requires_grad = True
+    return model
+
+
+def clip(model, tol=1e-6):
+    for p in model.parameters():
+        p[p.abs() < tol] = 0
+    return model
