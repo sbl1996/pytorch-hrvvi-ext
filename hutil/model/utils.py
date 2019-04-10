@@ -1,13 +1,16 @@
+import torch.nn as nn
+
 import torch
 from toolz import curry
+from hutil.ext.summary import summary
 
 
 def get_last_conv(m):
     r"""
     Get the last conv layer in an Module.
     """
-    convs = filter(lambda kv: 'conv' in kv[0], m.named_modules())
-    return max(convs, key=lambda kv: kv[0])[1]
+    convs = filter(lambda k: isinstance(k, nn.Conv2d), m.modules())
+    return list(convs)[-1]
 
 
 def get_out_channels(m):

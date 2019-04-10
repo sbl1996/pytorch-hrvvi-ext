@@ -14,6 +14,12 @@ from torch.utils.data.dataloader import default_collate
 from hutil.common import Args
 import hutil._C.detection as CD
 
+__all__ = [
+    "coords_to_target", "MultiBoxTransform", "BBox",
+    "nms_cpu", "soft_nms_cpu", "non_max_suppression", 
+    "transform_bbox", "transform_bboxes", "box_collate_fn",
+    "iou_1m", "iou_11", "iou_b11", "draw_bboxes"]
+
 
 def coords_to_target(gt_box, anchors):
     box_txty = (gt_box[:2] - anchors[..., :2]) \
@@ -207,23 +213,6 @@ def non_max_suppression(boxes, confidences, iou_threshold=0.5):
         iou = inter / (areas[i] + areas[i+1:] - inter)
         suppressed[i+1:][iou > iou_threshold] = 1
     return orders[torch.nonzero(suppressed == 0).squeeze(1)]
-    # indices = []
-    # while True:
-    #     ind = confidences.argmax()
-    #     indices.append(ind.item())
-    #     boxes_iou = iou_1m(boxes[ind], boxes)
-    #     mask = boxes_iou > iou_threshold
-    #     boxes.masked_fill_(mask.unsqueeze(-1), 0)
-    #     confidences.masked_fill_(mask, 0)
-
-    #     if max_boxes != 0 and len(indices) >= max_boxes:
-    #         return indices
-    #     m = confidences.mean().item()
-    #     if m == 0:
-    #         return indices
-    #     elif not np.isfinite(m):
-    #         warnings.warn("infinite confidences encountered.")
-    #         return []
 
 
 class BBox:
