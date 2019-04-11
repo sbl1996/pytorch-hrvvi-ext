@@ -1,7 +1,6 @@
-import warnings
+import random
 import sys
 from typing import List, Any
-from enum import Enum
 
 from toolz import curry
 from toolz.curried import get, countby, identity, valmap, groupby
@@ -9,33 +8,59 @@ from toolz.curried import get, countby, identity, valmap, groupby
 import numpy as np
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data.dataloader import default_collate
 
+from hutil import one_hot
 from hutil.common import Args
+from hutil.nn.loss import focal_loss2
 import hutil._C.detection as CD
 
 __all__ = [
-    "coords_to_target", "MultiBoxTransform", "BBox",
-    "nms_cpu", "soft_nms_cpu", "non_max_suppression", 
+    "coords_to_target", "MultiScaleAnchorMatching", "BBox",
+    "nms_cpu", "soft_nms_cpu", "non_max_suppression",
     "transform_bbox", "transform_bboxes", "box_collate_fn",
-    "iou_1m", "iou_11", "iou_b11", "draw_bboxes"]
+    "iou_1m", "iou_11", "iou_b11", "draw_bboxes",
+    "MultiBoxLoss", "get_anchors", "MultiBoxInference"]
 
+def inverse_sigmoid(x, eps=1e-3):
+    x = torch.clamp(x, eps, 1-eps)
+    return (x / (1 - x)).log_()
+    
 
-def coords_to_target(gt_box, anchors):
-    box_txty = (gt_box[:2] - anchors[..., :2]) \
-        / anchors[..., 2:]
-    box_twth = torch.log(gt_box[2:] / anchors[..., 2:])
+def yolo_coords_to_target(gt_box, anchors, location):
+    location = gt_box.new_tensor(location)
+    box_txty = inverse_sigmoid(gt_box[:2] * location % 1)
+    box_twth = (gt_box[2:] / f_anchors[f_i][i, 2:]).log_()
     return torch.cat((box_txty, box_twth), dim=-1)
 
 
-class MultiBoxTransform:
+def coords_to_target(gt_box, anchors, *args):
+    box_txty = (gt_box[:2] - anchors[..., :2]) \
+        / anchors[..., 2:]
+    box_twth = (gt_box[2:] / anchors[..., 2:]).log_()
+    return torch.cat((box_txty, box_twth), dim=-1)
+
+
+def get_anchors(lx, ly, sizes):
+    anchors = torch.zeros(lx, ly, len(sizes), 4)
+    anchors[:, :, :, 0] = (torch.arange(
+        lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(sizes)) + 0.5) / lx
+    anchors[:, :, :, 1] = (torch.arange(
+        ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(sizes)) + 0.5) / ly
+    anchors[:, :, :, 2:] = sizes
+    return anchors
+
+
+class MultiScaleAnchorMatching:
     r"""
 
     Args:
         f_anchors: List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
         max_iou: Whether assign anchors with max ious with ground truth boxes as positive anchors.
         pos_thresh: IOU threshold of positive anchors.
-        neg_thresh: If provided, only non-positive anchors whose ious with all ground truth boxes are 
+        neg_thresh: If provided, only non-positive anchors whose ious with all ground truth boxes are
             lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
         get_label: Function to extract label from annotations.
         get_bbox: Function to extract bounding box from annotations. The bounding box must be a sequence
@@ -46,32 +71,42 @@ class MultiBoxTransform:
     Outputs:
         img: Input image.
         targets:
-            loc_targets: 
+            loc_targets:
             cls_targets:
             negs (optional): Returned when neg_thresh is provided.
     """
 
-    def __init__(self, f_anchors, max_iou=True, pos_thresh=0.5, neg_thresh=None, get_label=get("category_id"), get_bbox=get("bbox")):
-        if torch.is_tensor(f_anchors):
-            f_anchors = [f_anchors]
+    def __init__(self, f_anchors, max_iou=True, 
+        pos_thresh=0.5, neg_thresh=None, 
+        get_label=lambda x: x['category_id'] + 1, 
+        get_bbox=get("bbox"), 
+        coords_to_target=coords_to_target, 
+        debug=False):
+        # if torch.is_tensor(f_anchors):
+        #     f_anchors = [f_anchors]
         self.f_anchors = f_anchors
         self.max_iou = max_iou
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
         self.get_bbox = get_bbox
+        self.coords_to_target = coords_to_target
+        self.debug = debug
 
     def __call__(self, img, anns):
+        locations = []
         f_anchors = []
         loc_targets = []
         cls_targets = []
         negs = []
         for anchors in self.f_anchors:
+            lx, ly = anchors.size()[:2]
+            locations.append((lx, ly))
             anchors = anchors.view(-1, 4)
             f_anchors.append(anchors)
             num_anchors = anchors.size(0)
             loc_targets.append(torch.zeros(num_anchors, 4))
-            cls_targets.append(torch.zeros((num_anchors,), dtype=torch.long))
+            cls_targets.append(torch.zeros(num_anchors, dtype=torch.long))
             if self.neg_thresh:
                 negs.append(torch.ones(num_anchors, dtype=torch.uint8))
             else:
@@ -83,32 +118,168 @@ class MultiBoxTransform:
                 self.get_bbox(ann), BBox.LTWH, BBox.XYWH))
 
             max_ious = []
-            for anchors, loc_t, cls_t, neg in zip(f_anchors, loc_targets, cls_targets, negs):
+            for anchors, loc_t, cls_t, neg, location in zip(f_anchors, loc_targets, cls_targets, negs, locations):
                 ious = iou_1m(bbox, anchors, format=BBox.XYWH)
                 max_ious.append(ious.max(dim=0))
 
-                iou_mask = ious > self.pos_thresh
-                if iou_mask.sum() != 0:
-                    cls_t[iou_mask] = label
-                    loc_t[iou_mask] = coords_to_target(bbox, anchors[iou_mask])
+                if self.pos_thresh:
+                    pos = ious > self.pos_thresh
+                    if pos.sum() != 0:
+                        loc_t[pos] = self.coords_to_target(bbox, anchors[pos], location)
+                        cls_t[pos] = label
 
                 if self.neg_thresh:
                     neg &= ious < self.neg_thresh
 
+
             f_i, (max_iou, ind) = max(
                 enumerate(max_ious), key=lambda x: x[1][0])
-            loc_targets[f_i][ind] = coords_to_target(
-                bbox, f_anchors[f_i][ind])
+            if self.debug:
+                print("Feature map %d: %f with %s" % (f_i, max_iou, bbox.tolist()))
+            loc_targets[f_i][ind] = self.coords_to_target(
+                bbox, f_anchors[f_i][ind], locations[f_i])
             cls_targets[f_i][ind] = label
 
-        if len(f_anchors) == 1:
-            loc_targets = loc_targets[0]
-            cls_targets = cls_targets[0]
-            negs = negs[0]
+        if self.neg_thresh:
+            ignores = [ ~neg for neg in negs ]
+        # if len(f_anchors) == 1:
+        #     loc_targets = loc_targets[0]
+        #     cls_targets = cls_targets[0]
+        #     ignores = ignores[0]
+        
         targets = [loc_targets, cls_targets]
         if self.neg_thresh:
-            targets.append(negs)
+            targets.append(ignores)
         return img, targets
+
+
+class MultiBoxLoss(nn.Module):
+
+    def __init__(self, neg_pos_ratio=None, p=0.1, criterion='softmax'):
+        super().__init__()
+        self.neg_pos_ratio = neg_pos_ratio
+        self.p = p
+        self.criterion = criterion
+
+    def forward(self, loc_preds, cls_preds, loc_targets, cls_targets, ignores=None, *args):
+        cls_loss = 0
+        loc_loss = 0
+        if ignores is None:
+            ignores = [None] * len(loc_preds)
+        for loc_p, cls_p, loc_t, cls_t, ignore in zip(loc_preds, cls_preds, loc_targets, cls_targets, ignores):
+            pos = cls_t != 0
+            num_pos = pos.sum().item()
+            if num_pos == 0:
+                continue
+
+            loc_loss += F.smooth_l1_loss(
+                loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+
+            # Hard Negative Mining
+            if self.neg_pos_ratio:
+                cls_loss_pos = F.cross_entropy(
+                    cls_p[pos], cls_t[pos], reduction='sum')
+
+                mask = ~pos
+                if ignore is not None:
+                    mask = mask & (~ignore)
+                cls_p_neg = cls_p[mask]
+                cls_loss_neg = -F.log_softmax(cls_p_neg, dim=1)[..., 0]
+                num_neg = min(self.neg_pos_ratio * num_pos, len(cls_loss_neg))
+                cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
+                cls_loss += (cls_loss_pos + cls_loss_neg) / num_pos
+            elif ignore is not None:
+                cls_loss_pos = F.cross_entropy(
+                    cls_p[pos], cls_t[pos], reduction='sum')
+
+                mask = ~pos & (~ignore)
+                cls_loss_neg = F.cross_entropy(
+                    cls_p[mask], cls_t[mask], reduction='sum')
+                cls_loss += (cls_loss_pos + cls_loss_neg) / num_pos
+            else:
+                if self.criterion == 'focal':
+                    cls_t = one_hot(cls_t, C=cls_p.size(-1))
+                    cls_loss += focal_loss2(cls_p, cls_t,
+                                        reduction='sum') / num_pos    
+                else:
+                    cls_p = cls_p.transpose(1, -1)
+                    cls_loss += F.cross_entropy(cls_p, cls_t,
+                                            reduction='sum') / num_pos
+        loss = cls_loss + loc_loss
+        if random.random() < self.p:
+            print("loc: %.4f  cls: %.4f" %
+                  (loc_loss.item(), cls_loss.item()))
+        return loss
+
+
+class MultiBoxInference:
+
+    def __init__(self, width, height, f_anchors, conf_threshold=0.01, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
+        self.width = width
+        self.height = height
+        self.f_anchors = f_anchors
+        self.conf_threshold = conf_threshold
+        self.topk = topk
+        self.iou_threshold = iou_threshold
+        assert conf_strategy in [
+            'softmax', 'sigmoid'], "conf_strategy must be softmax or sigmoid"
+        self.conf_strategy = conf_strategy
+
+    def __call__(self, loc_preds, cls_preds, *args):
+        detections = []
+        batch_size = loc_preds[0].size(0)
+        for i in range(batch_size):
+            boxes = []
+            confs = []
+            labels = []
+            for loc_p, cls_p, anchors in zip(loc_preds, cls_preds, self.f_anchors):
+                loc_p = loc_p[i]
+                cls_p = cls_p[i]
+                anchors = anchors.view(-1, 4)
+
+                if self.conf_strategy == 'softmax':
+                    conf = torch.softmax(cls_p, dim=1)
+                else:
+                    conf = torch.sigmoid_(cls_p)
+                conf = conf[..., 1:]
+                conf, label = torch.max(conf, dim=1)
+
+                mask = conf > self.conf_threshold
+                conf = conf[mask]
+                label = label[mask]
+                box = loc_p[mask]
+                anchors = anchors[mask]
+
+                box[:, :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
+                box[:, 2:].exp_().mul_(anchors[:, 2:])
+                box[:, [0, 2]] *= self.width
+                box[:, [1, 3]] *= self.height
+
+                boxes.append(box)
+                confs.append(conf)
+                labels.append(label)
+
+            boxes = torch.cat(boxes, dim=0)
+            confs = torch.cat(confs, dim=0)
+            labels = torch.cat(labels, dim=0)
+
+            boxes = transform_bboxes(
+                boxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
+            confs = confs.cpu()
+            indices = soft_nms_cpu(
+                boxes, confs, self.iou_threshold, self.topk)
+            for ind in indices:
+                detections.append(
+                    BBox(
+                        image_name=i,
+                        class_id=labels[ind].item(),
+                        box=boxes[ind].tolist(),
+                        confidence=confs[ind].item(),
+                        box_format=BBox.LTRB,
+                    )
+                )
+
+        return detections
 
 
 def nms_cpu(boxes, confidences, iou_threshold=0.5):
