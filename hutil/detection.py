@@ -139,12 +139,12 @@ class MultiLevelAnchorMatching:
             if self.debug:
                 print("Feature map %d: %f with %s" % (f_i, max_iou, bbox.tolist()))
             loc_targets[f_i][ind] = self.coords_to_target(
-                bbox, f_anchors[f_i][ind], locations[f_i])
+                bbox, flat_anchors[f_i][ind], locations[f_i])
             cls_targets[f_i][ind] = label
 
         if self.neg_thresh:
             ignores = [ ~neg for neg in negs ]
-        # if len(f_anchors) == 1:
+        # if len(flat_anchors) == 1:
         #     loc_targets = loc_targets[0]
         #     cls_targets = cls_targets[0]
         #     ignores = ignores[0]
