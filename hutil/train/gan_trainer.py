@@ -23,27 +23,29 @@ def create_gan_trainer(
 
     def _update(engine, batch):
         x, y = prepare_batch(batch, device=device)
-        real, noise = x
+        real, noise_D, noise_G = x
         y_real, y_fake = y
 
         D.train()
-        G.train()
-
         D.zero_grad()
         y_pred_real = D(real)
 
-        fake = G(noise)
+        fake = G(noise_D)
         y_pred_fake = D(fake.detach())
         lossD = criterionD(y_pred_real, y_pred_fake, y_real, y_fake)
-
         lossD.backward()
         optimizerD.step()
-
-        G.zero_grad()
-        y_pred_fake = D(fake)
-        lossG = criterionG(y_pred_fake, y_real)
-        lossG.backward()
-        optimizerG.step()
+        for p in D.parameters():
+            p.data.clamp_(-0.01, 0.01)
+        if engine.state.iteration % 5 == 0:
+            G.train()
+            G.zero_grad()
+            y_pred_fake = D(G(noise_G))
+            lossG = criterionG(y_pred_fake, y_real)
+            lossG.backward()
+            optimizerG.step()
+        else:
+            lossG = torch.tensor(0.)
 
         output = {
             "lossD": lossD.item(),

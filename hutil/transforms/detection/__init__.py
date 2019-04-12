@@ -1,12 +1,109 @@
 import random
 import math
 
+from toolz.curried import get
+import numpy as np
+
 from PIL import Image
 import torchvision.transforms.functional as TF
 
 from hutil.detection import BBox
 from hutil.transforms import JointTransform, Compose
-from hutil.transforms.detection.functional import resize, center_crop, hflip, hflip2, vflip, vflip2, to_absolute_coords, to_percent_coords, resized_crop
+from hutil.transforms.detection.functional import resize, center_crop, hflip, hflip2, vflip, vflip2, to_absolute_coords, to_percent_coords, resized_crop, crop
+
+
+def iou_1m(box, boxes):
+    r"""
+    Calculates one-to-many ious by corners([xmin, ymin, xmax, ymax]).
+
+    Args:
+        box: (4,)
+        boxes: (*, 4)
+
+    Returns:
+        ious: (*,)
+    """
+    xi1 = np.maximum(boxes[..., 0], box[0])
+    yi1 = np.maximum(boxes[..., 1], box[1])
+    xi2 = np.minimum(boxes[..., 2], box[2])
+    yi2 = np.minimum(boxes[..., 3], box[3])
+    xdiff = xi2 - xi1
+    ydiff = yi2 - yi1
+    inter_area = xdiff * ydiff
+    box_area = (box[2] - box[0]) * (box[3] - box[1])
+    boxes_area = (boxes[..., 2] - boxes[..., 0]) * \
+        (boxes[..., 3] - boxes[..., 1])
+    union_area = boxes_area + box_area - inter_area
+
+    iou = inter_area / union_area
+    iou[xdiff < 0] = 0
+    iou[ydiff < 0] = 0
+    return iou
+
+
+class RandomExpand(JointTransform):
+
+    def __init__(self, ratios=(1, 4)):
+        self.ratios = ratios
+
+    def __call__(self, img, anns):
+        width, height = img.size
+        ratio = random.uniform(*self.ratios)
+        left = random.uniform(0, width*ratio - width)
+        top = random.uniform(0, height*ratio - height)
+        expand_image = Image.new(
+            img.mode, (int(width*ratio), int(height*ratio)))
+        expand_image.paste(img, (int(left), int(top)))
+
+        new_anns = []
+        for ann in anns:
+            bbox = list(ann['bbox'])
+            bbox[0] += left
+            bbox[1] += top
+            new_anns.append({**ann, "bbox": bbox})
+        return expand_image, new_anns
+
+
+class RandomSampleCrop(JointTransform):
+
+    def __init__(self, min_ious=[0.1, 0.3, 0.5, 0.9], aspect_ratio_constraint=(0.5, 2)):
+        self.min_ious = min_ious
+        self.get_bbox = get("bbox")
+        min_ars, max_ars = aspect_ratio_constraint
+        self.min_ars = min_ars
+        self.max_ars = max_ars
+
+    def __call__(self, img, anns):
+        width, height = img.size
+        min_iou = random.choice(self.min_ious)
+        boxes = np.stack([self.get_bbox(ann) for ann in anns])
+        boxes[:, 2:] += boxes[:, :2]
+        for _ in range(50):
+            w = random.uniform(0.3 * width, width)
+            h = random.uniform(0.3 * height, height)
+
+            if h / w < self.min_ars or h / w > self.max_ars:
+                continue
+
+            l = random.uniform(0, width - w)
+            t = random.uniform(0, height - h)
+            r = l + w
+            b = t + h
+
+            patch = np.array([l, t, r, b])
+            ious = iou_1m(patch, boxes)
+            if ious.min() < min_iou:
+                continue
+
+            centers = (boxes[:, :2] + boxes[:, 2:]) / 2.0
+            mask = (l < centers[:, 0]) & (centers[:, 0] < r) & (
+                t < centers[:, 1]) & (centers[:, 1] < b)
+
+            if not mask.any():
+                continue
+            indices = np.nonzero(mask)[0].tolist()
+            return crop(img, get(indices, anns), t, l, h, w)
+        return img, anns
 
 
 class RandomResizedCrop(JointTransform):
@@ -125,7 +222,7 @@ class Resize(JointTransform):
         self.size = size
 
     def __repr__(self):
-        return self.__class__.__name__ + "(size=%s)".format(self.size)
+        return self.__class__.__name__ + "(size=%s)" % (self.size,)
 
 
 class CenterCrop(JointTransform):

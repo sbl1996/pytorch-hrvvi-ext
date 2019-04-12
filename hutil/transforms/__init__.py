@@ -70,7 +70,7 @@ class Compose(Transform):
         return format_string
 
 
-class UseOrigin(Transform):
+class UseOriginal(Transform):
     """Use the original image and annotations.
     """
 
@@ -83,6 +83,19 @@ class UseOrigin(Transform):
     def __repr__(self):
         format_string = self.__class__.__name__ + '()'
         return format_string
+
+
+class RandomApply(Transform):
+
+    def __init__(self, transforms, p=0.5):
+        self.transforms = transforms
+        self.p = p
+
+    def __call__(self, img, target):
+        if random.random() < self.p:
+            for t in self.transforms:
+                img, target = t(img, target)
+        return img, target
 
 
 class RandomChoice(Transform):

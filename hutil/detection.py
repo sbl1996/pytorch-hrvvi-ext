@@ -53,7 +53,7 @@ def get_anchors(lx, ly, sizes):
     return anchors
 
 
-class MultiScaleAnchorMatching:
+class MultiLevelAnchorMatching:
     r"""
 
     Args:
@@ -76,15 +76,13 @@ class MultiScaleAnchorMatching:
             negs (optional): Returned when neg_thresh is provided.
     """
 
-    def __init__(self, f_anchors, max_iou=True, 
+    def __init__(self, level_anchors, max_iou=True, 
         pos_thresh=0.5, neg_thresh=None, 
         get_label=lambda x: x['category_id'] + 1, 
         get_bbox=get("bbox"), 
         coords_to_target=coords_to_target, 
         debug=False):
-        # if torch.is_tensor(f_anchors):
-        #     f_anchors = [f_anchors]
-        self.f_anchors = f_anchors
+        self.level_anchors = level_anchors
         self.max_iou = max_iou
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
@@ -94,16 +92,20 @@ class MultiScaleAnchorMatching:
         self.debug = debug
 
     def __call__(self, img, anns):
+        if isinstance(self.f_anchors, dict):
+            level_anchors = self.level_anchors[img.size]
+        else:
+            level_anchors = self.level_anchors
         locations = []
-        f_anchors = []
+        flat_anchors = []
         loc_targets = []
         cls_targets = []
         negs = []
-        for anchors in self.f_anchors:
+        for anchors in level_anchors:
             lx, ly = anchors.size()[:2]
             locations.append((lx, ly))
             anchors = anchors.view(-1, 4)
-            f_anchors.append(anchors)
+            flat_anchors.append(anchors)
             num_anchors = anchors.size(0)
             loc_targets.append(torch.zeros(num_anchors, 4))
             cls_targets.append(torch.zeros(num_anchors, dtype=torch.long))
@@ -118,7 +120,7 @@ class MultiScaleAnchorMatching:
                 self.get_bbox(ann), BBox.LTWH, BBox.XYWH))
 
             max_ious = []
-            for anchors, loc_t, cls_t, neg, location in zip(f_anchors, loc_targets, cls_targets, negs, locations):
+            for anchors, loc_t, cls_t, neg, location in zip(flat_anchors, loc_targets, cls_targets, negs, locations):
                 ious = iou_1m(bbox, anchors, format=BBox.XYWH)
                 max_ious.append(ious.max(dim=0))
 
@@ -212,7 +214,7 @@ class MultiBoxLoss(nn.Module):
         return loss
 
 
-class MultiBoxInference:
+class MultiLevelAnchorInference:
 
     def __init__(self, width, height, f_anchors, conf_threshold=0.01, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
         self.width = width

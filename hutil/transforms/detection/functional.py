@@ -60,12 +60,18 @@ def crop(img, anns, i, j, h, w):
         w: Width of the cropped image.
     """
     img = img.crop((j, i, j + w, i + h))
+    w, h = img.size
     new_anns = []
     for ann in anns:
         bbox = list(ann['bbox'])
         bbox[0] -= j
         bbox[1] -= i
-        new_anns.append({**ann, "bbox": bbox})
+        if (bbox[0] + bbox[2] > 0) and (bbox[1] + bbox[3]) > 0:
+            bbox[0] = max(0, bbox[0])
+            bbox[1] = max(0, bbox[1])
+            bbox[2] = min(w - bbox[0], bbox[2])
+            bbox[3] = min(h - bbox[1], bbox[3])
+            new_anns.append({**ann, "bbox": bbox})
     return img, new_anns
 
 

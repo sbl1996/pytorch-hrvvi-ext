@@ -174,6 +174,8 @@ at::Tensor soft_nms_cpu(const at::Tensor &dets,
     return result;
 }
 
+
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
     m.def("nms_cpu", &nms_cpu, "nms_cpu");
