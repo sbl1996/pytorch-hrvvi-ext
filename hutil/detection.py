@@ -18,11 +18,11 @@ from hutil.nn.loss import focal_loss2
 import hutil._C.detection as CD
 
 __all__ = [
-    "coords_to_target", "MultiScaleAnchorMatching", "BBox",
+    "coords_to_target", "MultiLevelAnchorMatching", "BBox",
     "nms_cpu", "soft_nms_cpu", "non_max_suppression",
     "transform_bbox", "transform_bboxes", "box_collate_fn",
     "iou_1m", "iou_11", "iou_b11", "draw_bboxes",
-    "MultiBoxLoss", "get_anchors", "MultiBoxInference"]
+    "MultiBoxLoss", "get_anchors", "MultiLevelAnchorInference"]
 
 def inverse_sigmoid(x, eps=1e-3):
     x = torch.clamp(x, eps, 1-eps)
