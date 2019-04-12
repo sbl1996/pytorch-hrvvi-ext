@@ -92,7 +92,7 @@ class MultiLevelAnchorMatching:
         self.debug = debug
 
     def __call__(self, img, anns):
-        if isinstance(self.f_anchors, dict):
+        if isinstance(self.level_anchors, dict):
             level_anchors = self.level_anchors[img.size]
         else:
             level_anchors = self.level_anchors
