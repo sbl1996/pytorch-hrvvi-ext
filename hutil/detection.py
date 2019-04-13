@@ -32,7 +32,7 @@ def inverse_sigmoid(x, eps=1e-3):
 def yolo_coords_to_target(gt_box, anchors, location):
     location = gt_box.new_tensor(location)
     box_txty = inverse_sigmoid(gt_box[:2] * location % 1)
-    box_twth = (gt_box[2:] / f_anchors[f_i][i, 2:]).log_()
+    box_twth = (gt_box[2:] / anchors[..., 2:]).log_()
     return torch.cat((box_txty, box_twth), dim=-1)
 
 
@@ -57,7 +57,7 @@ class MultiLevelAnchorMatching:
     r"""
 
     Args:
-        f_anchors: List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
+        multi_level_anchors: List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
         max_iou: Whether assign anchors with max ious with ground truth boxes as positive anchors.
         pos_thresh: IOU threshold of positive anchors.
         neg_thresh: If provided, only non-positive anchors whose ious with all ground truth boxes are
@@ -76,13 +76,13 @@ class MultiLevelAnchorMatching:
             negs (optional): Returned when neg_thresh is provided.
     """
 
-    def __init__(self, level_anchors, max_iou=True, 
+    def __init__(self, multi_level_anchors, max_iou=True, 
         pos_thresh=0.5, neg_thresh=None, 
         get_label=lambda x: x['category_id'] + 1, 
         get_bbox=get("bbox"), 
         coords_to_target=coords_to_target, 
         debug=False):
-        self.level_anchors = level_anchors
+        self.multi_level_anchors = multi_level_anchors
         self.max_iou = max_iou
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
@@ -92,16 +92,12 @@ class MultiLevelAnchorMatching:
         self.debug = debug
 
     def __call__(self, img, anns):
-        if isinstance(self.level_anchors, dict):
-            level_anchors = self.level_anchors[img.size]
-        else:
-            level_anchors = self.level_anchors
         locations = []
         flat_anchors = []
         loc_targets = []
         cls_targets = []
         negs = []
-        for anchors in level_anchors:
+        for anchors in self.multi_level_anchors:
             lx, ly = anchors.size()[:2]
             locations.append((lx, ly))
             anchors = anchors.view(-1, 4)
@@ -216,10 +212,9 @@ class MultiBoxLoss(nn.Module):
 
 class MultiLevelAnchorInference:
 
-    def __init__(self, width, height, f_anchors, conf_threshold=0.01, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
-        self.width = width
-        self.height = height
-        self.f_anchors = f_anchors
+    def __init__(self, size, multi_level_anchors, conf_threshold=0.01, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
+        self.width, self.height = size
+        self.multi_level_anchors = multi_level_anchors
         self.conf_threshold = conf_threshold
         self.topk = topk
         self.iou_threshold = iou_threshold
@@ -234,7 +229,7 @@ class MultiLevelAnchorInference:
             boxes = []
             confs = []
             labels = []
-            for loc_p, cls_p, anchors in zip(loc_preds, cls_preds, self.f_anchors):
+            for loc_p, cls_p, anchors in zip(loc_preds, cls_preds, self.multi_level_anchors):
                 loc_p = loc_p[i]
                 cls_p = cls_p[i]
                 anchors = anchors.view(-1, 4)
