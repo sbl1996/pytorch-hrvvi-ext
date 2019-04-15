@@ -174,8 +174,8 @@ class MeanAveragePrecision(Average):
         predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
     """
 
-    def __init__(self, predict, iou_threshold=0.5):
-        self.predict = predict
+    def __init__(self, inference, iou_threshold=0.5):
+        self.inference = inference
         self.iou_threshold = iou_threshold
         super().__init__(self.output_transform)
 
@@ -183,7 +183,7 @@ class MeanAveragePrecision(Average):
         y, y_pred, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
         ground_truths = y[0]
-        detections = self.predict(*y_pred)
+        detections = self.inference(*y_pred)
 
         image_dets = groupby(lambda b: b.image_name, detections)
         for i in range(batch_size):

@@ -1,4 +1,5 @@
 import random
+import torchvision.transforms.functional as TF
 
 
 class Transform:
@@ -126,3 +127,12 @@ class RandomChoice(Transform):
             format_string += '    {0}'.format(t)
         format_string += '\n)'
         return format_string
+
+
+class ToTensor(JointTransform):
+
+    def __init__(self):
+        super().__init__(lambda x, y: (TF.to_tensor(x), y))
+
+    def __repr__(self):
+        return self.__class__.__name__ + "()"

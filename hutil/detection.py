@@ -22,7 +22,25 @@ __all__ = [
     "nms_cpu", "soft_nms_cpu", "non_max_suppression",
     "transform_bbox", "transform_bboxes", "box_collate_fn",
     "iou_1m", "iou_11", "iou_b11", "draw_bboxes",
-    "MultiBoxLoss", "get_anchors", "MultiLevelAnchorInference"]
+    "MultiBoxLoss", "get_anchors", "MultiLevelAnchorInference",
+    "get_locations"]
+
+def get_locations(size, strides):
+    num_levels = int(np.log2(strides[-1]))
+    lx, ly = size
+    locations = [(lx, ly)]
+    for _ in range(num_levels):
+        if lx == 3:
+            lx = 1
+        else:
+            lx = (lx - 1) // 2 + 1
+        if ly == 3:
+            ly = 1
+        else:
+            ly = (ly - 1) // 2 + 1
+        locations.append((lx, ly))
+    return locations[-len(strides):]
+
 
 def inverse_sigmoid(x, eps=1e-3):
     x = torch.clamp(x, eps, 1-eps)
@@ -133,7 +151,9 @@ class MultiLevelAnchorMatching:
             f_i, (max_iou, ind) = max(
                 enumerate(max_ious), key=lambda x: x[1][0])
             if self.debug:
-                print("Feature map %d: %f with %s" % (f_i, max_iou, bbox.tolist()))
+                print("Feature map %d: %f" % (f_i, max_iou))
+                print("BBox   %s" % bbox.tolist())
+                print("Anchor %s" % flat_anchors[f_i][ind].tolist())
             loc_targets[f_i][ind] = self.coords_to_target(
                 bbox, flat_anchors[f_i][ind], locations[f_i])
             cls_targets[f_i][ind] = label
@@ -157,7 +177,12 @@ class MultiBoxLoss(nn.Module):
         super().__init__()
         self.neg_pos_ratio = neg_pos_ratio
         self.p = p
-        self.criterion = criterion
+        if criterion == 'softmax':
+            self.criterion = F.softmax
+        elif criterion == 'focal':
+            self.criterion = focal_loss2
+        else:
+            raise ValueError("criterion must be one of softmax or focal")
 
     def forward(self, loc_preds, cls_preds, loc_targets, cls_targets, ignores=None, *args):
         cls_loss = 0
@@ -175,7 +200,7 @@ class MultiBoxLoss(nn.Module):
 
             # Hard Negative Mining
             if self.neg_pos_ratio:
-                cls_loss_pos = F.cross_entropy(
+                cls_loss_pos = self.criterion(
                     cls_p[pos], cls_t[pos], reduction='sum')
 
                 mask = ~pos
@@ -187,35 +212,36 @@ class MultiBoxLoss(nn.Module):
                 cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
                 cls_loss += (cls_loss_pos + cls_loss_neg) / num_pos
             elif ignore is not None:
-                cls_loss_pos = F.cross_entropy(
+                if self.criterion == focal_loss2:
+                    cls_t = one_hot(cls_t, C=cls_p.size(-1))
+                cls_loss_pos = self.criterion(
                     cls_p[pos], cls_t[pos], reduction='sum')
 
                 mask = ~pos & (~ignore)
-                cls_loss_neg = F.cross_entropy(
+                cls_loss_neg = self.criterion(
                     cls_p[mask], cls_t[mask], reduction='sum')
                 cls_loss += (cls_loss_pos + cls_loss_neg) / num_pos
             else:
-                if self.criterion == 'focal':
-                    cls_t = one_hot(cls_t, C=cls_p.size(-1))
-                    cls_loss += focal_loss2(cls_p, cls_t,
-                                        reduction='sum') / num_pos    
-                else:
+                if self.criterion == F.softmax:
                     cls_p = cls_p.transpose(1, -1)
-                    cls_loss += F.cross_entropy(cls_p, cls_t,
-                                            reduction='sum') / num_pos
+                elif self.criterion == focal_loss2:
+                    cls_t = one_hot(cls_t, C=cls_p.size(-1))
+                cls_loss += self.criterion(cls_p, cls_t,
+                                        reduction='sum') / num_pos
         loss = cls_loss + loc_loss
         if random.random() < self.p:
-            print("loc: %.4f  cls: %.4f" %
+            print("loc: %.4f | cls: %.4f" %
                   (loc_loss.item(), cls_loss.item()))
         return loss
 
 
 class MultiLevelAnchorInference:
 
-    def __init__(self, size, multi_level_anchors, conf_threshold=0.01, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
+    def __init__(self, size, multi_level_anchors, conf_threshold=0.01, topk_per_level=300, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
         self.width, self.height = size
         self.multi_level_anchors = multi_level_anchors
         self.conf_threshold = conf_threshold
+        self.topk_per_level = topk_per_level
         self.topk = topk
         self.iou_threshold = iou_threshold
         assert conf_strategy in [
@@ -251,6 +277,11 @@ class MultiLevelAnchorInference:
                 box[:, 2:].exp_().mul_(anchors[:, 2:])
                 box[:, [0, 2]] *= self.width
                 box[:, [1, 3]] *= self.height
+
+                if len(conf) > self.topk_per_level:
+                    conf, indices = conf.topk(self.topk_per_level)
+                    box = box[indices]
+                    label = label[indices]
 
                 boxes.append(box)
                 confs.append(conf)

@@ -8,7 +8,7 @@ from PIL import Image
 import torchvision.transforms.functional as TF
 
 from hutil.detection import BBox
-from hutil.transforms import JointTransform, Compose
+from hutil.transforms import JointTransform, Compose, ToTensor
 from hutil.transforms.detection.functional import resize, center_crop, hflip, hflip2, vflip, vflip2, to_absolute_coords, to_percent_coords, resized_crop, crop
 
 
@@ -244,15 +244,6 @@ class CenterCrop(JointTransform):
 
     def __repr__(self):
         return self.__class__.__name__ + "(size=%s)".format(self.size)
-
-
-class ToTensor(JointTransform):
-
-    def __init__(self):
-        super().__init__(lambda x, y: (TF.to_tensor(x), y))
-
-    def __repr__(self):
-        return self.__class__.__name__ + "()"
 
 
 class ToPercentCoords(JointTransform):
