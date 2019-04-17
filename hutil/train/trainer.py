@@ -15,11 +15,11 @@ from ignite.metrics import Accuracy as IgniteAccuracy
 from ignite._utils import convert_tensor
 from ignite.handlers import Timer
 
-from hutil.common import CUDA
+from hutil.common import CUDA, detach
 from hutil.functools import find, lmap
 from hutil.ext.checkpoint import ModelCheckpoint
 from hutil.train.metrics import TrainLoss, Loss
-from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event, detach
+from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event
 
 
 def create_supervised_evaluator(model, metrics={},
@@ -30,15 +30,14 @@ def create_supervised_evaluator(model, metrics={},
     def _inference(engine, batch):
         model.eval()
         with torch.no_grad():
-            x, y = prepare_batch(batch, device=device)
-            s1 = time.time()
-            y_pred = model(*x)
+            inputs, targets = prepare_batch(batch, device=device)
+            y_pred = model(*inputs)
             if torch.is_tensor(y_pred):
                 y_pred = (y_pred,)
             output = {
                 "y_pred": detach(y_pred),
-                "y": detach(y),
-                'batch_size': x[0].size(0),
+                "y": detach(targets),
+                'batch_size': inputs[0].size(0),
             }
             return output
 

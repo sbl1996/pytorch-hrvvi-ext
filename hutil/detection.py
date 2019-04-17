@@ -55,8 +55,7 @@ def yolo_coords_to_target(gt_box, anchors, location):
 
 
 def coords_to_target(gt_box, anchors, *args):
-    box_txty = (gt_box[:2] - anchors[..., :2]) \
-        / anchors[..., 2:]
+    box_txty = (gt_box[:2] - anchors[..., :2]) / anchors[..., 2:]
     box_twth = (gt_box[2:] / anchors[..., 2:]).log_()
     return torch.cat((box_txty, box_twth), dim=-1)
 
@@ -140,7 +139,7 @@ class MultiLevelAnchorMatching:
 
                 if self.pos_thresh:
                     pos = ious > self.pos_thresh
-                    if pos.sum() != 0:
+                    if pos.any():
                         loc_t[pos] = self.coords_to_target(bbox, anchors[pos], location)
                         cls_t[pos] = label
 
@@ -178,15 +177,15 @@ class MultiBoxLoss(nn.Module):
         self.neg_pos_ratio = neg_pos_ratio
         self.p = p
         if criterion == 'softmax':
-            self.criterion = F.softmax
+            self.criterion = F.cross_entropy
         elif criterion == 'focal':
             self.criterion = focal_loss2
         else:
             raise ValueError("criterion must be one of softmax or focal")
 
     def forward(self, loc_preds, cls_preds, loc_targets, cls_targets, ignores=None, *args):
-        cls_loss = 0
-        loc_loss = 0
+        loc_loss = 0 # loc_preds[0].new_tensor(0., requires_grad=True)
+        cls_loss = 0 # loc_preds[0].new_tensor(0., requires_grad=True)
         if ignores is None:
             ignores = [None] * len(loc_preds)
         for loc_p, cls_p, loc_t, cls_t, ignore in zip(loc_preds, cls_preds, loc_targets, cls_targets, ignores):
@@ -194,7 +193,6 @@ class MultiBoxLoss(nn.Module):
             num_pos = pos.sum().item()
             if num_pos == 0:
                 continue
-
             loc_loss += F.smooth_l1_loss(
                 loc_p[pos], loc_t[pos], reduction='sum') / num_pos
 
@@ -237,7 +235,7 @@ class MultiBoxLoss(nn.Module):
 
 class MultiLevelAnchorInference:
 
-    def __init__(self, size, multi_level_anchors, conf_threshold=0.01, topk_per_level=300, topk=100, iou_threshold=0.45, conf_strategy='softmax'):
+    def __init__(self, size, multi_level_anchors, conf_threshold=0.01, topk_per_level=300, topk=100, iou_threshold=0.5, conf_strategy='softmax'):
         self.width, self.height = size
         self.multi_level_anchors = multi_level_anchors
         self.conf_threshold = conf_threshold
@@ -294,8 +292,9 @@ class MultiLevelAnchorInference:
             boxes = transform_bboxes(
                 boxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
             confs = confs.cpu()
-            indices = soft_nms_cpu(
-                boxes, confs, self.iou_threshold, self.topk)
+            indices = nms_cpu(boxes, confs, self.iou_threshold)
+            # indices = soft_nms_cpu(
+            #     boxes, confs, self.iou_threshold, self.topk)
             for ind in indices:
                 detections.append(
                     BBox(
@@ -423,13 +422,20 @@ class BBox:
         self.image_name = image_name
         self.class_id = class_id
         self.confidence = confidence
+        self.area = get_box_area(box, format=box_format)
         self.box = transform_bbox(
             box, format=box_format, to=1)
 
     def __repr__(self):
-        return "BBox(image_name=%s, class_id=%s, box=%s, confidence=%s)" % (
-            self.image_name, self.class_id, self.box, self.confidence
+        return "BBox(image_name=%s, class_id=%s, box=%s, confidence=%s, area=%s)" % (
+            self.image_name, self.class_id, self.box, self.confidence, self.area
         )
+
+def get_box_area(box, format=BBox.LTRB):
+    if format == BBox.LTRB:
+        return (box[2] - box[0]) * (box[3] - box[1])
+    else:
+        return box[2] * box[3]
 
 
 def draw_bboxes(img, anns, with_label=False):

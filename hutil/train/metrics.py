@@ -217,6 +217,7 @@ class MeanAveragePrecision(Average):
         y, y_pred, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
         ground_truths = y[0]
+
         detections = self.inference(*y_pred)
 
         image_dets = groupby(lambda b: b.image_name, detections)

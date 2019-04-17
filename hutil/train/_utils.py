@@ -7,22 +7,16 @@ from hutil.functools import find
 import itchat
 
 
-def detach(xs):
-    return [
-        torch.detach(x) if torch.is_tensor(x) else x
-        for x in xs
-    ]
-
-
 def to_device(args, device):
     if torch.is_tensor(args):
         return args.to(device=device)
-    if isinstance(args, Args):
+    elif isinstance(args, Args):
         return args
-    return [
-        to_device(arg, device)
-        for arg in args
-    ]
+    elif isinstance(args, Sequence):
+        return args.__class__(to_device(arg, device)
+                              for arg in args)
+    else:
+        return args
 
 
 def wrap(x):
