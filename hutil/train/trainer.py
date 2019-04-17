@@ -144,13 +144,19 @@ class Trainer:
         msg = ""
         msg += "elapsed: %ds\t" % elapsed
         for name, val in engine.state.metrics.items():
-            msg += "%s: %.4f\t" % (name, val)
+            if isinstance(val, float):
+                msg += "%s: %.4f\t" % (name, val)
+            else:
+                msg += "%s: %s\t" % (name, val)
             self.metric_history[name].append(val)
         msg += '\n'
         if validate:
             msg += "validate ------\t"
             for name, val in self.evaluator.state.metrics.items():
-                msg += "%s: %.4f\t" % (name, val)
+                if isinstance(val, float):
+                    msg += "%s: %.4f\t" % (name, val)
+                else:
+                    msg += "%s: %s\t" % (name, val)
                 self.metric_history["val_" + name].append(val)
             msg += "\n"
         self._fprint(msg)

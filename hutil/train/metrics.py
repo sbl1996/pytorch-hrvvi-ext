@@ -174,10 +174,10 @@ class COCOAveragePrecision(Average):
         predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
     """
 
-    def __init__(self, inference, iou_threshold=np.arange(0.5, 1, 0.05), return_values=False):
+    def __init__(self, inference, iou_threshold=np.arange(0.5, 1, 0.05), get_value=np.mean):
         self.inference = inference
         self.iou_threshold = iou_threshold
-        self.return_values = return_values
+        self.get_value = get_value
         super().__init__(self.output_transform)
 
     def output_transform(self, output):
@@ -191,17 +191,10 @@ class COCOAveragePrecision(Average):
             if i not in image_dets:
                 image_dets[i] = []
         image_gts = groupby(lambda b: b.image_name, ground_truths)
-        if np.isscalar(self.iou_threshold):
-            values = np.mean([mAP(image_dets[i], image_gts[i],
-                                  self.iou_threshold) for i in range(batch_size)])
-        else:
-            values = np.mean([mAP(image_dets[i], image_gts[i], thresh)
-                              for thresh in self.iou_threshold
-                              for i in range(batch_size)])
-            if self.return_values:
-                values = np.array([np.mean([mAP(image_dets[i], image_gts[i],
-                                                threshold) for i in range(batch_size)])
-                                   for threshold in self.iou_threshold])
+        values = np.array([np.mean([mAP(image_dets[i], image_gts[i],
+                                        threshold) for i in range(batch_size)])
+                           for threshold in self.iou_threshold])
+        values = self.get_value(values)
         return values, batch_size
 
 
