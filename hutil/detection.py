@@ -21,7 +21,7 @@ __all__ = [
     "coords_to_target", "MultiLevelAnchorMatching", "BBox",
     "nms_cpu", "soft_nms_cpu", "non_max_suppression",
     "transform_bbox", "transform_bboxes", "box_collate_fn",
-    "iou_1m", "iou_11", "iou_b11", "draw_bboxes",
+    "iou_1m", "iou_11", "iou_b11", "iou_mn_cpu", "draw_bboxes",
     "MultiBoxLoss", "get_anchors", "MultiLevelAnchorInference",
     "get_locations"]
 
@@ -624,6 +624,14 @@ def transform_bboxes(boxes, format=BBox.LTWH, to=BBox.XYWH, inplace=False):
             return boxes
 
 
+grads = {}
+
+
+def save_grad(name):
+    def hook(grad):
+        grads[name] = grad
+    return hook
+
 def iou_1m(box, boxes, format=BBox.LTRB):
     r"""
     Calculates one-to-many ious by corners([xmin, ymin, xmax, ymax]).
@@ -641,17 +649,40 @@ def iou_1m(box, boxes, format=BBox.LTRB):
     yi1 = torch.max(boxes[..., 1], box[1])
     xi2 = torch.min(boxes[..., 2], box[2])
     yi2 = torch.min(boxes[..., 3], box[3])
-    xdiff = xi2 - xi1
-    ydiff = yi2 - yi1
-    inter_area = xdiff * ydiff
+    inter_w = torch.relu(xi2 - xi1)
+    inter_h = torch.relu(yi2 - yi1)
+    inter_area = inter_w * inter_h
     box_area = (box[2] - box[0]) * (box[3] - box[1])
     boxes_area = (boxes[..., 2] - boxes[..., 0]) * \
         (boxes[..., 3] - boxes[..., 1])
     union_area = boxes_area + box_area - inter_area
-
     iou = inter_area / union_area
-    return iou.masked_fill_(xdiff < 0, 0).masked_fill_(ydiff < 0, 0)
+    return iou
 
+class IoUMN(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, boxes1, boxes2):
+        ious = CD.iou_mn_forward_cpu(boxes1, boxes2)
+        ctx.save_for_backward(boxes1, boxes2, ious)
+
+        return ious
+
+    @staticmethod
+    def backward(ctx, dious):
+        dboxes1, dboxes2 = CD.iou_mn_backward_cpu(dious.contiguous(), *ctx.saved_variables)
+        return dboxes1, dboxes2
+
+def iou_mn_cpu(boxes1, boxes2):
+    r"""
+    Calculates IoU between boxes1 of size m and boxes2 of size n;
+
+    Args:
+        boxes1: (m, 4)
+        boxes2: (n, 4)
+    Returns:
+        ious: (m, n)
+    """
+    return IoUMN.apply(boxes1, boxes2)
 
 def iou_b11(boxes1, boxes2):
     r"""
@@ -691,17 +722,15 @@ def iou_11(box1, box2):
     yi1 = max(box1[1], box2[1])
     xi2 = min(box1[2], box2[2])
     yi2 = min(box1[3], box2[3])
-    xdiff = xi2 - xi1
-    ydiff = yi2 - yi1
-    inter_area = xdiff * ydiff
+    inter_w = max(0, xi2 - xi1)
+    inter_h = max(0, yi2 - yi1)
+    inter_area = inter_w * inter_h
     box1_area = (box1[2] - box1[0]) * \
         (box1[3] - box1[1])
     box2_area = (box2[2] - box2[0]) * \
         (box2[3] - box2[1])
 
     iou = inter_area / (box1_area + box2_area - inter_area)
-    if xdiff < 0 or ydiff < 0:
-        iou = 0
     return iou
 
 

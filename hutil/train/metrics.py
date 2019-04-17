@@ -164,6 +164,47 @@ class LossG(Average):
         return lossG, batch_size
 
 
+class COCOAveragePrecision(Average):
+    r"""
+    Args:
+
+    Inputs:
+        y (list of list of hutil.detection.BBox): ground truth bounding boxes
+        y_pred: (batch_size, h, w, c)
+        predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
+    """
+
+    def __init__(self, inference, iou_threshold=np.arange(0.5, 1, 0.05), return_values=False):
+        self.inference = inference
+        self.iou_threshold = iou_threshold
+        self.return_values = return_values
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        y, y_pred, batch_size = get(
+            ["y", "y_pred", "batch_size"], output)
+        ground_truths = y[0]
+        detections = self.inference(*y_pred)
+
+        image_dets = groupby(lambda b: b.image_name, detections)
+        for i in range(batch_size):
+            if i not in image_dets:
+                image_dets[i] = []
+        image_gts = groupby(lambda b: b.image_name, ground_truths)
+        if np.isscalar(self.iou_threshold):
+            values = np.mean([mAP(image_dets[i], image_gts[i],
+                                  self.iou_threshold) for i in range(batch_size)])
+        else:
+            values = np.mean([mAP(image_dets[i], image_gts[i], thresh)
+                              for thresh in self.iou_threshold
+                              for i in range(batch_size)])
+            if self.return_values:
+                values = np.array([np.mean([mAP(image_dets[i], image_gts[i],
+                                                threshold) for i in range(batch_size)])
+                                   for threshold in self.iou_threshold])
+        return values, batch_size
+
+
 class MeanAveragePrecision(Average):
     r"""
     Args:
