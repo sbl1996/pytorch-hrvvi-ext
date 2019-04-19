@@ -144,7 +144,7 @@ class CaptchaSegmentationOnline(Dataset):
         self.kwargs = kwargs
         self.table = [0] * 256
         for i, c in enumerate(letters):
-            self.table[ord(c)] = i
+            self.table[ord(c)] = i+1
 
         if not self.online:
             self.data = [self.gen_captcha(self.nchars) for _ in range(size)]
@@ -154,8 +154,16 @@ class CaptchaSegmentationOnline(Dataset):
         chars = [self.letters[i] for i in labels]
         img, bboxes, mask = self.image.generate_image(
             chars, noise_dots=.3, noise_curve=.3, return_bbox=True, return_mask=True, **self.kwargs)
-        mask.point(self.table)
-        return img, mask
+        mask = mask.point(self.table)
+
+        targets = {
+            'annotations': [{
+                'category_id': label,
+                'bbox': bbox,
+            } for label, bbox in zip(labels, bboxes)],
+            'mask': mask,
+        }
+        return img, targets
 
     def __getitem__(self, index):
         if self.online:

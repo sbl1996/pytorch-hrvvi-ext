@@ -20,7 +20,7 @@ import hutil._C.detection as CD
 __all__ = [
     "coords_to_target", "MultiLevelAnchorMatching", "BBox",
     "nms_cpu", "soft_nms_cpu", "non_max_suppression",
-    "transform_bbox", "transform_bboxes", "box_collate_fn",
+    "transform_bbox", "transform_bboxes", "bbox_collate_fn",
     "iou_1m", "iou_11", "iou_b11", "iou_mn_cpu", "draw_bboxes",
     "MultiBoxLoss", "get_anchors", "MultiLevelAnchorInference",
     "get_locations"]
@@ -193,8 +193,14 @@ class MultiBoxLoss(nn.Module):
             num_pos = pos.sum().item()
             if num_pos == 0:
                 continue
-            loc_loss += F.smooth_l1_loss(
-                loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+            
+            if loc_p.size()[:-1] != pos.size():
+                loc_loss += F.smooth_l1_loss(
+                    loc_p, loc_t, reduction='sum') / num_pos
+            else:
+                loc_loss += F.smooth_l1_loss(
+                    loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+            
 
             # Hard Negative Mining
             if self.neg_pos_ratio:
@@ -208,6 +214,7 @@ class MultiBoxLoss(nn.Module):
                 cls_loss_neg = -F.log_softmax(cls_p_neg, dim=1)[..., 0]
                 num_neg = min(self.neg_pos_ratio * num_pos, len(cls_loss_neg))
                 cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
+                # print("pos: %.4f | neg: %.4f" % (cls_loss_pos.item() / num_pos, cls_loss_neg.item() / num_pos))
                 cls_loss += (cls_loss_pos + cls_loss_neg) / num_pos
             elif ignore is not None:
                 if self.criterion == focal_loss2:
@@ -284,7 +291,6 @@ class MultiLevelAnchorInference:
                 boxes.append(box)
                 confs.append(conf)
                 labels.append(label)
-
             boxes = torch.cat(boxes, dim=0)
             confs = torch.cat(confs, dim=0)
             labels = torch.cat(labels, dim=0)
@@ -292,17 +298,18 @@ class MultiLevelAnchorInference:
             boxes = transform_bboxes(
                 boxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
             confs = confs.cpu()
-            indices = nms_cpu(boxes, confs, self.iou_threshold)
-            # indices = soft_nms_cpu(
-            #     boxes, confs, self.iou_threshold, self.topk)
+            # indices = nms_cpu(boxes, confs, self.iou_threshold)
+            indices = soft_nms_cpu(
+                boxes, confs, self.iou_threshold, self.topk, conf_threshold=self.conf_threshold / 100)
+
             for ind in indices:
                 detections.append(
                     BBox(
-                        image_name=i,
-                        class_id=labels[ind].item(),
-                        box=boxes[ind].tolist(),
-                        confidence=confs[ind].item(),
-                        box_format=BBox.LTRB,
+                        image_id=i,
+                        category_id=labels[ind].item(),
+                        bbox=boxes[ind].tolist(),
+                        score=confs[ind].item(),
+                        format=BBox.LTRB,
                     )
                 )
 
@@ -418,38 +425,56 @@ class BBox:
     LTRB = 1  # [xmin, ymin, xmax,  ymax]
     XYWH = 2  # [cx,   cy,   width, height]
 
-    def __init__(self, image_name, class_id, box, confidence=None, box_format=1):
-        self.image_name = image_name
-        self.class_id = class_id
-        self.confidence = confidence
-        self.area = get_box_area(box, format=box_format)
-        self.box = transform_bbox(
-            box, format=box_format, to=1)
+    def __init__(self, image_id, category_id, bbox, score=None, format=1, area=None, segmentation=None, **kwargs):
+        self.image_id = image_id
+        self.category_id = category_id
+        self.score = score
+        self.bbox = transform_bbox(
+            bbox, format=format, to=1)
+        self.area = area or get_bbox_area(bbox, format=format)
+        self.segmentation = segmentation
 
     def __repr__(self):
-        return "BBox(image_name=%s, class_id=%s, box=%s, confidence=%s, area=%s)" % (
-            self.image_name, self.class_id, self.box, self.confidence, self.area
+        return "BBox(image_id=%s, category_id=%s, bbox=%s, score=%s, area=%s)" % (
+            self.image_id, self.category_id, self.bbox, self.score, self.area
         )
+    
+    def to_ann(self):
+        bbox = transform_bbox(
+            self.bbox, format=1, to=0) 
+        ann = {
+            'image_id': self.image_id,
+            'category_id': self.category_id,
+            'score': self.score,
+            'bbox': bbox,
+            'area': area,
+        }
+        if self.segmentation is not None:
+            ann['segmentation'] = self.segmentation
+        return ann
 
-def get_box_area(box, format=BBox.LTRB):
+
+def get_bbox_area(bbox, format=BBox.LTRB):
     if format == BBox.LTRB:
-        return (box[2] - box[0]) * (box[3] - box[1])
+        return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
     else:
-        return box[2] * box[3]
+        return bbox[2] * bbox[3]
 
 
-def draw_bboxes(img, anns, with_label=False):
+def draw_bboxes(img, anns, categories=None):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
     fig, ax = plt.subplots(1)
     ax.imshow(img)
     for ann in anns:
+        if isinstance(ann, BBox):
+            ann = ann.to_ann()
         bbox = ann["bbox"]
         rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=1,
                          edgecolor='r', facecolor='none')
         ax.add_patch(rect)
-        if with_label:
-            ax.text(bbox[0], bbox[1], ann["label"], fontsize=12)
+        if categories:
+            ax.text(bbox[0], bbox[1], categories[ann["category_id"]], fontsize=12)
     return fig, ax
 
 
@@ -630,13 +655,11 @@ def transform_bboxes(boxes, format=BBox.LTWH, to=BBox.XYWH, inplace=False):
             return boxes
 
 
-grads = {}
-
-
-def save_grad(name):
-    def hook(grad):
-        grads[name] = grad
-    return hook
+# grads = {}
+# def save_grad(name):
+#     def hook(grad):
+#         grads[name] = grad
+#     return hook
 
 def iou_1m(box, boxes, format=BBox.LTRB):
     r"""
@@ -706,16 +729,15 @@ def iou_b11(boxes1, boxes2):
     yi1 = torch.max(boxes1[..., 1], boxes2[..., 1])
     xi2 = torch.min(boxes1[..., 2], boxes2[..., 2])
     yi2 = torch.min(boxes1[..., 3], boxes2[..., 3])
-    xdiff = xi2 - xi1
-    ydiff = yi2 - yi1
-    inter_area = xdiff * ydiff
+    inter_w = torch.relu(xi2 - xi1)
+    inter_h = torch.relu(yi2 - yi1)
+    inter_area = inter_w * inter_h
     boxes1_area = (boxes1[..., 2] - boxes1[..., 0]) * \
         (boxes1[..., 3] - boxes1[..., 1])
     boxes2_area = (boxes2[..., 2] - boxes2[..., 0]) * \
         (boxes2[..., 3] - boxes2[..., 1])
-
     iou = inter_area / (boxes1_area + boxes2_area - inter_area)
-    return iou.masked_fill_(xdiff < 0, 0).masked_fill_(ydiff < 0, 0)
+    return iou
 
 
 def iou_11(box1, box2):
@@ -747,8 +769,8 @@ def mAP(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5):
         ground_truths: same size sequences of BBox
     """
     ret = []
-    class_detections = groupby(lambda b: b.class_id, detections)
-    class_ground_truths = groupby(lambda b: b.class_id, ground_truths)
+    class_detections = groupby(lambda b: b.category_id, detections)
+    class_ground_truths = groupby(lambda b: b.category_id, ground_truths)
     classes = class_ground_truths.keys()
     for c in classes:
         if c not in class_detections:
@@ -759,25 +781,28 @@ def mAP(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5):
         gts = class_ground_truths[c]
         n_positive = len(gts)
 
-        dects = sorted(dects, key=lambda b: b.confidence, reverse=True)
+        dects = sorted(dects, key=lambda b: b.score, reverse=True)
         TP = np.zeros(len(dects))
         FP = np.zeros(len(dects))
         seen = {k: np.zeros(n)
-                for k, n in countby(lambda b: b.image_name, gts).items()}
+                for k, n in countby(lambda b: b.image_id, gts).items()}
 
-        image_gts = groupby(lambda b: b.image_name, gts)
+        image_gts = groupby(lambda b: b.image_id, gts)
         for i, d in enumerate(dects):
-            gt = image_gts.get(d.image_name) or []
-            iou_max = sys.float_info.min
-            for j, g in enumerate(gt):
-                iou = iou_11(d.box, g.box)
-                if iou > iou_max:
-                    iou_max = iou
-                    j_max = j
+            gt = image_gts.get(d.image_id) or []
+            # iou_max = sys.float_info.min
+            # for j, g in enumerate(gt):
+            #     iou = iou_11(d.bbox, g.bbox)
+            #     if iou > iou_max:
+            #         iou_max = iou
+            #         j_max = j
+            ious = [ iou_11(d.bbox, g.bbox) for g in gt ]
+            j_max, iou_max = max(enumerate(ious), key=lambda x: x[1])
+                
             if iou_max > iou_threshold:
-                if not seen[d.image_name][j_max]:
+                if not seen[d.image_id][j_max]:
                     TP[i] = 1
-                    seen[d.image_name][j_max] = 1
+                    seen[d.image_id][j_max] = 1
                 else:
                     FP[i] = 1
             else:
@@ -822,17 +847,16 @@ def scale_box(bbox, src_size, dst_size, format=BBox.LTWH):
 
 
 @curry
-def box_collate_fn(batch, get_label=get("category_id"), get_bbox=get('bbox')):
-    x, y = zip(*batch)
-    ground_truths = []
-    for i in range(len(y)):
-        for ann in y[i]:
-            ground_truths.append(
-                BBox(
-                    image_name=i,
-                    class_id=get_label(ann),
-                    box=get_bbox(ann),
-                    box_format=BBox.LTWH,
-                )
+def bbox_collate_fn(batch, get_label=get("category_id"), get_bbox=get('bbox')):
+    img, targets = zip(*batch)
+    gts = []
+    for i, anns in enumerate(targets):
+        for ann in anns:
+            bbox = BBox(
+                image_id=i,
+                category_id=get_label(ann),
+                bbox=get_bbox(ann),
+                format=BBox.LTWH,
             )
-    return default_collate(x), Args(ground_truths)
+            gts.append(bbox)
+    return default_collate(img), Args(ground_truths)
