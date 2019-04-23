@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+from copy import deepcopy
 from collections import OrderedDict
 from pathlib import Path
 
@@ -62,7 +63,8 @@ TEST_DATASET_YEAR_DICT = {
 }
 
 
-DETECTION_CATEGORIES = [
+VOC_CATEGORIES = [
+    "__background__",
     "aeroplane",
     "bicycle",
     "bird",
@@ -85,8 +87,8 @@ DETECTION_CATEGORIES = [
     "tvmonitor",
 ]
 
-DETECTION_CATEGORY_TO_IDX = {name: i for i,
-                             name in enumerate(DETECTION_CATEGORIES)}
+VOC_CATEGORY_TO_IDX = {name: i for i,
+                       name in enumerate(VOC_CATEGORIES)}
 
 
 class VOCDetection(Dataset):
@@ -137,15 +139,55 @@ class VOCDetection(Dataset):
         if not split_f.exists():
             raise ValueError(
                 'Wrong image_set entered! Please use image_set="train" '
-                'or image_set="trainval" or image_set="val" or a valid'
+                'or image_set="trainval" or image_set="val" or a valid '
                 'image_set from the VOC ImageSets/Main folder.')
 
         with open(split_f, "r") as f:
-            file_names = [x.strip() for x in f.readlines()]
+            self.file_names = [x.strip() for x in f.readlines()]
 
-        self.images = [image_dir / (x + ".jpg") for x in file_names]
-        self.annotations = [annotation_dir / (x + ".xml") for x in file_names]
+        self.images = [image_dir / (x + ".jpg") for x in self.file_names]
+        self.annotations = [annotation_dir /
+                            (x + ".xml") for x in self.file_names]
         assert (len(self.images) == len(self.annotations))
+
+    def to_coco(self, indices=None):
+        if indices is None:
+            indices = range(len(self))
+        categories = []
+        for i, c in enumerate(VOC_CATEGORIES[1:]):
+            categories.append({
+                'supercategory': 'object',
+                'id': i,
+                'name': c
+            })
+        images = []
+        annotations = []
+        ann_id = 0
+        for i in indices:
+            info = self.parse_voc_xml(self.annotations[i])
+            anns = info['annotations']
+            img = {
+                "file_name": (self.file_names[i] + ".jpg"),
+                "height": info['height'],
+                "width": info['width'],
+                "id": i,
+            }
+            images.append(img)
+            for ann in anns:
+                ann = deepcopy(ann)
+                w, h = ann['bbox'][2:]
+                ann['area'] = w * h
+                ann['iscrowd'] = 0
+                ann['image_id'] = i
+                ann['id'] = ann_id
+                ann_id += 1
+                annotations.append(ann)
+        dataset = {
+            'categories': categories,
+            'images': images,
+            'annotations': annotations,
+        }
+        return dataset
 
     def __getitem__(self, index):
         """
@@ -156,12 +198,14 @@ class VOCDetection(Dataset):
             tuple: (image, target) where target is a dictionary of the XML tree.
         """
         img = Image.open(self.images[index]).convert('RGB')
-        target = self.parse_voc_xml(self.annotations[index])
+        anns = self.parse_voc_xml(self.annotations[index])['annotations']
+        for ann in anns:
+            ann['image_id'] = index
 
         if self.transform is not None:
-            img, target = self.transform(img, target)
+            img, anns = self.transform(img, anns)
 
-        return img, target
+        return img, anns
 
     def __len__(self):
         return len(self.images)
@@ -186,18 +230,32 @@ class VOCDetection(Dataset):
         h = y2 - y1
         bbox = [x1, y1, w, h]
         return {
-            'category_id': DETECTION_CATEGORY_TO_IDX[obj['name']],
+            'category_id': VOC_CATEGORY_TO_IDX[obj['name']],
             'bbox': bbox
         }
 
     def parse_voc_xml(self, path):
         with open(path, "rb") as f:
             d = xmltodict.parse(f)
-        ann = d['annotation']
-        objects = ann['object']
+        info = d['annotation']
+        objects = info['object']
+        size = info['size']
         if isinstance(objects, OrderedDict):
             objects = [objects]
-        return [self.parse_object(obj) for obj in objects]
+        return {
+            'width': int(size['width']),
+            'height': int(size['height']),
+            'annotations': [self.parse_object(obj) for obj in objects],
+        }
+
+    def __repr__(self):
+        fmt_str = 'Dataset ' + self.__class__.__name__ + '\n'
+        fmt_str += '    Number of datapoints: {}\n'.format(self.__len__())
+        fmt_str += '    Root Location: {}\n'.format(self.root)
+        tmp = '    Transforms (if any): '
+        fmt_str += '{0}{1}\n'.format(
+            tmp, self.transform.__repr__().replace('\n', '\n' + ' ' * len(tmp)))
+        return fmt_str
 
 
 TRAINAUG_FILE = {

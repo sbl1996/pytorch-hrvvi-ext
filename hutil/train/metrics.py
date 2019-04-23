@@ -2,6 +2,7 @@ import time
 from toolz import curry
 from toolz.curried import get, groupby
 
+import cv2
 import torch
 import numpy as np
 
@@ -13,7 +14,7 @@ from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
 from hutil.functools import lmap
-from hutil.detection import iou_11, mAP
+from hutil.detection import mAP, BBox
 
 
 class Average(Metric):
@@ -164,6 +165,76 @@ class LossG(Average):
         return lossG, batch_size
 
 
+class COCOEval(Metric):
+
+    def __init__(self, inference, annotations, iou_type='bbox'):
+        self.inference = inference
+        self.annotations = annotations
+        self.iou_type = iou_type
+        super().__init__()
+
+    def reset(self):
+        from pycocotools.coco import COCO
+        self.coco_gt = COCO(self.annotations, verbose=False)
+        self.res = []
+
+    def update(self, output):
+        y, y_pred, batch_size = get(
+            ["y", "y_pred", "batch_size"], output)
+        image_gts = y[0]
+        image_dets = self.inference(*y_pred)
+        for dets, gts in zip(image_dets, image_gts):
+            image_id = gts[0]['image_id']
+            for d in dets:
+                d['image_id'] = image_id
+                self.res.append(d)
+
+    def compute(self):
+        from pycocotools.coco import COCO
+        from pycocotools.cocoeval import COCOeval
+        from pycocotools.mask import encode
+
+        if self.iou_type == 'segm':
+            for dt in self.res:
+                img = self.coco_gt.imgs[dt['image_id']]
+                width = img['width']
+                height = img['height']
+                l, t, w, h = [int(v) for v in dt['bbox']]
+                r = l + w
+                b = t + h
+                l = max(0, l)
+                t = max(0, t)
+                r = min(r, width)
+                b = min(b, height)
+                w = r - l
+                h = b - t
+                m = np.zeros((height, width), dtype=np.uint8)
+                segm = cv2.resize(dt['segmentation'], (w, h))
+                m[t:b, l:r] = segm
+                dt['segmentation'] = encode(np.asfortranarray(m))
+        elif self.iou_type == 'bbox':
+            for dt in self.res:
+                img = self.coco_gt.imgs[dt['image_id']]
+                width = img['width']
+                height = img['height']
+                sw = width / dt['scale_w']
+                sh = height / dt['scale_h']
+                l, t, w, h = [int(v) for v in dt['bbox']]
+                l *= sw
+                t *= sh
+                w *= sw
+                h *= sh
+                dt['bbox'] = [l, t, w, h]
+
+        coco_dt = self.coco_gt.loadRes(self.res)
+        ev = COCOeval(self.coco_gt, coco_dt,
+                      iouType=self.iou_type, verbose=False)
+        ev.evaluate()
+        ev.accumulate()
+        ev.summarize()
+        return ev.stats[0]
+
+
 class CocoAveragePrecision(Average):
     r"""
     Args:
@@ -183,14 +254,22 @@ class CocoAveragePrecision(Average):
     def output_transform(self, output):
         y, y_pred, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
-        ground_truths = y[0]
-        detections = self.inference(*y_pred)
+        image_gts = y[0]
+        image_dets = self.inference(*y_pred)
+        for dets, gts in zip(image_dets, image_gts):
+            image_id = gts[0]['image_id']
+            for d in dets:
+                d['image_id'] = image_id
 
-        image_dets = groupby(lambda b: b.image_id, detections)
-        for i in range(batch_size):
-            if i not in image_dets:
-                image_dets[i] = []
-        image_gts = groupby(lambda b: b.image_id, ground_truths)
+        image_dets = [
+            [BBox(**ann, format=BBox.LTWH) for ann in idets]
+            for idets in image_dets
+        ]
+        image_gts = [
+            [BBox(**ann, format=BBox.LTWH) for ann in igts]
+            for igts in image_gts
+        ]
+
         values = np.array([np.mean([mAP(image_dets[i], image_gts[i],
                                         threshold) for i in range(batch_size)])
                            for threshold in self.iou_threshold])
@@ -216,15 +295,22 @@ class MeanAveragePrecision(Average):
     def output_transform(self, output):
         y, y_pred, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
-        ground_truths = y[0]
+        image_gts = y[0]
+        image_dets = self.inference(*y_pred)
 
-        detections = self.inference(*y_pred)
+        for dets, gts in zip(image_dets, image_gts):
+            image_id = gts[0]['image_id']
+            for d in dets:
+                d['image_id'] = image_id
 
-        image_dets = groupby(lambda b: b.image_id, detections)
-        for i in range(batch_size):
-            if i not in image_dets:
-                image_dets[i] = []
-        image_gts = groupby(lambda b: b.image_id, ground_truths)
+        image_dets = [
+            [BBox(**ann, format=BBox.LTWH) for ann in idets]
+            for idets in image_dets
+        ]
+        image_gts = [
+            [BBox(**ann, format=BBox.LTWH) for ann in igts]
+            for igts in image_gts
+        ]
         values = np.mean([mAP(image_dets[i], image_gts[i],
                               self.iou_threshold) for i in range(batch_size)])
         return values, batch_size

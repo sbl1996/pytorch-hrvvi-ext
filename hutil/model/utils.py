@@ -51,3 +51,15 @@ def clip(model, tol=1e-6):
     for p in model.parameters():
         p[p.abs() < tol] = 0
     return model
+
+
+def get_loc_cls_preds(ps, num_classes):
+    loc_preds = []
+    cls_preds = []
+    b = ps[0].size(0)
+    for p in ps:
+        p = p.permute(0, 3, 2, 1).contiguous().view(
+            b, -1, 4 + num_classes)
+        loc_preds.append(p[..., :4])
+        cls_preds.append(p[..., 4:])
+    return loc_preds, cls_preds

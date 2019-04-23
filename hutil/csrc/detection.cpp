@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include "PSROIAlign.h"
 
 template <typename scalar_t>
 at::Tensor nms_cpu_kernel(const at::Tensor &dets, const at::Tensor &scores,
@@ -347,4 +348,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("soft_nms_cpu", &soft_nms_cpu, "soft_nms_cpu");
     m.def("iou_mn_forward_cpu", &iou_mn_forward_cpu, "iou_mn_forward_cpu");
     m.def("iou_mn_backward_cpu", &iou_mn_backward_cpu, "iou_mn_backward_cpu");
+    m.def("psroi_align_forward", &PSROIAlign_forward, "PSROIAlign_forward");
+    m.def("psroi_align_backward", &PSROIAlign_backward, "PSROIAlign_backward");
 }

@@ -7,9 +7,11 @@
 import io
 import os
 import sys
+import glob
 from shutil import rmtree
-
 from setuptools import find_packages, setup, Command
+
+import torch
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 
 # with open('requirements.txt') as f:
@@ -69,8 +71,43 @@ else:
     about['__version__'] = VERSION
 
 
-def csrc(path):
-    return "/".join([".", IMPORT_NAME, "_C", path])
+def get_extensions():
+    extensions_dir = os.path.join(here, IMPORT_NAME, 'csrc')
+
+    main_file = glob.glob(os.path.join(extensions_dir, '*.cpp'))
+    source_cpu = glob.glob(os.path.join(extensions_dir, 'cpu', '*.cpp'))
+    source_cuda = glob.glob(os.path.join(extensions_dir, 'cuda', '*.cu'))
+
+    sources = main_file + source_cpu
+    extension = CppExtension
+
+    define_macros = []
+
+    extra_compile_args = {'cxx': []}
+    if sys.platform == 'darwin':
+        extra_compile_args['cxx'] += ['-stdlib=libc++',
+                                      '-mmacosx-version-min=10.9']
+
+    if torch.cuda.is_available() and CUDA_HOME is not None:
+        extension = CUDAExtension
+        sources += source_cuda
+        define_macros += [('WITH_CUDA', None)]
+
+    sources = [os.path.join(extensions_dir, s) for s in sources]
+
+    include_dirs = [extensions_dir]
+
+    ext_modules = [
+        extension(
+            IMPORT_NAME + '._C',
+            sources,
+            include_dirs=include_dirs,
+            define_macros=define_macros,
+            extra_compile_args=extra_compile_args,
+        )
+    ]
+
+    return ext_modules
 
 
 class UploadCommand(Command):
@@ -153,11 +190,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: Implementation :: CPython',
     ],
-    ext_modules=[
-        CppExtension(
-            name='hutil._C.detection',
-            sources=[csrc("detection.cpp")],
-            extra_compile_args=ext_compile_args)],
+    ext_modules=get_extensions(),
     # $ setup.py publish support.
     cmdclass={
         'upload': UploadCommand,

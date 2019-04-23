@@ -14,6 +14,7 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             module_idx = len(summary)
 
             m_key = "%s-%i" % (class_name, module_idx + 1)
+
             summary[m_key] = OrderedDict()
             summary[m_key]["input_shape"] = list(input[0].size())
             summary[m_key]["input_shape"][0] = batch_size
@@ -81,13 +82,26 @@ def summary(model, input_size, batch_size=-1, dtype=None):
     trainable_params = 0
     for layer in summary:
         # input_shape, output_shape, trainable, nb_params
-        line_new = "{:>20}  {:>25} {:>15}".format(
-            layer,
-            str(summary[layer]["output_shape"]),
-            "{0:,}".format(summary[layer]["nb_params"]),
-        )
-        total_params += summary[layer]["nb_params"]
         output_shape = summary[layer]["output_shape"]
+        if isinstance(output_shape[0], list):
+            line_new = "{:>20}  {:>25} {:>15}".format(
+                layer,
+                str(output_shape[0]),
+                "{0:,}".format(summary[layer]["nb_params"]),
+            )
+            print(line_new)
+            for shape in output_shape[1:]:
+                line_new = "{:>20}  {:>25} {:>15}".format(
+                    "", str(shape), "")
+                print(line_new)
+        else:
+            line_new = "{:>20}  {:>25} {:>15}".format(
+                layer,
+                str(summary[layer]["output_shape"]),
+                "{0:,}".format(summary[layer]["nb_params"]),
+            )
+            print(line_new)
+        total_params += summary[layer]["nb_params"]
         if isinstance(output_shape[0], list):
             total_output += np.sum([np.prod(out) for out in output_shape])
         else:
@@ -95,7 +109,6 @@ def summary(model, input_size, batch_size=-1, dtype=None):
         if "trainable" in summary[layer]:
             if summary[layer]["trainable"] == True:
                 trainable_params += summary[layer]["nb_params"]
-        print(line_new)
 
     # assume 4 bytes/number (float on cuda).
     total_input_size = abs(np.prod(input_size) *

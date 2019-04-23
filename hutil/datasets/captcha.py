@@ -2,6 +2,7 @@ import os
 import pickle
 import random
 import string
+from copy import deepcopy
 
 import numpy as np
 from PIL import Image
@@ -100,21 +101,65 @@ class CaptchaDetectionOnline(Dataset):
         self.transform = transform
         self.online = online
         self.kwargs = kwargs
+        self.table = [0] * 256
+        for i, c in enumerate(letters):
+            self.table[ord(c)] = i+1
+
+        from pycocotools.mask import area, encode
+        self.area_fn = area
+        self.encode_fn = encode
 
         if not self.online:
-            self.data = [self.gen_captcha(self.nchars) for _ in range(size)]
+            self.data = [self.gen_captcha(self.nchars, i) for i in range(size)]
 
-    def gen_captcha(self, nchars):
+    def to_coco(self):
+        categories = []
+        for i, c in enumerate(self.letters):
+            categories.append({
+                'supercategory': 'letter',
+                'id': i + 1,
+                'name': c
+            })
+        images = []
+        annotations = []
+        assert not self.online, "Only non-online dataset could be transformed to coco style"
+        ann_id = 0
+        for i in range(self.size):
+            anns = self.data[i][1]
+            img = {
+                "file_name": "%d.jpg" % i,
+                "height": self.image._height,
+                "width": self.image._width,
+                "id": i,
+            }
+            images.append(img)
+            for ann in anns:
+                ann = deepcopy(ann)
+                ann['id'] = ann_id
+                ann_id += 1
+                annotations.append(ann)
+        dataset = {
+            'categories': categories,
+            'images': images,
+            'annotations': annotations,
+        }
+        return dataset
+
+    def gen_captcha(self, nchars, image_id=None):
         labels = [random.randrange(self.num_classes) for _ in range(nchars)]
         chars = [self.letters[i] for i in labels]
-        img, bboxes = self.image.generate_image(
-            chars, noise_dots=.3, noise_curve=.3, return_bbox=True, **self.kwargs)
-        annotations = [
-            {
-                "category_id": labels[i],
-                "bbox": bboxes[i]
-            } for i in range(nchars)]
-        return img, annotations
+        img, anns = self.image.generate_image(
+            chars, noise_dots=.3, noise_curve=.3, **self.kwargs)
+        for ann, label in zip(anns, labels):
+            ann['image_id'] = image_id
+            ann['category_id'] = label + 1
+            segm = np.asfortranarray(ann['segmentation'], dtype=np.uint8)
+            segm = self.encode_fn(segm)
+            ann['segmentation'] = segm
+            ann['area'] = self.area_fn(segm)
+            ann['iscrowd'] = 0
+
+        return img, anns
 
     def __getitem__(self, index):
         if self.online:
@@ -147,23 +192,16 @@ class CaptchaSegmentationOnline(Dataset):
             self.table[ord(c)] = i+1
 
         if not self.online:
-            self.data = [self.gen_captcha(self.nchars) for _ in range(size)]
+            self.data = [self.gen_captcha(self.nchars, i) for i in range(size)]
 
-    def gen_captcha(self, nchars):
+    def gen_captcha(self, nchars, image_id=None):
         labels = [random.randrange(self.num_classes) for _ in range(nchars)]
         chars = [self.letters[i] for i in labels]
         img, bboxes, mask = self.image.generate_image(
             chars, noise_dots=.3, noise_curve=.3, return_bbox=True, return_mask=True, **self.kwargs)
         mask = mask.point(self.table)
 
-        targets = {
-            'annotations': [{
-                'category_id': label,
-                'bbox': bbox,
-            } for label, bbox in zip(labels, bboxes)],
-            'mask': mask,
-        }
-        return img, targets
+        return img, mask
 
     def __getitem__(self, index):
         if self.online:

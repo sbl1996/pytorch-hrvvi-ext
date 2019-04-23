@@ -143,7 +143,7 @@ class ImageCaptcha(_Captcha):
         im = im.transform((w, h), Image.QUAD, data)
         return im
 
-    def create_captcha_image(self, chars, color, background, rotate, return_bbox=False, return_mask=False):
+    def create_captcha_image(self, chars, color, background, rotate):
         """Create the CAPTCHA image itself.
 
         :param chars: text to be generated.
@@ -154,40 +154,32 @@ class ImageCaptcha(_Captcha):
         """
         image = Image.new('RGB', (self._width, self._height), background)
         draw = Draw(image)
-        if return_mask:
-            mask = Image.new('L', (self._width, self._height), 0)
 
         images = []
-        if return_bbox:
-            bboxes = []
+        all_bboxes = []
         for c in chars:
             if random.random() > 0.5:
                 images.append(self._draw_character(draw, " ", color, rotate))
-                if return_bbox:
-                    bboxes.append(None)
+                all_bboxes.append(None)
             img = self._draw_character(draw, c, color, rotate)
             images.append(img)
-            if return_bbox:
-                bbox = list(img.getbbox())
-                bbox[2] -= bbox[0]
-                bbox[3] -= bbox[1]
-                bboxes.append(bbox)
+            bbox = list(img.getbbox())
+            bbox[2] -= bbox[0]
+            bbox[3] -= bbox[1]
+            all_bboxes.append(bbox)
         images.append(self._draw_character(draw, " ", color, rotate))
-        if return_bbox:
-            bboxes.append(None)
+        all_bboxes.append(None)
 
         text_width = sum([im.size[0] for im in images])
 
         width = max(text_width, self._width)
         image = image.resize((width, self._height))
-        if return_mask:
-            mask = mask.resize((width, self._height))
 
         average = int(text_width / len(chars))
         rand = int(0.25 * average)
         x_offset = int(average * 0.1)
-        if return_bbox:
-            real_bboxes = []
+
+        anns = []
         for i, im in enumerate(images):
             w, h = im.size
             x_offset = min(x_offset, width - 1 - w)
@@ -195,63 +187,50 @@ class ImageCaptcha(_Captcha):
             cmask = im_l.point(table)
             y_offset = (self._height - h) // 2
             image.paste(im, (x_offset, y_offset), cmask)
-            if return_bbox and bboxes[i]:
-                bbox = bboxes[i]
+            if all_bboxes[i]:
+                bbox = all_bboxes[i]
                 bbox[0] += x_offset
                 bbox[1] += y_offset
-                real_bboxes.append(bbox)
-                if return_mask:
-                    c = chars[len(real_bboxes) - 1]
-                    mask.paste(ord(c), (x_offset, y_offset),
-                               im_l.point(m_table))
+                ann = {
+                    'bbox': bbox,
+                }
+                c = chars[len(anns)]
+                mask = Image.new('1', (width, self._height), 0)
+                mask.paste(im_l.point(m_table).convert(
+                    '1'), (x_offset, y_offset))
+                ann['segmentation'] = mask
+                anns.append(ann)
 
             x_offset += w + random.randint(-rand, rand)
 
         if width > self._width:
             image = image.resize((self._width, self._height))
-            if return_mask:
-                mask = mask.resize((self._width, self._height))
-            if return_bbox:
-                sw = self._width / width
-                for bbox in real_bboxes:
-                    bbox[0] *= sw
-                    bbox[2] *= sw
+            sw = self._width / width
+            for ann in anns:
+                bbox = ann['bbox']
+                bbox[0] *= sw
+                bbox[2] *= sw
+                mask = ann['segmentation']
+                ann['segmentation'] = mask.resize((self._width, self._height))
 
-        if return_bbox and return_mask:
-            return image, real_bboxes, mask
-        elif return_bbox:
-            return image, real_bboxes
-        else:
-            return image
+        return image, anns
 
-    def generate_image(self, chars, noise_dots=1.0, noise_curve=1.0, rotate=30, return_bbox=False, return_mask=False):
+    def generate_image(self, chars, noise_dots=1.0, noise_curve=1.0, rotate=30):
         """Generate the image of the given characters.
 
         :param chars: text to be generated.
         """
         background = random_color(238, 255)
         color = random_color(10, 200, random.randint(220, 255))
-        if return_bbox and return_mask:
-            im, bboxes, mask = self.create_captcha_image(
-                chars, color, background, rotate=rotate, return_bbox=True, return_mask=True)
-        elif return_bbox:
-            im, bboxes = self.create_captcha_image(
-                chars, color, background, rotate=rotate, return_bbox=True)
-        else:
-            im = self.create_captcha_image(
-                chars, color, background, rotate=rotate)
+        img, anns = self.create_captcha_image(
+            chars, color, background, rotate=rotate)
         if random.random() < noise_dots:
-            self.create_noise_dots(im, color)
+            self.create_noise_dots(img, color)
         if random.random() < noise_dots:
-            self.create_noise_curve(im, color)
-        im = im.filter(ImageFilter.SMOOTH)
+            self.create_noise_curve(img, color)
+        img = img.filter(ImageFilter.SMOOTH)
 
-        if return_bbox and return_mask:
-            return im, bboxes, mask
-        elif return_bbox:
-            return im, bboxes
-        else:
-            return im
+        return img, anns
 
 
 def random_color(start, end, opacity=None):

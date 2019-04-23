@@ -22,6 +22,9 @@ class Fullset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
+    # def __getattr__(self, attr):
+    #     return getattr(self.dataset, attr)
+
     def __repr__(self):
         return "Fullset(%s)" % self.dataset
 
@@ -50,6 +53,14 @@ class Subset(Dataset):
 
     def __len__(self):
         return len(self.indices)
+
+    # def __getattr__(self, attr):
+    #     return getattr(self.dataset, attr)
+
+    def __repr__(self):
+        fmt_str = 'Subset of ' + self.dataset.__class__.__name__ + '\n'
+        fmt_str += '    Number of datapoints: {}\n'.format(self.__len__())
+        return fmt_str
 
 
 def train_test_split(dataset, test_ratio, random=False, transform=None, test_transform=None):

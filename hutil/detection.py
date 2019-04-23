@@ -1,5 +1,6 @@
 import random
 import sys
+import numbers
 from typing import List, Any
 
 from toolz import curry
@@ -15,15 +16,15 @@ from torch.utils.data.dataloader import default_collate
 from hutil import one_hot
 from hutil.common import Args
 from hutil.nn.loss import focal_loss2
-import hutil._C.detection as CD
+from hutil import _C
 
 __all__ = [
     "coords_to_target", "MultiLevelAnchorMatching", "BBox",
     "nms_cpu", "soft_nms_cpu", "non_max_suppression",
-    "transform_bbox", "transform_bboxes", "bbox_collate_fn",
+    "transform_bbox", "transform_bboxes", "bbox_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn_cpu", "draw_bboxes",
-    "MultiBoxLoss", "get_anchors", "MultiLevelAnchorInference",
-    "get_locations"]
+    "MultiBoxLoss", "MultiLevelAnchorInference",
+    "get_locations", "generate_anchors", "generate_multi_level_anchors"]
 
 def get_locations(size, strides):
     num_levels = int(np.log2(strides[-1]))
@@ -58,16 +59,58 @@ def coords_to_target(gt_box, anchors, *args):
     box_txty = (gt_box[:2] - anchors[..., :2]) / anchors[..., 2:]
     box_twth = (gt_box[2:] / anchors[..., 2:]).log_()
     return torch.cat((box_txty, box_twth), dim=-1)
+    
+def generate_multi_level_anchors(input_size, strides=[8, 16, 32, 64, 128], aspect_ratios=[1/2, 1/1, 2/1], scales=[32, 64, 128, 256, 512]):
+    width, height = input_size
+    locations = get_locations(input_size, strides)
+    if isinstance(aspect_ratios[0], numbers.Number):
+        aspect_ratios_of_level = [aspect_ratios] * len(strides)
+    else:
+        aspect_ratios_of_level = aspect_ratios
+    aspect_ratios_of_level = torch.tensor(aspect_ratios_of_level)
+    anchors_of_level = []
+    for (lx, ly), ars, scale in zip(locations, aspect_ratios_of_level, scales):
+        anchors = torch.zeros(lx, ly, len(ars), 4)
+        anchors[:, :, :, 0] = (torch.arange(
+            lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(ars)) + 0.5) / lx
+        anchors[:, :, :, 1] = (torch.arange(
+            ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(ars)) + 0.5) / ly
+        anchors[:, :, :, 2] = scale * ars.sqrt() / width
+        anchors[:, :, :, 3] = scale / ars.sqrt() / height
+        anchors_of_level.append(anchors)
+    return anchors_of_level
 
 
-def get_anchors(lx, ly, sizes):
-    anchors = torch.zeros(lx, ly, len(sizes), 4)
+def generate_anchors(input_size, stride=16, aspect_ratios=[1/2, 1/1, 2/1], scales=[32, 64, 128, 256, 512]):
+    width, height = input_size
+    lx, ly = get_locations(input_size, [stride])[0]
+    aspect_ratios = torch.tensor(aspect_ratios)
+    scales = aspect_ratios.new_tensor(scales).view(-1, 1)
+    num_anchors = len(aspect_ratios) * len(scales)
+    anchors = torch.zeros(lx, ly, num_anchors, 4)
     anchors[:, :, :, 0] = (torch.arange(
-        lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(sizes)) + 0.5) / lx
+        lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, num_anchors) + 0.5) / lx
     anchors[:, :, :, 1] = (torch.arange(
-        ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(sizes)) + 0.5) / ly
-    anchors[:, :, :, 2:] = sizes
+        ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, num_anchors) + 0.5) / ly
+    anchors[:, :, :, 2] = (scales * aspect_ratios).view(-1) / width
+    anchors[:, :, :, 3] = (scales / aspect_ratios).view(-1) / height
     return anchors
+
+# def get_anchors(lx, ly, sizes):
+#     anchors = torch.zeros(lx, ly, len(sizes), 4)
+#     anchors[:, :, :, 0] = (torch.arange(
+#         lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(sizes)) + 0.5) / lx
+#     anchors[:, :, :, 1] = (torch.arange(
+#         ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(sizes)) + 0.5) / ly
+#     anchors[:, :, :, 2:] = sizes
+#     return anchors
+
+
+def _ensure_multi_level(xs):
+    if torch.is_tensor(xs):
+        return[xs]
+    else:
+        return xs
 
 
 class MultiLevelAnchorMatching:
@@ -93,13 +136,13 @@ class MultiLevelAnchorMatching:
             negs (optional): Returned when neg_thresh is provided.
     """
 
-    def __init__(self, multi_level_anchors, max_iou=True, 
+    def __init__(self, anchors_of_level, max_iou=True, 
         pos_thresh=0.5, neg_thresh=None, 
-        get_label=lambda x: x['category_id'] + 1, 
+        get_label=get('category_id'), 
         get_bbox=get("bbox"), 
         coords_to_target=coords_to_target, 
         debug=False):
-        self.multi_level_anchors = multi_level_anchors
+        self.anchors_of_level = _ensure_multi_level(anchors_of_level)
         self.max_iou = max_iou
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
@@ -114,7 +157,7 @@ class MultiLevelAnchorMatching:
         loc_targets = []
         cls_targets = []
         negs = []
-        for anchors in self.multi_level_anchors:
+        for anchors in self.anchors_of_level:
             lx, ly = anchors.size()[:2]
             locations.append((lx, ly))
             anchors = anchors.view(-1, 4)
@@ -159,16 +202,16 @@ class MultiLevelAnchorMatching:
 
         if self.neg_thresh:
             ignores = [ ~neg for neg in negs ]
-        # if len(flat_anchors) == 1:
-        #     loc_targets = loc_targets[0]
-        #     cls_targets = cls_targets[0]
-        #     ignores = ignores[0]
+        if len(flat_anchors) == 1:
+            loc_targets = loc_targets[0]
+            cls_targets = cls_targets[0]
+            if self.neg_thresh:
+                ignores = ignores[0]
         
         targets = [loc_targets, cls_targets]
         if self.neg_thresh:
             targets.append(ignores)
         return img, targets
-
 
 class MultiBoxLoss(nn.Module):
 
@@ -186,6 +229,10 @@ class MultiBoxLoss(nn.Module):
     def forward(self, loc_preds, cls_preds, loc_targets, cls_targets, ignores=None, *args):
         loc_loss = 0 # loc_preds[0].new_tensor(0., requires_grad=True)
         cls_loss = 0 # loc_preds[0].new_tensor(0., requires_grad=True)
+        loc_preds = _ensure_multi_level(loc_preds)
+        cls_preds = _ensure_multi_level(cls_preds)
+        loc_targets = _ensure_multi_level(loc_targets)
+        cls_targets = _ensure_multi_level(cls_targets)
         if ignores is None:
             ignores = [None] * len(loc_preds)
         for loc_p, cls_p, loc_t, cls_t, ignore in zip(loc_preds, cls_preds, loc_targets, cls_targets, ignores):
@@ -242,9 +289,9 @@ class MultiBoxLoss(nn.Module):
 
 class MultiLevelAnchorInference:
 
-    def __init__(self, size, multi_level_anchors, conf_threshold=0.01, topk_per_level=300, topk=100, iou_threshold=0.5, conf_strategy='softmax'):
+    def __init__(self, size, anchors_of_level, conf_threshold=0.01, topk_per_level=300, topk=100, iou_threshold=0.5, conf_strategy='softmax'):
         self.width, self.height = size
-        self.multi_level_anchors = multi_level_anchors
+        self.anchors_of_level = _ensure_multi_level(anchors_of_level)
         self.conf_threshold = conf_threshold
         self.topk_per_level = topk_per_level
         self.topk = topk
@@ -255,12 +302,16 @@ class MultiLevelAnchorInference:
 
     def __call__(self, loc_preds, cls_preds, *args):
         detections = []
+        image_dets = []
+        loc_preds = _ensure_multi_level(loc_preds)
+        cls_preds = _ensure_multi_level(cls_preds)
         batch_size = loc_preds[0].size(0)
         for i in range(batch_size):
+            dets = []
             boxes = []
             confs = []
             labels = []
-            for loc_p, cls_p, anchors in zip(loc_preds, cls_preds, self.multi_level_anchors):
+            for loc_p, cls_p, anchors in zip(loc_preds, cls_preds, self.anchors_of_level):
                 loc_p = loc_p[i]
                 cls_p = cls_p[i]
                 anchors = anchors.view(-1, 4)
@@ -271,7 +322,7 @@ class MultiLevelAnchorInference:
                     conf = torch.sigmoid_(cls_p)
                 conf = conf[..., 1:]
                 conf, label = torch.max(conf, dim=1)
-
+                
                 mask = conf > self.conf_threshold
                 conf = conf[mask]
                 label = label[mask]
@@ -291,6 +342,7 @@ class MultiLevelAnchorInference:
                 boxes.append(box)
                 confs.append(conf)
                 labels.append(label)
+                
             boxes = torch.cat(boxes, dim=0)
             confs = torch.cat(confs, dim=0)
             labels = torch.cat(labels, dim=0)
@@ -301,19 +353,20 @@ class MultiLevelAnchorInference:
             # indices = nms_cpu(boxes, confs, self.iou_threshold)
             indices = soft_nms_cpu(
                 boxes, confs, self.iou_threshold, self.topk, conf_threshold=self.conf_threshold / 100)
-
+            boxes = transform_bboxes(
+                boxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
             for ind in indices:
-                detections.append(
-                    BBox(
-                        image_id=i,
-                        category_id=labels[ind].item(),
-                        bbox=boxes[ind].tolist(),
-                        score=confs[ind].item(),
-                        format=BBox.LTRB,
-                    )
-                )
-
-        return detections
+                det = {
+                    'image_id': i,
+                    'category_id': labels[ind].item() + 1,
+                    'bbox': boxes[ind].tolist(),
+                    'score': confs[ind].item(),
+                    'scale_w': self.width,
+                    'scale_h': self.height,
+                }
+                dets.append(det)
+            image_dets.append(dets)
+        return image_dets
 
 
 def nms_cpu(boxes, confidences, iou_threshold=0.5):
@@ -325,7 +378,7 @@ def nms_cpu(boxes, confidences, iou_threshold=0.5):
     Returns:
         indices: (N,)
     """
-    return CD.nms_cpu(boxes, confidences, iou_threshold)
+    return _C.nms_cpu(boxes, confidences, iou_threshold)
 
 
 def soft_nms_cpu(boxes, confidences, iou_threshold=0.5, topk=100, conf_threshold=0.01):
@@ -338,7 +391,7 @@ def soft_nms_cpu(boxes, confidences, iou_threshold=0.5, topk=100, conf_threshold
         indices:
     """
     topk = min(len(boxes), topk)
-    return CD.soft_nms_cpu(boxes, confidences, iou_threshold, topk, conf_threshold)
+    return _C.soft_nms_cpu(boxes, confidences, iou_threshold, topk, conf_threshold)
 
 
 def soft_nms(boxes, confidences, iou_threshold, topk=10):
@@ -447,7 +500,7 @@ class BBox:
             'category_id': self.category_id,
             'score': self.score,
             'bbox': bbox,
-            'area': area,
+            'area': self.area,
         }
         if self.segmentation is not None:
             ann['segmentation'] = self.segmentation
@@ -691,14 +744,14 @@ def iou_1m(box, boxes, format=BBox.LTRB):
 class IoUMN(torch.autograd.Function):
     @staticmethod
     def forward(ctx, boxes1, boxes2):
-        ious = CD.iou_mn_forward_cpu(boxes1, boxes2)
+        ious = _C.iou_mn_forward_cpu(boxes1, boxes2)
         ctx.save_for_backward(boxes1, boxes2, ious)
 
         return ious
 
     @staticmethod
     def backward(ctx, dious):
-        dboxes1, dboxes2 = CD.iou_mn_backward_cpu(dious.contiguous(), *ctx.saved_variables)
+        dboxes1, dboxes2 = _C.iou_mn_backward_cpu(dious.contiguous(), *ctx.saved_variables)
         return dboxes1, dboxes2
 
 def iou_mn_cpu(boxes1, boxes2):
@@ -847,16 +900,17 @@ def scale_box(bbox, src_size, dst_size, format=BBox.LTWH):
 
 
 @curry
-def bbox_collate_fn(batch, get_label=get("category_id"), get_bbox=get('bbox')):
-    img, targets = zip(*batch)
-    gts = []
+def bbox_collate(batch, label_transform=lambda x: x):
+    xs, targets = zip(*batch)
+    image_gts = []
     for i, anns in enumerate(targets):
+        gts = []
         for ann in anns:
-            bbox = BBox(
-                image_id=i,
-                category_id=get_label(ann),
-                bbox=get_bbox(ann),
-                format=BBox.LTWH,
-            )
-            gts.append(bbox)
-    return default_collate(img), Args(ground_truths)
+            ann = {
+                **ann,
+                'image_id': i,
+            }
+            ann['category_id'] = label_transform(ann['category_id'])
+            gts.append(ann)
+        image_gts.append(gts)
+    return default_collate(xs), Args(image_gts)
