@@ -320,7 +320,7 @@ PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
 
 at::Tensor PSROIAlign_backward_cuda(
     const at::Tensor &grad, const at::Tensor &rois, const float spatial_scale,
-    const int out_channels const int pooled_height, const int pooled_width,
+    const int out_channels, const int pooled_height, const int pooled_width,
     const int batch_size, const int channels, const int height, const int width,
     const int sampling_ratio) {
     AT_ASSERTM(grad.device().is_cuda(), "grad must be a CUDA tensor");
@@ -355,7 +355,7 @@ at::Tensor PSROIAlign_backward_cuda(
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         grad.type(), "PSROIAlign_backward", [&] {
-            RoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
+            PSRoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
                 grad.numel(), grad.contiguous().data<scalar_t>(), spatial_scale,
                 channels, height, width, out_channels, pooled_height,
                 pooled_width, sampling_ratio, grad_input.data<scalar_t>(),
