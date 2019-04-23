@@ -92,6 +92,8 @@ def get_extensions():
         extension = CUDAExtension
         sources += source_cuda
         define_macros += [('WITH_CUDA', None)]
+        extra_compile_args['nvcc'] = ['-DCUDA_HAS_FP16=1', '-D__CUDA_NO_HALF_OPERATORS__',
+                                      '-D__CUDA_NO_HALF_CONVERSIONS__', '-D__CUDA_NO_HALF2_OPERATORS__']
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
 
