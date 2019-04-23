@@ -1,12 +1,9 @@
-// #include <ATen/ATen.h>
-// #include <ATen/cuda/CUDAContext.h>
-// #include <c10/cuda/CUDAGuard.h>
-// #include <ATen/TensorUtils.h>
+#include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
 
-// #include <THC/THC.h>
-// #include <THC/THCAtomics.cuh>
-// #include <THC/THCDeviceUtils.cuh>
-#include <torch/extension.h>
+#include <THC/THC.h>
+#include <THC/THCAtomics.cuh>
+#include <THC/THCDeviceUtils.cuh>
 
 #include "cuda_helpers.h"
 
