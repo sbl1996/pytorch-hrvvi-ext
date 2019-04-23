@@ -83,7 +83,7 @@ def get_extensions():
 
     define_macros = []
 
-    extra_compile_args = {'cxx': []}
+    extra_compile_args = {'cxx': [], 'nvcc': []}
     if sys.platform == 'darwin':
         extra_compile_args['cxx'] += ['-stdlib=libc++',
                                       '-mmacosx-version-min=10.9']
