@@ -12,7 +12,7 @@ from shutil import rmtree
 from setuptools import find_packages, setup, Command
 
 import torch
-from torch.utils.cpp_extension import CppExtension, BuildExtension
+from torch.utils.cpp_extension import CppExtension, CUDAExtension, CUDA_HOME, BuildExtension
 
 # with open('requirements.txt') as f:
 #     requirements = f.read().splitlines()
