@@ -2,9 +2,9 @@
 
 #include "cpu/vision.h"
 
-// #ifdef WITH_CUDA
-// #include "cuda/vision.h"
-// #endif
+#ifdef WITH_CUDA
+#include "cuda/vision.h"
+#endif
 
 // Interface for Python
 at::Tensor PSROIAlign_forward(
