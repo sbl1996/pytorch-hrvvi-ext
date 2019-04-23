@@ -1,5 +1,5 @@
 #pragma once
-#include <torch/extension.h>
+#include <torch/torch.h>
 
 at::Tensor
 PSROIAlign_forward_cpu(const at::Tensor &input, const at::Tensor &rois,
