@@ -312,7 +312,7 @@ class MultiLevelAnchorInference:
             confs = []
             labels = []
             for loc_p, cls_p, anchors in zip(loc_preds, cls_preds, self.anchors_of_level):
-                loc_p = loc_p[i]
+                box = loc_p[i]
                 cls_p = cls_p[i]
                 anchors = anchors.view(-1, 4)
 
@@ -323,11 +323,12 @@ class MultiLevelAnchorInference:
                 conf = conf[..., 1:]
                 conf, label = torch.max(conf, dim=1)
                 
-                mask = conf > self.conf_threshold
-                conf = conf[mask]
-                label = label[mask]
-                box = loc_p[mask]
-                anchors = anchors[mask]
+                if self.conf_threshold > 0:
+                    mask = conf > self.conf_threshold
+                    conf = conf[mask]
+                    label = label[mask]
+                    box = box[mask]
+                    anchors = anchors[mask]
 
                 box[:, :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
                 box[:, 2:].exp_().mul_(anchors[:, 2:])
@@ -342,10 +343,15 @@ class MultiLevelAnchorInference:
                 boxes.append(box)
                 confs.append(conf)
                 labels.append(label)
-                
-            boxes = torch.cat(boxes, dim=0)
-            confs = torch.cat(confs, dim=0)
-            labels = torch.cat(labels, dim=0)
+            
+            if len(boxes) > 1:
+                boxes = torch.cat(boxes, dim=0)
+                confs = torch.cat(confs, dim=0)
+                labels = torch.cat(labels, dim=0)
+            else:
+                boxes = boxes[0]
+                confs = confs[0]
+                labels = labels[0]
 
             boxes = transform_bboxes(
                 boxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()

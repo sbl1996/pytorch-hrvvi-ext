@@ -67,9 +67,10 @@ class SNet(nn.Module):
             Default: [3, 4, 5]
     """
 
-    def __init__(self, version=49, feature_levels=[3, 4, 5]):
+    def __init__(self, version=49, feature_levels=[3, 4, 5], normalization='bn'):
         super().__init__()
-        net = BSNet(num_classes=1, version=version)
+        net = BSNet(num_classes=1, version=version,
+                    normalization=normalization)
         del net.fc
         channels = net.channels
         self.layer1 = net.conv1
