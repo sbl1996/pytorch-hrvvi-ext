@@ -88,7 +88,9 @@ def get_extensions():
         extra_compile_args['cxx'] += ['-stdlib=libc++',
                                       '-mmacosx-version-min=10.9']
 
-    if torch.cuda.is_available() and CUDA_HOME is not None:
+    is_windows = sys.platform == 'win32' or sys.platform == 'cygwin'
+
+    if torch.cuda.is_available() and CUDA_HOME is not None and (not is_windows):
         extension = CUDAExtension
         sources += source_cuda
         define_macros += [('WITH_CUDA', None)]
