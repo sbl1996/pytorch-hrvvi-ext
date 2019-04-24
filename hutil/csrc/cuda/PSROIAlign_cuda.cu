@@ -342,7 +342,7 @@ at::Tensor PSROIAlign_backward_cuda(
 
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
+    dim3 grid(std::min(GET_BLOCKS(512, grad.numel()), 4096));
     dim3 block(512);
 
     // handle possibly empty gradients
