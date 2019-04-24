@@ -7,6 +7,8 @@
 
 #include "cuda_helpers.h"
 
+#define GET_BLOCKS(block_size, n) ((n + block_size - 1) / block_size)
+
 template <typename T>
 __device__ T bilinear_interpolate(const T *input, const int height,
                                   const int width, T y, T x,
@@ -298,7 +300,7 @@ PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
     auto output_size = num_rois * out_channels * pooled_height * pooled_width;
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    dim3 grid(std::min(THCCeilDiv(output_size, 512), 4096));
+    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
     dim3 block(512);
 
     if (output.numel() == 0) {
@@ -339,7 +341,7 @@ at::Tensor PSROIAlign_backward_cuda(
 
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    dim3 grid(std::min(THCCeilDiv(grad.numel(), 512), 4096));
+    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
     dim3 block(512);
 
     // handle possibly empty gradients
