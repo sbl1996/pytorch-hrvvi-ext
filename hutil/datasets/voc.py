@@ -197,7 +197,7 @@ class VOCDetection(Dataset):
         Returns:
             tuple: (image, target) where target is a dictionary of the XML tree.
         """
-        img = Image.open(self.images[index]).convert('RGB')
+        img = Image.open(self.images[index])
         anns = self.parse_voc_xml(self.annotations[index])['annotations']
         for ann in anns:
             ann['image_id'] = index

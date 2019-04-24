@@ -1,3 +1,4 @@
+import time
 import random
 import torchvision.transforms.functional as TF
 
@@ -59,7 +60,9 @@ class Compose(Transform):
 
     def __call__(self, img, target):
         for t in self.transforms:
+            # start = time.time()
             img, target = t(img, target)
+            # print("%.4f" % ((time.time() - start) * 1000))
         return img, target
 
     def __repr__(self):
