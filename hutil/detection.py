@@ -289,7 +289,10 @@ class MultiBoxLoss(nn.Module):
 
 class MultiLevelAnchorInference:
 
-    def __init__(self, size, anchors_of_level, conf_threshold=0.01, topk_per_level=300, topk=100, iou_threshold=0.5, conf_strategy='softmax'):
+    def __init__(self, size, anchors_of_level, 
+        conf_threshold=0.01, 
+        topk_per_level=300, topk=100, 
+        iou_threshold=0.5, conf_strategy='softmax', nms='soft_nms'):
         self.width, self.height = size
         self.anchors_of_level = _ensure_multi_level(anchors_of_level)
         self.conf_threshold = conf_threshold
@@ -299,6 +302,7 @@ class MultiLevelAnchorInference:
         assert conf_strategy in [
             'softmax', 'sigmoid'], "conf_strategy must be softmax or sigmoid"
         self.conf_strategy = conf_strategy
+        self.nms = nms
 
     def __call__(self, loc_preds, cls_preds, *args):
         detections = []
@@ -356,9 +360,12 @@ class MultiLevelAnchorInference:
             boxes = transform_bboxes(
                 boxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
             confs = confs.cpu()
-            # indices = nms_cpu(boxes, confs, self.iou_threshold)
-            indices = soft_nms_cpu(
-                boxes, confs, self.iou_threshold, self.topk, conf_threshold=self.conf_threshold / 100)
+
+            if self.nms == 'nms':
+                indices = nms_cpu(boxes, confs, self.iou_threshold)
+            else:
+                indices = soft_nms_cpu(
+                    boxes, confs, self.iou_threshold, self.topk, conf_threshold=self.conf_threshold / 100)
             boxes = transform_bboxes(
                 boxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
             for ind in indices:

@@ -235,6 +235,11 @@ class COCOEval(Metric):
         return ev.stats[0]
 
 
+def get_ap(values):
+    values = np.array([np.mean(values), values[0], values[5]])
+    return values
+
+
 class CocoAveragePrecision(Average):
     r"""
     Args:
@@ -245,7 +250,7 @@ class CocoAveragePrecision(Average):
         predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
     """
 
-    def __init__(self, inference, iou_threshold=np.arange(0.5, 1, 0.05), get_value=np.mean):
+    def __init__(self, inference, iou_threshold=np.arange(0.5, 1, 0.05), get_value=get_ap):
         self.inference = inference
         self.iou_threshold = iou_threshold
         self.get_value = get_value
