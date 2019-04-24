@@ -7,7 +7,8 @@
 
 #include "cuda_helpers.h"
 
-#define GET_BLOCKS(block_size, n) ((n + block_size - 1) / block_size)
+#define GET_BLOCKS(block_size, n)                                              \
+    ((static_cast<int>(n) + block_size - 1) / block_size)
 
 template <typename T>
 __device__ T bilinear_interpolate(const T *input, const int height,
