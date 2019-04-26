@@ -7,6 +7,7 @@ from torchvision.models import resnet18, resnet50, resnet101
 from hutil.model.mobilenet import mobilenet_v2
 from hutil.model.shufflenet import ShuffleNetV2 as BShuffleNetV2
 from hutil.model.snet import SNet as BSNet
+from hutil.model.squeezenext import SqueezeNext as BSqueezeNext
 from hutil.model.utils import get_out_channels
 
 
@@ -17,12 +18,12 @@ class ShuffleNetV2(nn.Module):
         mult (number): 0.5, 1, 1.5, 2
             Default: 0.5
         feature_levels (list of int): features of which layers to output
-            Default: [3, 4, 5]
+            Default: (3, 4, 5)
     """
 
-    def __init__(self, mult=0.5, feature_levels=[3, 4, 5]):
+    def __init__(self, mult=0.5, feature_levels=(3, 4, 5), norm_layer='bn'):
         super().__init__()
-        net = BShuffleNetV2(num_classes=1, mult=mult)
+        net = BShuffleNetV2(num_classes=1, mult=mult, norm_layer=norm_layer)
         del net.fc
         channels = net.channels
         self.layer1 = net.conv1
@@ -64,13 +65,13 @@ class SNet(nn.Module):
         version (int): 49, 146, 535
             Default: 49
         feature_levels (list of int): features of which layers to output
-            Default: [3, 4, 5]
+            Default: (3, 4, 5)
     """
 
-    def __init__(self, version=49, feature_levels=[3, 4, 5], normalization='bn'):
+    def __init__(self, version=49, feature_levels=(3, 4, 5), norm_layer='bn'):
         super().__init__()
         net = BSNet(num_classes=1, version=version,
-                    normalization=normalization)
+                    norm_layer=norm_layer)
         del net.fc
         channels = net.channels
         self.layer1 = net.conv1
@@ -115,10 +116,10 @@ class ResNet(nn.Module):
         version (int): 18, 50, 101
             Default: 18
         feature_levels (list of int): features of which layers to output
-            Default: [3, 4, 5]
+            Default: (3, 4, 5)
     """
 
-    def __init__(self, version=18, feature_levels=[3, 4, 5]):
+    def __init__(self, version=18, feature_levels=(3, 4, 5)):
         super().__init__()
         if version == 18:
             net = resnet18(pretrained=True)
@@ -175,10 +176,10 @@ class MobileNetV2(nn.Module):
 
     Args:
         feature_levels (list of int): features of which layers to output
-            Default: [3, 4, 5]
+            Default: (3, 4, 5)
     """
 
-    def __init__(self, feature_levels=[3, 4, 5]):
+    def __init__(self, feature_levels=(3, 4, 5)):
         super().__init__()
         backbone = mobilenet_v2(num_classes=1)
         del backbone.classifier
@@ -221,3 +222,103 @@ class MobileNetV2(nn.Module):
         if 5 in self.feature_levels:
             outs.append(x)
         return outs
+
+
+class SqueezeNet(nn.Module):
+    r"""SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB model size
+
+    Args:
+        feature_levels (list of int): features of which layers to output
+            Default: (3, 4, 5)
+    """
+
+    def __init__(self, feature_levels=(3, 4, 5)):
+        super().__init__()
+        from torchvision.models.squeezenet import squeezenet1_1, Fire
+        backbone = squeezenet1_1(pretrained=True)
+        del backbone.classifier
+        backbone = backbone.features
+        backbone[0].padding = (1, 1)
+
+        self.layer1 = backbone[:2]
+        self.layer2 = backbone[2:5]
+        self.layer3 = backbone[5:8]
+        self.layer4 = backbone[8:]
+
+        if 5 in feature_levels:
+            self.layer5 = nn.Sequential(
+                nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+                Fire(512, 64, 256, 256),
+            )
+
+        channels = [64, 128, 256, 512, 512]
+
+        self.feature_levels = feature_levels
+        self.out_channels = [
+            channels[i-1] for i in feature_levels
+        ]
+
+    def forward(self, x):
+        outs = []
+        x = self.layer1(x)
+        x = self.layer2(x)
+        if 2 in self.feature_levels:
+            outs.append(x)
+        x = self.layer3(x)
+        if 3 in self.feature_levels:
+            outs.append(x)
+        x = self.layer4(x)
+        if 4 in self.feature_levels:
+            outs.append(x)
+        if 5 in self.feature_levels:
+            x = self.layer5(x)
+            outs.append(x)
+        return outs
+
+
+# class SqueezeNext(nn.Module):
+#     r"""SqueezeNext: Hardware-Aware Neural Network Design
+#
+#     Args:
+#         feature_levels (list of int): features of which layers to output
+#             Default: (3, 4, 5)
+#     """
+#
+#     def __init__(self, feature_levels=(3, 4, 5)):
+#         super().__init__()
+#         backbone = SqueezeNext(feature_levels)
+#
+#         self.layer1 = backbone[:2]
+#         self.layer2 = backbone[2:5]
+#         self.layer3 = backbone[5:8]
+#         self.layer4 = backbone[8:]
+#
+#         if 5 in feature_levels:
+#             self.layer5 = nn.Sequential(
+#                 nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+#                 Fire(512, 64, 256, 256),
+#             )
+#
+#         channels = [64, 128, 256, 512, 512]
+#
+#         self.feature_levels = feature_levels
+#         self.out_channels = [
+#             channels[i-1] for i in feature_levels
+#         ]
+#
+#     def forward(self, x):
+#         outs = []
+#         x = self.layer1(x)
+#         x = self.layer2(x)
+#         if 2 in self.feature_levels:
+#             outs.append(x)
+#         x = self.layer3(x)
+#         if 3 in self.feature_levels:
+#             outs.append(x)
+#         x = self.layer4(x)
+#         if 4 in self.feature_levels:
+#             outs.append(x)
+#         if 5 in self.feature_levels:
+#             x = self.layer5(x)
+#             outs.append(x)
+#         return outs

@@ -21,6 +21,8 @@ class Average(Metric):
 
     def __init__(self, output_transform):
         super().__init__(output_transform)
+        self._num_examples = 0
+        self._sum = 0
 
     def reset(self):
         self._num_examples = 0
@@ -43,6 +45,7 @@ def topk_accuracy(input, target, k):
     Args:
         input:  (batch, C, *)
         target: (batch, *)
+        k:
     """
     num_examples = np.prod(target.size())
     topk_pred = torch.topk(input, k=k, dim=1)[1]
@@ -190,7 +193,6 @@ class COCOEval(Metric):
                 self.res.append(d)
 
     def compute(self):
-        from pycocotools.coco import COCO
         from pycocotools.cocoeval import COCOeval
         from pycocotools.mask import encode
 

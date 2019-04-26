@@ -10,7 +10,7 @@ def get_groups(channels, max_groups):
     return g
 
 
-def get_normalization(name, channels):
+def get_norm_layer(name, channels):
     if isinstance(name, nn.Module):
         return name
     if name == 'bn':
@@ -36,17 +36,23 @@ def get_activation(name):
 def Conv2d(in_channels, out_channels,
            kernel_size=3, stride=1,
            padding='same', dilation=1, groups=1,
-           normalization=None, activation=None):
+           norm_layer=None, activation=None):
 
     if padding == 'same':
-        padding = (kernel_size - 1) // 2
+        if isinstance(kernel_size, tuple):
+            kh, kw = kernel_size
+            ph = (kh - 1) // 2
+            pw = (kw - 1) // 2
+            padding = (ph, pw)
+        else:
+            padding = (kernel_size - 1) // 2
     layers = []
-    bias = normalization is None
+    bias = norm_layer is None
     layers.append(nn.Conv2d(
         in_channels, out_channels,
         kernel_size, stride, padding, dilation, groups, bias))
-    if normalization is not None:
-        layers.append(get_normalization(normalization, out_channels))
+    if norm_layer is not None:
+        layers.append(get_norm_layer(norm_layer, out_channels))
     if activation is not None:
         layers.append(get_activation(activation))
     return nn.Sequential(*layers)

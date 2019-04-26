@@ -1,7 +1,6 @@
 import torch
 
-from hutil.layers.psroi_align import psroi_align
-from hutil.detection import transform_bboxes, BBox
+from hutil.nn.psroi_align import psroi_align
 
 
 def test_psroi_align():

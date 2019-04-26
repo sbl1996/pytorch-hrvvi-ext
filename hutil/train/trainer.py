@@ -1,29 +1,25 @@
 import re
-import traceback
-import time
 import os
 from collections import defaultdict
 
 import itchat
-from toolz.curried import get, identity, curry, keyfilter
+from toolz.curried import get, keyfilter
 
 import torch
-import torch.nn as nn
 
 from ignite.engine import Engine, Events
-from ignite.metrics import Accuracy as IgniteAccuracy
-from ignite._utils import convert_tensor
 from ignite.handlers import Timer
 
 from hutil.common import CUDA, detach
-from hutil.functools import find, lmap
 from hutil.ext.checkpoint import ModelCheckpoint
 from hutil.train.metrics import TrainLoss, Loss
-from hutil.train._utils import _prepare_batch, send_weixin, set_lr, cancel_event
+from hutil.train._utils import _prepare_batch, send_weixin, set_lr
 
 
-def create_supervised_evaluator(model, metrics={},
+def create_supervised_evaluator(model, metrics=None,
                                 device=None, prepare_batch=_prepare_batch):
+    if metrics is None:
+        metrics = {}
     if device:
         model.to(device)
 
@@ -101,7 +97,7 @@ class Trainer:
         self.name = name
 
         self.metric_history = defaultdict(list)
-        self._print_callbacks = set([lambda msg: print(msg, end='')])
+        self._print_callbacks = {lambda msg: print(msg, end='')}
         self._weixin_logined = False
         self._timer = Timer()
         self._epochs = 0
@@ -160,7 +156,8 @@ class Trainer:
             msg += "\n"
         self._fprint(msg)
 
-    def fit(self, train_loader, epochs, val_loader=None, send_weixin=False, save_per_epochs=None, save_by_metric=None, patience=0, callbacks=[]):
+    def fit(self, train_loader, epochs, val_loader=None, send_weixin=False,
+            save_per_epochs=None, save_by_metric=None, patience=0, callbacks=[]):
         validate = val_loader is not None
         # Weixin
         if send_weixin:

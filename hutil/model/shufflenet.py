@@ -22,20 +22,20 @@ class ShuffleBlock(nn.Module):
 
 
 class BasicBlock(nn.Module):
-    def __init__(self, in_channels, shuffle_groups=2):
+    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn'):
         super().__init__()
         channels = in_channels // 2
         self.conv1 = Conv2d(
             channels, channels, kernel_size=1,
-            normalization='bn', activation='relu',
+            norm_layer=norm_layer, activation='relu',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=3, groups=channels,
-            normalization='bn',
+            norm_layer=norm_layer,
         )
         self.conv3 = Conv2d(
             channels, channels, kernel_size=1,
-            normalization='bn', activation='relu',
+            norm_layer=norm_layer, activation='relu',
         )
         self.shuffle = ShuffleBlock(shuffle_groups)
 
@@ -46,34 +46,34 @@ class BasicBlock(nn.Module):
         x2 = self.conv1(x2)
         x2 = self.conv2(x2)
         x2 = self.conv3(x2)
-        x = torch.cat([x1, x2], dim=1)
+        x = torch.cat((x1, x2), dim=1)
         x = self.shuffle(x)
         return x
 
 
 class DownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, shuffle_groups=2):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn'):
         super().__init__()
         channels = out_channels // 2
         self.conv11 = Conv2d(
             in_channels, in_channels, kernel_size=3, stride=2, groups=in_channels,
-            normalization='bn',
+            norm_layer=norm_layer,
         )
         self.conv12 = Conv2d(
             in_channels, channels, kernel_size=1,
-            normalization='bn', activation='relu',
+            norm_layer=norm_layer, activation='relu',
         )
         self.conv21 = Conv2d(
             in_channels, channels, kernel_size=1,
-            normalization='bn', activation='relu',
+            norm_layer=norm_layer, activation='relu',
         )
         self.conv22 = Conv2d(
             channels, channels, kernel_size=3, stride=2, groups=channels,
-            normalization='bn',
+            norm_layer=norm_layer,
         )
         self.conv23 = Conv2d(
             channels, channels, kernel_size=1,
-            normalization='bn', activation='relu',
+            norm_layer=norm_layer, activation='relu',
         )
         self.shuffle = ShuffleBlock(shuffle_groups)
 
@@ -85,7 +85,7 @@ class DownBlock(nn.Module):
         x2 = self.conv22(x2)
         x2 = self.conv23(x2)
 
-        x = torch.cat([x1, x2], dim=1)
+        x = torch.cat((x1, x2), dim=1)
         x = self.shuffle(x)
         return x
 
@@ -98,16 +98,17 @@ class ShuffleNetV2(nn.Module):
         2: [24, 244, 488, 976, 2048],
     }
 
-    def __init__(self, num_classes=1000, mult=0.5):
+    def __init__(self, num_classes=1000, mult=0.5, norm_layer='bn'):
         super().__init__()
         num_layers = [4, 8, 4]
         self.num_layers = num_layers
         channels = self.cfg[mult]
         self.channels = channels
+        self.norm_layer = norm_layer
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            normalization='bn', activation='relu'
+            norm_layer=norm_layer, activation='relu'
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,
@@ -121,10 +122,9 @@ class ShuffleNetV2(nn.Module):
         self.fc = nn.Linear(channels[4], num_classes)
 
     def _make_layer(self, num_layers, in_channels, out_channels):
-        layers = []
-        layers.append(DownBlock(in_channels, out_channels))
+        layers = [DownBlock(in_channels, out_channels, norm_layer=self.norm_layer)]
         for i in range(num_layers - 1):
-            layers.append(BasicBlock(out_channels))
+            layers.append(BasicBlock(out_channels, norm_layer=self.norm_layer))
         return nn.Sequential(*layers)
 
     def forward(self, x):

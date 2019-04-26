@@ -31,20 +31,21 @@ VERSION = None
 REQUIRED = [
     "torch",
     "torchvision",
+    "numpy",
     "bidict",
     "itchat",
     "nltk",
     "toolz",
     "pytorch-ignite",
-    "Pillow>5.0.0",
+    "pillow-simd>5.0.0",
     "xmltodict",
     "googledrivedownloader",
 ]
 
 # What packages are optional?
 EXTRAS = {
-    'coco': ['pycocotools']
-    # 'fancy feature': ['django'],
+    'coco': ['pycocotools'],
+    'matplotlib': ['matplotlib'],
 }
 
 # The rest you shouldn't have to touch too much :)

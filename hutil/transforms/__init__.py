@@ -1,6 +1,6 @@
 import time
 import random
-import torchvision.transforms.functional as TF
+import torchvision.transforms.functional as VF
 
 
 class Transform:
@@ -135,7 +135,10 @@ class RandomChoice(Transform):
 class ToTensor(JointTransform):
 
     def __init__(self):
-        super().__init__(lambda x, y: (TF.to_tensor(x), y))
+        super().__init__()
+
+    def __call__(self, img, anns):
+        return VF.to_tensor(img), anns
 
     def __repr__(self):
         return self.__class__.__name__ + "()"
