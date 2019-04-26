@@ -27,12 +27,15 @@ def create_supervised_evaluator(model, metrics=None,
         model.eval()
         with torch.no_grad():
             inputs, targets = prepare_batch(batch, device=device)
-            y_pred = model(*inputs)
-            if torch.is_tensor(y_pred):
-                y_pred = (y_pred,)
+            if hasattr(model, 'inference'):
+                preds = model.inference(*inputs)
+            else:
+                preds = model(*inputs)
+            if torch.is_tensor(preds):
+                preds = (preds,)
             output = {
-                "y_pred": detach(y_pred),
-                "y": detach(targets),
+                "y_pred": preds,
+                "y": targets,
                 'batch_size': inputs[0].size(0),
             }
             return output

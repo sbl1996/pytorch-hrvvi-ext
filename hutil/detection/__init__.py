@@ -22,7 +22,7 @@ from hutil.detection.iou import iou_11, iou_b11, iou_1m, iou_mn_cpu
 
 __all__ = [
     "coords_to_target", "MultiLevelAnchorMatching", "BBox",
-    "nms_cpu", "soft_nms_cpu", "transform_bbox", "transform_bboxes", "bbox_collate",
+    "nms_cpu", "soft_nms_cpu", "transform_bbox", "transform_bboxes", "misc_target_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn_cpu", "draw_bboxes",
     "MultiBoxLoss", "MultiLevelAnchorInference",
     "get_locations", "generate_anchors", "generate_multi_level_anchors",
@@ -527,20 +527,9 @@ def average_precision(recall, precision):
 
 
 @curry
-def bbox_collate(batch, label_transform=lambda x: x):
-    xs, targets = zip(*batch)
-    image_gts = []
-    for i, anns in enumerate(targets):
-        gts = []
-        for ann in anns:
-            ann = {
-                **ann,
-                'image_id': i,
-            }
-            ann['category_id'] = label_transform(ann['category_id'])
-            gts.append(ann)
-        image_gts.append(gts)
-    return default_collate(xs), Args(image_gts)
+def misc_target_collate(batch):
+    input, target = zip(*batch)
+    return default_collate(input), Args(target)
 
 
 def draw_bboxes(img, anns, categories=None):

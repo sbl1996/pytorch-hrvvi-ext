@@ -170,8 +170,7 @@ class LossG(Average):
 
 class COCOEval(Metric):
 
-    def __init__(self, inference, annotations, iou_type='bbox'):
-        self.inference = inference
+    def __init__(self, annotations, iou_type='bbox'):
         self.annotations = annotations
         self.iou_type = iou_type
         super().__init__()
@@ -182,10 +181,9 @@ class COCOEval(Metric):
         self.res = []
 
     def update(self, output):
-        y, y_pred, batch_size = get(
+        y, image_dets, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
         image_gts = y[0]
-        image_dets = self.inference(*y_pred)
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
             for d in dets:
@@ -195,7 +193,6 @@ class COCOEval(Metric):
     def compute(self):
         from pycocotools.cocoeval import COCOeval
         from pycocotools.mask import encode
-
         if self.iou_type == 'segm':
             for dt in self.res:
                 img = self.coco_gt.imgs[dt['image_id']]
@@ -252,17 +249,15 @@ class CocoAveragePrecision(Average):
         predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
     """
 
-    def __init__(self, inference, iou_threshold=np.arange(0.5, 1, 0.05), get_value=get_ap):
-        self.inference = inference
+    def __init__(self, iou_threshold=np.arange(0.5, 1, 0.05), get_value=get_ap):
         self.iou_threshold = iou_threshold
         self.get_value = get_value
         super().__init__(self.output_transform)
 
     def output_transform(self, output):
-        y, y_pred, batch_size = get(
+        y, image_dets, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
         image_gts = y[0]
-        image_dets = self.inference(*y_pred)
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
             for d in dets:
@@ -291,19 +286,16 @@ class MeanAveragePrecision(Average):
     Inputs:
         y (list of list of hutil.detection.BBox): ground truth bounding boxes
         y_pred: (batch_size, h, w, c)
-        predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
     """
 
-    def __init__(self, inference, iou_threshold=0.5):
-        self.inference = inference
+    def __init__(self, iou_threshold=0.5):
         self.iou_threshold = iou_threshold
         super().__init__(self.output_transform)
 
     def output_transform(self, output):
-        y, y_pred, batch_size = get(
+        y, image_dets, batch_size = get(
             ["y", "y_pred", "batch_size"], output)
         image_gts = y[0]
-        image_dets = self.inference(*y_pred)
 
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
