@@ -1,4 +1,5 @@
 #include "cpu/vision.h"
+#include <ATen/TensorUtils.h>
 
 template <typename T>
 void iou_mn_forward_kernel(const T *boxes1, const T *boxes2, const int m,
@@ -127,6 +128,11 @@ at::Tensor iou_mn_forward_cpu(const at::Tensor &boxes1,
     AT_ASSERTM(boxes1.type() == boxes2.type(),
                "boxes1 should have the same type as boxes2");
 
+    at::TensorArg boxes1_t{boxes1, "boxes1", 1}, boxes2_t{boxes2, "boxes2", 2};
+
+    at::CheckedFrom c = "iou_mn_forward_cpu";
+    at::checkAllSameType(c, {boxes1_t, boxes2_t});
+
     auto m = boxes1.size(0);
     auto n = boxes2.size(0);
     auto ious = torch::zeros({m, n}, boxes1.type());
@@ -150,11 +156,11 @@ std::tuple<at::Tensor, at::Tensor> iou_mn_backward_cpu(const at::Tensor &dious,
     AT_ASSERTM(!boxes1.type().is_cuda(), "boxes1 must be a CPU tensor");
     AT_ASSERTM(!boxes2.type().is_cuda(), "boxes2 must be a CPU tensor");
 
-    // at::TensorArg dious_t{dious, "dious", 1}, boxes1_t{boxes1, "boxes1", 2},
-    //     boxes2_t{boxes2, "boxes2", 3}, ious_t{ious, "ious", 4};
+    at::TensorArg dious_t{dious, "dious", 1}, boxes1_t{boxes1, "boxes1", 2},
+        boxes2_t{boxes2, "boxes2", 3}, ious_t{ious, "ious", 4};
 
-    // at::CheckedFrom c = "iou_mn_backward_cpu";
-    // at::checkAllSameType(c, {dious_t, boxes1_t, boxes2_t, ious_t});
+    at::CheckedFrom c = "iou_mn_backward_cpu";
+    at::checkAllSameType(c, {dious_t, boxes1_t, boxes2_t, ious_t});
 
     auto m = boxes1.size(0);
     auto n = boxes2.size(0);

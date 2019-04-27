@@ -133,13 +133,13 @@ def flatten(xs):
     return torch.cat(xs, dim=0)
 
 @curry
-def batch_anchor_match(image_anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5, neg_thresh=None,
-                  get_label=get('category_id')):
+def batch_anchor_match(image_gts, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5, neg_thresh=None,
+                  get_label=get('category_id'), debug=False):
     loc_t = []
     cls_t = []
-    batch_size = len(image_anns)
+    batch_size = len(image_gts)
     for i in range(batch_size):
-        i_loc_t, i_cls_t = match_anchors(image_anns[i], anchors_xywh[i], anchors_ltrb[i])
+        i_loc_t, i_cls_t = match_anchors(image_gts[i], anchors_xywh[i], anchors_ltrb[i], debug=debug)
         loc_t.append(i_loc_t)
         cls_t.append(i_cls_t)
     loc_t = torch.stack(loc_t, dim=0)
@@ -148,7 +148,7 @@ def batch_anchor_match(image_anns, anchors_xywh, anchors_ltrb, max_iou=True, pos
 
 @curry
 def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5, neg_thresh=None,
-                  get_label=get('category_id')):
+                  get_label=get('category_id'), debug=False):
     num_anchors = len(anchors_xywh)
     loc_t = torch.zeros(num_anchors, 4)
     cls_t = torch.zeros(num_anchors, dtype=torch.long)
@@ -163,9 +163,12 @@ def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5
     ious = iou_mn(bboxes_ltrb, anchors_ltrb)
 
     if max_iou:
-        indices = ious.max(dim=1)[1]
+        max_ious, indices = ious.max(dim=1)
         loc_t[indices] = coords_to_target(bboxes, anchors_xywh[indices])
         cls_t[indices] = labels
+        if debug:
+            print(max_ious)
+
 
     if pos_thresh:
         pos = ious > pos_thresh
@@ -205,15 +208,13 @@ class MatchAnchors:
 
     def __init__(self, anchors, max_iou=True,
                  pos_thresh=0.5, neg_thresh=None,
-                 get_label=get('category_id'),
-                 get_bbox=get("bbox")):
+                 get_label=get('category_id')):
         self.anchors_xywh = flatten(anchors)
         self.anchors_ltrb = BBox.convert(self.anchors_xywh, BBox.XYWH, BBox.LTRB)
         self.max_iou = max_iou
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
-        self.get_bbox = get_bbox
 
     def __call__(self, img, anns):
         target = match_anchors(
@@ -242,8 +243,9 @@ class MultiBoxLoss(nn.Module):
         if ignore is not None:
             neg = neg & ~ignore
         num_pos = pos.sum().item()
-        if loc_p.size()[:-1] != pos.size():
+        if loc_p.size()[:-1] == pos.size():
             loc_p = loc_p[pos]
+        loc_t = loc_t[pos]
         loc_loss = F.smooth_l1_loss(
             loc_p, loc_t, reduction='sum') / num_pos
 

@@ -56,3 +56,22 @@ def Conv2d(in_channels, out_channels,
     if activation is not None:
         layers.append(get_activation(activation))
     return nn.Sequential(*layers)
+
+
+class SELayer(nn.Module):
+    def __init__(self, in_channels, reduction=8):
+        super().__init__()
+        channels = in_channels // reduction
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.layers = nn.Sequential(
+            nn.Linear(in_channels, channels),
+            nn.ReLU(True),
+            nn.Linear(channels, in_channels),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        b, c = x.size()[:2]
+        s = self.avgpool(x).view(b, c)
+        s = self.layers(s).view(b, c, 1, 1)
+        return x * s

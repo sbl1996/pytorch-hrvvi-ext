@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.model.modules import Conv2d
+from hutil.model.modules import Conv2d, SELayer
 
 
 def channel_shuffle(x, g):
@@ -50,6 +50,113 @@ class BasicBlock(nn.Module):
         x = self.shuffle(x)
         return x
 
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn'):
+        super().__init__()
+        channels = out_channels - in_channels // 2
+        self.conv1 = Conv2d(
+            in_channels // 2, channels, kernel_size=1,
+            norm_layer=norm_layer, activation='relu',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer=norm_layer,
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer=norm_layer,
+        )
+        self.shortcut = nn.Sequential()
+        if in_channels != out_channels:
+            self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
+                                   norm_layer=norm_layer)
+        self.relu = nn.ReLU(inplace=True)
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        identity = x2
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x2 = x2 + self.shortcut(identity)
+        x2 = self.relu(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+class SEBlock(nn.Module):
+    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn'):
+        super().__init__()
+        channels = in_channels // 2
+        self.conv1 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer=norm_layer, activation='relu',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer=norm_layer,
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer=norm_layer, activation='relu',
+        )
+        self.se = SELayer(channels, reduction=2)
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x2 = self.se(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+class SEResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn'):
+        super().__init__()
+        channels = out_channels - in_channels // 2
+        self.conv1 = Conv2d(
+            in_channels // 2, channels, kernel_size=1,
+            norm_layer=norm_layer, activation='relu',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer=norm_layer,
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer=norm_layer,
+        )
+        self.shortcut = nn.Sequential()
+        self.se = SELayer(channels, reduction=2)
+        if in_channels != out_channels:
+            self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
+                                   norm_layer=norm_layer)
+        self.relu = nn.ReLU(inplace=True)
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        identity = x2
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x2 = self.se(x2)
+        x2 = x2 + self.shortcut(identity)
+        x2 = self.relu(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
 
 class DownBlock(nn.Module):
     def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn'):
@@ -90,21 +197,26 @@ class DownBlock(nn.Module):
         return x
 
 
-class ShuffleNetV2(nn.Module):
+class ShuffleNetV2_L(nn.Module):
     cfg = {
-        0.5: [24, 48, 96, 192, 1024],
-        1: [24, 116, 232, 464, 1024],
-        1.5: [24, 176, 352, 704, 1024],
-        2: [24, 244, 488, 976, 2048],
-    }
+        50: [
+            [64, 244, 488, 976, 1952, 2048],
+            [3,4,6,3],
+        ],
+        164: [
+            [64, 340, 680, 1360, 2720, 2048],
+            [10,10,23,10],
+        ]
 
-    def __init__(self, num_classes=1000, mult=0.5, norm_layer='bn'):
+    }
+    def __init__(self, version, num_classes=1000, norm_layer='bn', with_se=False):
         super().__init__()
-        num_layers = [4, 8, 4]
-        self.num_layers = num_layers
-        channels = self.cfg[mult]
+        channels = self.cfg[version][0]
         self.channels = channels
+        num_layers = self.cfg[version][1]
+        self.num_layers = num_layers
         self.norm_layer = norm_layer
+        block = SEResBlock if with_se else ResBlock
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
@@ -113,18 +225,76 @@ class ShuffleNetV2(nn.Module):
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,
         )
-        self.stage2 = self._make_layer(num_layers[0], channels[0], channels[1])
-        self.stage3 = self._make_layer(num_layers[1], channels[1], channels[2])
-        self.stage4 = self._make_layer(num_layers[2], channels[2], channels[3])
+        self.stage2 = self._make_layer(block, num_layers[0], channels[0], channels[1], stride=1)
+        self.stage3 = self._make_layer(block, num_layers[1], channels[1], channels[2])
+        self.stage4 = self._make_layer(block, num_layers[2], channels[2], channels[3])
+        self.stage5 = self._make_layer(block, num_layers[3], channels[3], channels[4])
+        self.conv6 = Conv2d(channels[4], channels[5], kernel_size=1)
+
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(channels[5], num_classes)
+
+    def _make_layer(self, block, num_layers, in_channels, out_channels, stride=2):
+        layers = []
+        if stride == 2:
+            layers.append(DownBlock(in_channels, out_channels, norm_layer=self.norm_layer))
+        else:
+            layers.append(block(in_channels, out_channels, norm_layer=self.norm_layer))
+        for i in range(num_layers - 1):
+            layers.append(block(out_channels, out_channels, norm_layer=self.norm_layer))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.maxpool(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
+        x = self.stage4(x)
+        x = self.stage5(x)
+        x = self.conv6(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+
+class ShuffleNetV2(nn.Module):
+
+    cfg = {
+        0.5: [24, 48, 96, 192, 1024],
+        1: [24, 116, 232, 464, 1024],
+        1.5: [24, 176, 352, 704, 1024],
+        2: [24, 244, 488, 976, 2048],
+    }
+
+    def __init__(self, mult=0.5, num_classes=1000, norm_layer='bn', with_se=False):
+        super().__init__()
+        num_layers = [4, 8, 4]
+        self.num_layers = num_layers
+        channels = self.cfg[mult]
+        self.channels = channels
+        self.norm_layer = norm_layer
+        block = SEBlock if with_se else BasicBlock
+
+        self.conv1 = Conv2d(
+            3, channels[0], kernel_size=3, stride=2,
+            norm_layer=norm_layer, activation='relu'
+        )
+        self.maxpool = nn.MaxPool2d(
+            kernel_size=3, stride=2, padding=1,
+        )
+        self.stage2 = self._make_layer(block, num_layers[0], channels[0], channels[1])
+        self.stage3 = self._make_layer(block, num_layers[1], channels[1], channels[2])
+        self.stage4 = self._make_layer(block, num_layers[2], channels[2], channels[3])
         self.conv5 = Conv2d(channels[3], channels[4], kernel_size=1)
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(channels[4], num_classes)
 
-    def _make_layer(self, num_layers, in_channels, out_channels):
+    def _make_layer(self, block, num_layers, in_channels, out_channels):
         layers = [DownBlock(in_channels, out_channels, norm_layer=self.norm_layer)]
         for i in range(num_layers - 1):
-            layers.append(BasicBlock(out_channels, norm_layer=self.norm_layer))
+            layers.append(block(out_channels, norm_layer=self.norm_layer))
         return nn.Sequential(*layers)
 
     def forward(self, x):
@@ -138,3 +308,9 @@ class ShuffleNetV2(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+
+def shufflenet_v2(mult=0.5, **kwargs):
+    return ShuffleNetV2(mult, **kwargs)
+
+def shufflenet_v2_large(version=50, **kwargs):
+    return ShuffleNetV2_L(version, **kwargs)

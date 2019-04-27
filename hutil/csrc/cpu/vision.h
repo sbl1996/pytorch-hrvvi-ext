@@ -14,9 +14,9 @@ at::Tensor PSROIAlign_backward_cpu(
     const int sampling_ratio);
 
 at::Tensor iou_mn_forward_cpu(const at::Tensor &boxes1,
-                              const at::Tensor &boxes2)
+                              const at::Tensor &boxes2);
 
 std::tuple<at::Tensor, at::Tensor> iou_mn_backward_cpu(const at::Tensor &dious,
                                                        const at::Tensor &boxes1,
                                                        const at::Tensor &boxes2,
-                                                       const at::Tensor &ious)
+                                                       const at::Tensor &ious);
