@@ -2,6 +2,7 @@ import torch
 from hutil.detection.bbox import BBox, transform_bboxes
 from hutil import _C
 
+
 def iou_1m(box, boxes, format=BBox.LTRB):
     r"""
     Calculates one-to-many ious by corners([xmin, ymin, xmax, ymax]).
@@ -82,18 +83,19 @@ def iou_11(box1, box2):
 class IoUMN(torch.autograd.Function):
     @staticmethod
     def forward(ctx, boxes1, boxes2):
-        ious = _C.iou_mn_forward_cpu(boxes1, boxes2)
+        ious = _C.iou_mn_forward(boxes1, boxes2)
         ctx.save_for_backward(boxes1, boxes2, ious)
 
         return ious
 
     @staticmethod
     def backward(ctx, dious):
-        dboxes1, dboxes2 = _C.iou_mn_backward_cpu(dious.contiguous(), *ctx.saved_variables)
+        dboxes1, dboxes2 = _C.iou_mn_backward(
+            dious.contiguous(), *ctx.saved_variables)
         return dboxes1, dboxes2
 
 
-def iou_mn_cpu(boxes1, boxes2):
+def iou_mn(boxes1, boxes2):
     r"""
     Calculates IoU between boxes1 of size m and boxes2 of size n;
 

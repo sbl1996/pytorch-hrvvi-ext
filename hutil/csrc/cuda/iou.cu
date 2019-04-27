@@ -1,206 +1,211 @@
-// #include <torch/extension.h>
+#include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
 
-// template <typename T> __device__ inline float iou_11(const T *a, const T *b)
-// {
-//     T left = max(a[0], b[0]), right = min(a[2], b[2]);
-//     T top = max(a[1], b[1]), bottom = min(a[3], b[3]);
-//     T width = max(right - left, (T)0), height = max(bottom - top, (T)0);
-//     T interS = width * height;
-//     T Sa = (a[2] - a[0]) * (a[3] - a[1]);
-//     T Sb = (b[2] - b[0]) * (b[3] - b[1]);
-//     return interS / (Sa + Sb - interS);
-// }
+#include <THC/THC.h>
+#include <THC/THCAtomics.cuh>
+#include <THC/THCDeviceUtils.cuh>
 
-// template <typename T>
-// __global__ void iou_nm_forward(const T *boxes1, const T *boxes2, const int n,
-//                                const int m, T *ious) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     int j = blockIdx.y * blockDim.y + threadIdx.y;
+#include "cuda_helpers.h"
 
-//     if (i >= n || j >= m)
-//         return;
+#define GET_BLOCKS(block_size, n)                                              \
+    ((static_cast<int>(n) + block_size - 1) / block_size)
 
-//     T iou = iou_11(boxes1 + i * 4, boxes2 + j * 4);
-//     ious[i * m + j] = iou;
-// }
+template <typename T> __device__ inline float iou_11(const T *a, const T *b) {
+    T left = max(a[0], b[0]), right = min(a[2], b[2]);
+    T top = max(a[1], b[1]), bottom = min(a[3], b[3]);
+    T width = max(right - left, (T)0), height = max(bottom - top, (T)0);
+    T interS = width * height;
+    T Sa = (a[2] - a[0]) * (a[3] - a[1]);
+    T Sb = (b[2] - b[0]) * (b[3] - b[1]);
+    return interS / (Sa + Sb - interS);
+}
 
-// std::tuple<at::Tensor, at::Tensor>
-// iou_nm_forward_cuda(const at::Tensor &boxes1, const at::Tensor &boxes2) {
-//     AT_ASSERTM(boxes1.device().is_cuda(), "boxes1 must be a CUDA tensor");
-//     AT_ASSERTM(boxes2.device().is_cuda(), "boxes2 must be a CUDA tensor");
+template <typename T>
+__device__ inline void iou_11_backward(T *dbox1, T *dbox2, const T dout,
+                                       const T *box1, const T *box2,
+                                       const T out) {
+    if (out == 0) {
+        return;
+    }
 
-//     at::TensorArg boxes1_t{boxes1, "boxes1", 1}, boxes2_t{boxes2, "boxes2",
-//     2};
+    T ix1 = box1[0];
+    T iy1 = box1[1];
+    T ix2 = box1[2];
+    T iy2 = box1[3];
+    T iw = ix2 - ix1;
+    T ih = iy2 - iy1;
+    T iarea = iw * ih;
 
-//     at::CheckedFrom c = "iou_nm_forward_cuda";
-//     at::checkAllSameGPU(c, {boxes1_t, boxes2_t});
-//     at::checkAllSameType(c, {boxes1_t, boxes2_t});
+    T jx1 = box2[0];
+    T jy1 = box2[1];
+    T jx2 = box2[2];
+    T jy2 = box2[3];
+    T jw = jx2 - jx1;
+    T jh = jy2 - jy1;
+    T jarea = jw * jh;
 
-//     at::cuda::CUDAGuard device_guard(boxes1.device());
+    T xx1 = std::max(ix1, jx1);
+    T yy1 = std::max(iy1, jy1);
+    T xx2 = std::min(ix2, jx2);
+    T yy2 = std::min(iy2, jy2);
+    T w = std::max(static_cast<T>(0.0), xx2 - xx1);
+    T h = std::max(static_cast<T>(0.0), yy2 - yy1);
+    T inter_area = w * h;
+    T union_area = iarea + jarea - inter_area;
 
-//     auto n = boxes1.size(0);
-//     auto m = boxes2.size(0);
+    T darea = dout * inter_area / (union_area * union_area);
 
-//     at::Tensor ious = at::zeros({n, m}, boxes1.options());
+    atomicAdd(dbox1, ih * darea);
+    atomicAdd(dbox1 + 1, iw * darea);
+    atomicAdd(dbox1 + 2, -ih * darea);
+    atomicAdd(dbox1 + 3, -iw * darea);
 
-//     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    atomicAdd(dbox2, jh * darea);
+    atomicAdd(dbox2 + 1, jw * darea);
+    atomicAdd(dbox2 + 2, -jh * darea);
+    atomicAdd(dbox2 + 3, -jw * darea);
 
-//     const dim3 blockSize(32, 32);
-//     const dim3 numBlocks(THCCeilDiv(n, 32L), THCCeilDiv(m, 32L));
+    T dinter = dout * (inter_area + union_area) / (union_area * union_area);
+    T dw = h * dinter;
+    T dh = w * dinter;
 
-//     if (ious.numel() == 0) {
-//         THCudaCheck(cudaGetLastError());
-//         return ious;
-//     }
+    if (ix1 >= jx1) {
+        atomicAdd(dbox1, -dw);
+    } else {
+        atomicAdd(dbox2, -dw);
+    }
 
-//     iou_nm_forward<<<numBlocks, blockSize>>>(boxes1, boxes2, n, m, ious);
+    if (iy1 >= jy1) {
+        atomicAdd(dbox1 + 1, -dh);
+    } else {
+        atomicAdd(dbox2 + 1, -dh);
+    }
 
-//     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-//         boxes1.type(), "iou_nm_forward_cuda", [&] {
-//             iou_nm_forward<scalar_t><<<numBlocks, blockSize, 0, stream>>>(
-//                 boxes1.contiguous().data<scalar_t>(),
-//                 boxes2.contiguous().data<scalar_t>(), n, m,
-//                 ious.contiguous().data<scalar_t>());
-//         });
-//     THCudaCheck(cudaGetLastError());
-//     return ious
-// }
+    if (ix2 <= jx2) {
+        atomicAdd(dbox1 + 2, dw);
+    } else {
+        atomicAdd(dbox2 + 2, dw);
+    }
 
-// template <typename T>
-// __device__ inline void iou_11_backward(T *dbox1, T *dbox2, const T dout,
-//                                        const T *box1, const T *box2,
-//                                        const T out) {
-//     if (out == 0) {
-//         return;
-//     }
+    if (iy2 <= jy2) {
+        atomicAdd(dbox1 + 3, dh);
+    } else {
+        atomicAdd(dbox2 + 3, dh);
+    }
+}
 
-//     T ix1 = box1[0];
-//     T iy1 = box1[1];
-//     T ix2 = box1[2];
-//     T iy2 = box1[3];
-//     T iw = ix2 - ix1;
-//     T ih = iy2 - iy1;
-//     T iarea = iw * ih;
+template <typename T>
+__global__ void iou_mn_forward(const int nthreads, const T *boxes1,
+                               const T *boxes2, const int m, const int n,
+                               T *ious) {
+    CUDA_1D_KERNEL_LOOP(index, nthreads) {
+        int j = index % n;
+        int i = index / n;
+        T iou = iou_11(boxes1 + i * 4, boxes2 + j * 4);
+        ious[i * m + j] = iou;
+    }
+}
 
-//     T jx1 = box2[0];
-//     T jy1 = box2[1];
-//     T jx2 = box2[2];
-//     T jy2 = box2[3];
-//     T jw = jx2 - jx1;
-//     T jh = jy2 - jy1;
-//     T jarea = jw * jh;
+template <typename T>
+__global__ void iou_nm_backward(const int nthreads, T *dboxes1, T *dboxes2,
+                                const T *dout, const T *boxes1, const T *boxes2,
+                                const int m, const int n, const T *ious) {
+    CUDA_1D_KERNEL_LOOP(index, nthreads) {
+        int j = index % n;
+        int i = index / n;
+        iou_11_backward(dboxes1 + i * 4, dboxes2 + j * 4, dout[i * m + j],
+                        boxes1 + i * 4, boxes2 + j * 4, ious[i * m + j]);
+    }
+}
 
-//     T xx1 = std::max(ix1, jx1);
-//     T yy1 = std::max(iy1, jy1);
-//     T xx2 = std::min(ix2, jx2);
-//     T yy2 = std::min(iy2, jy2);
-//     T w = std::max(static_cast<T>(0.0), xx2 - xx1);
-//     T h = std::max(static_cast<T>(0.0), yy2 - yy1);
-//     T inter_area = w * h;
-//     T union_area = iarea + jarea - inter_area;
+at::Tensor iou_nm_forward_cuda(const at::Tensor &boxes1,
+                               const at::Tensor &boxes2) {
+    AT_ASSERTM(boxes1.device().is_cuda(), "boxes1 must be a CUDA tensor");
+    AT_ASSERTM(boxes2.device().is_cuda(), "boxes2 must be a CUDA tensor");
 
-//     T darea = dout * inter_area / (union_area * union_area);
+    // at::TensorArg boxes1_t{boxes1, "boxes1", 1}, boxes2_t{boxes2, "boxes2",
+    // 2};
 
-//     atomicAdd(dbox1, ih * darea);
-//     atomicAdd(dbox1 + 1, iw * darea);
-//     atomicAdd(dbox1 + 2, -ih * darea);
-//     atomicAdd(dbox1 + 3, -iw * darea);
+    // at::CheckedFrom c = "iou_nm_forward_cuda";
+    // at::checkAllSameGPU(c, {boxes1_t, boxes2_t});
+    // at::checkAllSameType(c, {boxes1_t, boxes2_t});
 
-//     atomicAdd(dbox2, jh * darea);
-//     atomicAdd(dbox2 + 1, jw * darea);
-//     atomicAdd(dbox2 + 2, -jh * darea);
-//     atomicAdd(dbox2 + 3, -jw * darea);
+    // at::cuda::CUDAGuard device_guard(boxes1.device());
 
-//     T dinter = dout * (inter_area + union_area) / (union_area * union_area);
-//     T dw = h * dinter;
-//     T dh = w * dinter;
+    auto m = boxes1.size(0);
+    auto n = boxes2.size(0);
 
-//     if (ix1 >= jx1) {
-//         atomicAdd(dbox1, -dw);
-//     } else {
-//         atomicAdd(dbox2, -dw);
-//     }
+    at::Tensor ious = at::zeros({m, n}, boxes1.options());
 
-//     if (iy1 >= jy1) {
-//         atomicAdd(dbox1 + 1, -dh);
-//     } else {
-//         atomicAdd(dbox2 + 1, -dh);
-//     }
+    auto output_size = m * n;
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-//     if (ix2 <= jx2) {
-//         atomicAdd(dbox1 + 2, dw);
-//     } else {
-//         atomicAdd(dbox2 + 2, dw);
-//     }
+    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
+    dim3 block(512);
 
-//     if (iy2 <= jy2) {
-//         atomicAdd(dbox1 + 3, dh);
-//     } else {
-//         atomicAdd(dbox2 + 3, dh);
-//     }
-// }
+    if (ious.numel() == 0) {
+        THCudaCheck(cudaGetLastError());
+        return ious;
+    }
 
-// template <typename T>
-// __global__ void iou_nm_backward(T *dboxes1, T *dboxes2, const T *dout,
-//                                 const T *boxes1, const T *boxes2, const int
-//                                 n, const int m, const T *ious) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     int j = blockIdx.y * blockDim.y + threadIdx.y;
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+        boxes1.type(), "iou_nm_forward_cuda", [&] {
+            iou_mn_forward<scalar_t><<<grid, block, 0, stream>>>(
+                output_size, boxes1.contiguous().data<scalar_t>(),
+                boxes2.contiguous().data<scalar_t>(), m, n,
+                ious.data<scalar_t>());
+        });
+    THCudaCheck(cudaGetLastError());
+    return ious
+}
 
-//     if (i >= n || j >= m)
-//         return;
+std::tuple<at::Tensor, at::Tensor>
+iou_nm_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
+                     const at::Tensor &boxes2, const at::Tensor &ious) {
+    // Check if input tensors are CUDA tensors
+    AT_ASSERTM(dout.device().is_cuda(), "dout must be a CUDA tensor");
+    AT_ASSERTM(boxes1.device().is_cuda(), "boxes1 must be a CUDA tensor");
+    AT_ASSERTM(boxes2.device().is_cuda(), "boxes2 must be a CUDA tensor");
+    AT_ASSERTM(ious.device().is_cuda(), "ious must be a CUDA tensor");
 
-//     iou_11_backward(dboxes1 + i * 4, dboxes2 + j * 4, dout[i * m + j],
-//                     boxes1 + i * 4, boxes2 + j * 4, ious[i * m + j]);
-// }
+    // at::TensorArg dout_t{dout, "dout", 1}, boxes1_t{boxes1, "boxes1", 2},
+    //     boxes2_t{boxes2, "boxes2", 3}, ious_t{ious, "ious", 4};
 
-// at::Tensor iou_nm_backward_cuda(const at::Tensor &dout,
-//                                 const at::Tensor &boxes1,
-//                                 const at::Tensor &boxes2,
-//                                 const at::Tensor &ious) {
-//     // Check if input tensors are CUDA tensors
-//     AT_ASSERTM(dout.device().is_cuda(), "dout must be a CUDA tensor");
-//     AT_ASSERTM(boxes1.device().is_cuda(), "boxes1 must be a CUDA tensor");
-//     AT_ASSERTM(boxes2.device().is_cuda(), "boxes2 must be a CUDA tensor");
-//     AT_ASSERTM(ious.device().is_cuda(), "ious must be a CUDA tensor");
+    // at::CheckedFrom c = "iou_nm_backward_cuda";
+    // at::checkAllSameGPU(c, {dout_t, boxes1_t, boxes2_t, ious_t});
+    // at::checkAllSameType(c, {dout_t, boxes1_t, boxes2_t, ious_t});
 
-//     at::TensorArg dout_t{dout, "dout", 1}, boxes1_t{boxes1, "boxes1", 2},
-//         boxes2_t{boxes2, "boxes2", 3}, ious_t{ious, "ious", 4};
+    // at::cuda::CUDAGuard device_guard(dout.device());
 
-//     at::CheckedFrom c = "iou_nm_backward_cuda";
-//     at::checkAllSameGPU(c, {dout_t, boxes1_t, boxes2_t, ious_t});
-//     at::checkAllSameType(c, {dout_t, boxes1_t, boxes2_t, ious_t});
+    auto m = boxes1.size(0);
+    auto n = boxes2.size(0);
 
-//     at::cuda::CUDAGuard device_guard(dout.device());
+    at::Tensor dboxes1 = at::zeros({m, 4}, boxes1.options());
+    at::Tensor dboxes2 = at::zeros({n, 4}, boxes2.options());
 
-//     auto n = boxes1.size(0);
-//     auto m = boxes2.size(0);
+    auto output_size = m * n;
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-//     at::Tensor dboxes1 = at::zeros({n, 4}, boxes1.options());
-//     at::Tensor dboxes2 = at::zeros({m, 4}, boxes2.options());
+    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
+    dim3 block(512);
 
-//     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    if (dout.numel() == 0) {
+        THCudaCheck(cudaGetLastError());
+        return std::make_tuple(dboxes1, dboxes2);
+    }
 
-//     const dim3 blockSize(32, 32);
-//     const dim3 numBlocks(THCCeilDiv(n, 32L), THCCeilDiv(m, 32L));
+    int m_stride = dout.stride(0);
+    int n_stride = dout.stride(1);
 
-//     if (dout.numel() == 0) {
-//         THCudaCheck(cudaGetLastError());
-//         return std::make_tuple(dboxes1, dboxes2);
-//     }
-
-//     int n_stride = dout.stride(0);
-//     int m_stride = dout.stride(1);
-
-//     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-//         dout.type(), "iou_nm_backward_cuda", [&] {
-//             iou_nm_backward<scalar_t><<<numBlocks, blockSize, 0, stream>>>(
-//                 dboxes1.data<scalar_t>(), dboxes2.data<scalar_t>(),
-//                 dout.contiguous().data<scalar_t>(),
-//                 boxes1.contiguous().data<scalar_t>(),
-//                 boxes2.contiguous().data<scalar_t>(),
-//                 ious.contiguous().data<scalar_t>());
-//         });
-//     THCudaCheck(cudaGetLastError());
-//     return std::make_tuple(dboxes1, dboxes2);
-// }
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+        dout.type(), "iou_nm_backward_cuda", [&] {
+            iou_mn_backward<scalar_t><<<grid, block, 0, stream>>>(
+                dboxes1.data<scalar_t>(), dboxes2.data<scalar_t>(),
+                dout.contiguous().data<scalar_t>(),
+                boxes1.contiguous().data<scalar_t>(),
+                boxes2.contiguous().data<scalar_t>(),
+                ious.contiguous().data<scalar_t>());
+        });
+    THCudaCheck(cudaGetLastError());
+    return std::make_tuple(dboxes1, dboxes2);
+}

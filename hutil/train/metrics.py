@@ -216,13 +216,11 @@ class COCOEval(Metric):
                 img = self.coco_gt.imgs[dt['image_id']]
                 width = img['width']
                 height = img['height']
-                sw = width / dt['scale_w']
-                sh = height / dt['scale_h']
-                l, t, w, h = [int(v) for v in dt['bbox']]
-                l *= sw
-                t *= sh
-                w *= sw
-                h *= sh
+                l, t, w, h = dt['bbox']
+                l *= width
+                t *= height
+                w *= width
+                h *= height
                 dt['bbox'] = [l, t, w, h]
 
         coco_dt = self.coco_gt.loadRes(self.res)

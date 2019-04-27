@@ -6,6 +6,13 @@ class BBox:
     LTRB = 1  # [xmin, ymin, xmax,  ymax]
     XYWH = 2  # [cx,   cy,   width, height]
 
+    @staticmethod
+    def convert(bbox, format=0, to=1, inplace=False):
+        if torch.is_tensor(bbox):
+            return transform_bboxes(bbox, format=format, to=to, inplace=inplace)
+        else:
+            return transform_bbox(bbox, format, to)
+
     def __init__(self, image_id, category_id, bbox, score=None, format=1, area=None, segmentation=None, **kwargs):
         self.image_id = image_id
         self.category_id = category_id
@@ -59,7 +66,7 @@ def boxes_ltwh_to_xywh(boxes, inplace=False):
     boxes_lt = boxes[..., :2]
     boxes_wh = boxes[..., 2:]
     boxes_xy = boxes_lt - boxes_wh / 2
-    return torch.cat((boxes_lt, boxes_xy), dim=-1)
+    return torch.cat((boxes_xy, boxes_wh), dim=-1)
 
 
 def boxes_ltrb_to_ltwh(boxes, inplace=False):

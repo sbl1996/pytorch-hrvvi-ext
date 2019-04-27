@@ -1,5 +1,4 @@
 #include "cpu/vision.h"
-#include <ATen/TensorUtils.h>
 
 // implementation taken from Caffe2
 template <typename T> struct PreCalc {
