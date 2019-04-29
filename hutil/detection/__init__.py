@@ -156,14 +156,14 @@ def batch_anchor_match(image_gts, anchors_xywh, anchors_ltrb, max_iou=True, pos_
 def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5, neg_thresh=None,
                   get_label=get('category_id'), debug=False):
     num_anchors = len(anchors_xywh)
-    loc_t = torch.zeros(num_anchors, 4)
-    cls_t = torch.zeros(num_anchors, dtype=torch.long)
+    loc_t = anchors_xywh.new_zeros(num_anchors, 4)
+    cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
     if neg_thresh:
-        neg = torch.ones(num_anchors, dtype=torch.uint8)
+        neg = loc_t.new_ones(num_anchors, dtype=torch.uint8)
 
-    bboxes = torch.tensor([ann['bbox'] for ann in anns])
+    bboxes = loc_t.new_tensor([ann['bbox'] for ann in anns])
     bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = torch.tensor([get_label(ann) for ann in anns])
+    labels = loc_t.new_tensor([get_label(ann) for ann in anns])
 
     bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
     ious = iou_mn(bboxes_ltrb, anchors_ltrb)
