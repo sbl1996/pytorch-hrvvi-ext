@@ -5,6 +5,8 @@
 #include <THC/THCAtomics.cuh>
 #include <THC/THCDeviceUtils.cuh>
 
+#include <math.h>
+
 #include "cuda_helpers.h"
 
 #define GET_BLOCKS(block_size, n)                                              \
