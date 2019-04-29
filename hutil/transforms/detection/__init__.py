@@ -8,7 +8,7 @@ from PIL import Image
 import torchvision.transforms.functional as VF
 
 from hutil.transforms import JointTransform, Compose, ToTensor
-import hutil.transforms.detection.functional as HF
+from hutil.transforms.detection import functional as HF
 
 
 class RandomExpand(JointTransform):

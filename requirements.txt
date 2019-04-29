@@ -9,3 +9,4 @@ pytorch-ignite
 Pillow>5.0.0
 xmltodict
 googledrivedownloader
+tensorboardX

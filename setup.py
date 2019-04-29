@@ -40,6 +40,7 @@ REQUIRED = [
     "pillow-simd>5.0.0",
     "xmltodict",
     "googledrivedownloader",
+    "tensorboardX",
 ]
 
 # What packages are optional?
