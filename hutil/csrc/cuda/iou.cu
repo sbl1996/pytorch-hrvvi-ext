@@ -156,7 +156,7 @@ at::Tensor iou_mn_forward_cuda(const at::Tensor &boxes1,
                 ious.data<scalar_t>());
         });
     THCudaCheck(cudaGetLastError());
-    return ious
+    return ious;
 }
 
 std::tuple<at::Tensor, at::Tensor>
