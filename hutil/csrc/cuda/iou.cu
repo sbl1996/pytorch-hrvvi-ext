@@ -107,7 +107,7 @@ __global__ void iou_mn_forward(const int nthreads, const T *boxes1,
 }
 
 template <typename T>
-__global__ void iou_nm_backward(const int nthreads, T *dboxes1, T *dboxes2,
+__global__ void iou_mn_backward(const int nthreads, T *dboxes1, T *dboxes2,
                                 const T *dout, const T *boxes1, const T *boxes2,
                                 const int m, const int n, const T *ious) {
     CUDA_1D_KERNEL_LOOP(index, nthreads) {
@@ -118,7 +118,7 @@ __global__ void iou_nm_backward(const int nthreads, T *dboxes1, T *dboxes2,
     }
 }
 
-at::Tensor iou_nm_forward_cuda(const at::Tensor &boxes1,
+at::Tensor iou_mn_forward_cuda(const at::Tensor &boxes1,
                                const at::Tensor &boxes2) {
     AT_ASSERTM(boxes1.device().is_cuda(), "boxes1 must be a CUDA tensor");
     AT_ASSERTM(boxes2.device().is_cuda(), "boxes2 must be a CUDA tensor");
@@ -126,7 +126,7 @@ at::Tensor iou_nm_forward_cuda(const at::Tensor &boxes1,
     // at::TensorArg boxes1_t{boxes1, "boxes1", 1}, boxes2_t{boxes2, "boxes2",
     // 2};
 
-    // at::CheckedFrom c = "iou_nm_forward_cuda";
+    // at::CheckedFrom c = "iou_mn_forward_cuda";
     // at::checkAllSameGPU(c, {boxes1_t, boxes2_t});
     // at::checkAllSameType(c, {boxes1_t, boxes2_t});
 
@@ -149,7 +149,7 @@ at::Tensor iou_nm_forward_cuda(const at::Tensor &boxes1,
     }
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        boxes1.type(), "iou_nm_forward_cuda", [&] {
+        boxes1.type(), "iou_mn_forward_cuda", [&] {
             iou_mn_forward<scalar_t><<<grid, block, 0, stream>>>(
                 output_size, boxes1.contiguous().data<scalar_t>(),
                 boxes2.contiguous().data<scalar_t>(), m, n,
@@ -160,7 +160,7 @@ at::Tensor iou_nm_forward_cuda(const at::Tensor &boxes1,
 }
 
 std::tuple<at::Tensor, at::Tensor>
-iou_nm_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
+iou_mn_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
                      const at::Tensor &boxes2, const at::Tensor &ious) {
     // Check if input tensors are CUDA tensors
     AT_ASSERTM(dout.device().is_cuda(), "dout must be a CUDA tensor");
@@ -171,7 +171,7 @@ iou_nm_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
     // at::TensorArg dout_t{dout, "dout", 1}, boxes1_t{boxes1, "boxes1", 2},
     //     boxes2_t{boxes2, "boxes2", 3}, ious_t{ious, "ious", 4};
 
-    // at::CheckedFrom c = "iou_nm_backward_cuda";
+    // at::CheckedFrom c = "iou_mn_backward_cuda";
     // at::checkAllSameGPU(c, {dout_t, boxes1_t, boxes2_t, ious_t});
     // at::checkAllSameType(c, {dout_t, boxes1_t, boxes2_t, ious_t});
 
@@ -198,7 +198,7 @@ iou_nm_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
     int n_stride = dout.stride(1);
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        dout.type(), "iou_nm_backward_cuda", [&] {
+        dout.type(), "iou_mn_backward_cuda", [&] {
             iou_mn_backward<scalar_t><<<grid, block, 0, stream>>>(
                 dboxes1.data<scalar_t>(), dboxes2.data<scalar_t>(),
                 dout.contiguous().data<scalar_t>(),

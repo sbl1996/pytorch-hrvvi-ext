@@ -13,9 +13,9 @@ at::Tensor PSROIAlign_backward_cuda(
     const int batch_size, const int channels, const int height, const int width,
     const int sampling_ratio);
 
-at::Tensor iou_nm_forward_cuda(const at::Tensor &boxes1,
+at::Tensor iou_mn_forward_cuda(const at::Tensor &boxes1,
                                const at::Tensor &boxes2);
 
 std::tuple<at::Tensor, at::Tensor>
-iou_nm_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
+iou_mn_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
                      const at::Tensor &boxes2, const at::Tensor &ious);
