@@ -5,8 +5,6 @@
 #include <THC/THCAtomics.cuh>
 #include <THC/THCDeviceUtils.cuh>
 
-#include <math.h>
-
 #include "cuda_helpers.h"
 
 #define GET_BLOCKS(block_size, n)                                              \
@@ -46,12 +44,12 @@ __device__ inline void iou_11_backward(T *dbox1, T *dbox2, const T dout,
     T jh = jy2 - jy1;
     T jarea = jw * jh;
 
-    T xx1 = std::max(ix1, jx1);
-    T yy1 = std::max(iy1, jy1);
-    T xx2 = std::min(ix2, jx2);
-    T yy2 = std::min(iy2, jy2);
-    T w = std::max(static_cast<T>(0.0), xx2 - xx1);
-    T h = std::max(static_cast<T>(0.0), yy2 - yy1);
+    T xx1 = max(ix1, jx1);
+    T yy1 = max(iy1, jy1);
+    T xx2 = min(ix2, jx2);
+    T yy2 = min(iy2, jy2);
+    T w = max(static_cast<T>(0.0), xx2 - xx1);
+    T h = max(static_cast<T>(0.0), yy2 - yy1);
     T inter_area = w * h;
     T union_area = iarea + jarea - inter_area;
 
@@ -142,7 +140,7 @@ at::Tensor iou_mn_forward_cuda(const at::Tensor &boxes1,
     auto output_size = m * n;
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
+    dim3 grid(min(GET_BLOCKS(512, output_size), 4096));
     dim3 block(512);
 
     if (ious.numel() == 0) {
@@ -188,7 +186,7 @@ iou_mn_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
     auto output_size = m * n;
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    dim3 grid(std::min(GET_BLOCKS(512, output_size), 4096));
+    dim3 grid(min(GET_BLOCKS(512, output_size), 4096));
     dim3 block(512);
 
     if (dout.numel() == 0) {
