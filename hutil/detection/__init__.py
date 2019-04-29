@@ -163,7 +163,7 @@ def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5
 
     bboxes = loc_t.new_tensor([ann['bbox'] for ann in anns])
     bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = loc_t.new_tensor([get_label(ann) for ann in anns])
+    labels = loc_t.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
 
     bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
     ious = iou_mn(bboxes_ltrb, anchors_ltrb)
