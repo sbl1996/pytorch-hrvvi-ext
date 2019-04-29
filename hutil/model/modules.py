@@ -3,6 +3,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def upsample_add(x, y):
+    r"""
+    Upsample x and add it to y.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        tensor to upsample
+    y : torch.Tensor
+        tensor to be added
+    """
+    h, w = y.size()[2:4]
+    return F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False) + y
+
+
 def get_groups(channels, max_groups):
     g = max_groups
     while channels % g != 0:

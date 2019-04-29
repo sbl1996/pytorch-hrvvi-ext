@@ -29,9 +29,9 @@ class Average(Metric):
         self._sum = 0
 
     def update(self, output):
-        val, N = output
-        self._sum += val * N
-        self._num_examples += N
+        val, n = output
+        self._sum += val * n
+        self._num_examples += n
 
     def compute(self):
         if self._num_examples == 0:
@@ -62,9 +62,9 @@ def take_until_eos(eos_index, tokens):
     return tokens
 
 
-def bleu(y_pred, y, eos_index):
-    y_pred = y_pred.argmax(dim=1)
-    output = lmap(take_until_eos(eos_index), y_pred.tolist())
+def bleu(preds, y, eos_index):
+    preds = preds.argmax(dim=1)
+    output = lmap(take_until_eos(eos_index), preds.tolist())
     target = lmap(take_until_eos(eos_index), y.tolist())
     target = lmap(lambda x: [x], target)
     score = corpus_bleu(
@@ -77,7 +77,7 @@ class TopKAccuracy(Average):
     Args:
         k: default to 5
     Inputs:
-        y_pred: (batch_size, C, ...) or (batch_size, ...)  
+        preds: (batch_size, C, ...) or (batch_size, ...)
         y:      (batch_size, ...)  
     """
 
@@ -86,10 +86,10 @@ class TopKAccuracy(Average):
         super().__init__(output_transform=self.output_transform)
 
     def output_transform(self, output):
-        y_pred, y = get(["y_pred", "y"], output)
-        y_pred = y_pred[0]
-        y = y[0]
-        return topk_accuracy(y_pred, y, k=self.k)
+        preds, target = get(["preds", "target"], output)
+        preds = preds[0]
+        target = target[0]
+        return topk_accuracy(preds, target, k=self.k)
 
 
 class TrainLoss(Average):
@@ -115,15 +115,15 @@ class Loss(Average):
         super().__init__(output_transform=self.output_transform)
 
     def output_transform(self, output):
-        y_pred, y, batch_size = get(["y_pred", "y", "batch_size"], output)
-        loss = self.criterion(*y_pred, *y).item()
+        preds, target, batch_size = get(["preds", "target", "batch_size"], output)
+        loss = self.criterion(*preds, *target).item()
         return loss, batch_size
 
 
 class Accuracy(IgniteAccuracy):
     r"""
     Inputs:
-        y_pred: (batch_size, C, ...) or (batch_size, ...)  
+        preds: (batch_size, C, ...) or (batch_size, ...)
         y:      (batch_size, ...)  
     """
 
@@ -131,8 +131,8 @@ class Accuracy(IgniteAccuracy):
         super().__init__(output_transform=self.output_transform)
 
     def output_transform(self, output):
-        y_pred, y = get(["y_pred", "y"], output)
-        return y_pred[0], y[0]
+        preds, target = get(["preds", "target"], output)
+        return preds[0], target[0]
 
 
 class Bleu(Average):
@@ -142,10 +142,10 @@ class Bleu(Average):
         super().__init__(output_transform=self.output_transform)
 
     def output_transform(self, output):
-        y_pred, y, batch_size = get(["y_pred", "y", "batch_size"], output)
-        y_pred = y_pred[0]
-        y = y[0]
-        return bleu(y_pred, y, self.eos_index), batch_size
+        preds, target, batch_size = get(["preds", "target", "batch_size"], output)
+        preds = preds[0]
+        target = target[0]
+        return bleu(preds, target, self.eos_index), batch_size
 
 
 class LossD(Average):
@@ -181,9 +181,9 @@ class COCOEval(Metric):
         self.res = []
 
     def update(self, output):
-        y, image_dets, batch_size = get(
-            ["y", "y_pred", "batch_size"], output)
-        image_gts = y[0]
+        target, image_dets, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+        image_gts = target[0]
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
             for d in dets:
@@ -242,9 +242,9 @@ class CocoAveragePrecision(Average):
     Args:
 
     Inputs:
-        y (list of list of hutil.detection.BBox): ground truth bounding boxes
-        y_pred: (batch_size, h, w, c)
-        predict: y_pred -> detected bounding boxes like `y` with additional `confidence`
+        target (list of list of hutil.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
     """
 
     def __init__(self, iou_threshold=np.arange(0.5, 1, 0.05), get_value=get_ap):
@@ -253,9 +253,9 @@ class CocoAveragePrecision(Average):
         super().__init__(self.output_transform)
 
     def output_transform(self, output):
-        y, image_dets, batch_size = get(
-            ["y", "y_pred", "batch_size"], output)
-        image_gts = y[0]
+        target, image_dets, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+        image_gts = target[0]
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
             for d in dets:
@@ -282,8 +282,8 @@ class MeanAveragePrecision(Average):
     Args:
 
     Inputs:
-        y (list of list of hutil.detection.BBox): ground truth bounding boxes
-        y_pred: (batch_size, h, w, c)
+        target (list of list of hutil.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
     """
 
     def __init__(self, iou_threshold=0.5):
@@ -291,9 +291,9 @@ class MeanAveragePrecision(Average):
         super().__init__(self.output_transform)
 
     def output_transform(self, output):
-        y, image_dets, batch_size = get(
-            ["y", "y_pred", "batch_size"], output)
-        image_gts = y[0]
+        target, image_dets, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+        image_gts = target[0]
 
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']

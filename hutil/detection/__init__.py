@@ -25,7 +25,7 @@ __all__ = [
     "nms_cpu", "soft_nms_cpu", "transform_bbox", "transform_bboxes", "misc_target_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "MultiBoxLoss", "AnchorBasedInference", "get_locations", "generate_anchors", "generate_multi_level_anchors",
-    "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match"
+    "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match", "to_pred"
 ]
 
 
@@ -126,6 +126,12 @@ def _ensure_multi_level(xs):
         return xs
 
 
+def to_pred(t: torch.Tensor, c: int):
+    b = t.size(0)
+    t = t.permute(0, 3, 2, 1).contiguous().view(b, -1, c)
+    return t
+
+
 def flatten(xs):
     if torch.is_tensor(xs):
         return xs.view(-1, xs.size(-1))
@@ -208,18 +214,19 @@ class MatchAnchors:
 
     def __init__(self, anchors, max_iou=True,
                  pos_thresh=0.5, neg_thresh=None,
-                 get_label=get('category_id')):
+                 get_label=get('category_id'), debug=False):
         self.anchors_xywh = flatten(anchors)
         self.anchors_ltrb = BBox.convert(self.anchors_xywh, BBox.XYWH, BBox.LTRB)
         self.max_iou = max_iou
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
+        self.debug = debug
 
     def __call__(self, img, anns):
         target = match_anchors(
             anns, self.anchors_xywh, self.anchors_ltrb,
-            self.max_iou, self.pos_thresh, self.neg_thresh, self.get_label)
+            self.max_iou, self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
         return img, target
 
 
@@ -284,7 +291,6 @@ def anchor_based_inference(
     dets = []
     bboxes = loc_p
     logits = cls_p
-
     if conf_strategy == 'softmax':
         scores = torch.softmax(logits, dim=1)
     else:
@@ -407,53 +413,6 @@ def mAP(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5):
             aps.append(AP(class_dts[c], class_gts[c], iou_threshold))
         maps.append(np.mean(aps))
     return np.mean(maps)
-
-    # class_detections = groupby(lambda b: b.category_id, detections)
-    # class_ground_truths = groupby(lambda b: b.category_id, ground_truths)
-    # classes = class_ground_truths.keys()
-    # for c in classes:
-    #     if c not in class_detections:
-    #         ret.append(0)
-    #         continue
-    #
-    #     dects = class_detections[c]
-    #     gts = class_ground_truths[c]
-    #     n_positive = len(gts)
-    #
-    #     dects = sorted(dects, key=lambda b: b.score, reverse=True)
-    #     TP = np.zeros(len(dects))
-    #     FP = np.zeros(len(dects))
-    #     seen = {k: np.zeros(n)
-    #             for k, n in countby(lambda b: b.image_id, gts).items()}
-    #
-    #     image_gts = groupby(lambda b: b.image_id, gts)
-    #     for i, d in enumerate(dects):
-    #         gt = image_gts.get(d.image_id, [])
-    #         # iou_max = sys.float_info.min
-    #         # for j, g in enumerate(gt):
-    #         #     iou = iou_11(d.bbox, g.bbox)
-    #         #     if iou > iou_max:
-    #         #         iou_max = iou
-    #         #         j_max = j
-    #         ious = [iou_11(d.bbox, g.bbox) for g in gt]
-    #         j_max, iou_max = max(enumerate(ious), key=lambda x: x[1])
-    #
-    #         if iou_max > iou_threshold:
-    #             if not seen[d.image_id][j_max]:
-    #                 TP[i] = 1
-    #                 seen[d.image_id][j_max] = 1
-    #             else:
-    #                 FP[i] = 1
-    #         else:
-    #             FP[i] = 1
-    #     acc_FP = np.cumsum(FP)
-    #     acc_TP = np.cumsum(TP)
-    #     recall = acc_TP / n_positive
-    #     precision = np.divide(acc_TP, (acc_FP + acc_TP))
-    #     t = average_precision(recall, precision)
-    #     ret.append(t[0])
-    # return sum(ret) / len(ret)
-
 
 def AP(dts: List[BBox], gts: List[BBox], iou_threshold):
     TP = np.zeros(len(dts), dtype=np.uint8)

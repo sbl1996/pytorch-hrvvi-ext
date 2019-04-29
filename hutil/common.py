@@ -21,15 +21,18 @@ def one_hot(tensor, C=None, dtype=torch.float):
 CUDA = torch.cuda.is_available()
 
 
-def detach(t):
+def detach(t, clone=True):
     if torch.is_tensor(t):
-        return t.detach()
+        if clone:
+            return t.clone().detach()
+        else:
+            return t.detach()
     elif isinstance(t, Args):
         return t
     elif isinstance(t, Sequence):
-        return t.__class__(detach(x) for x in t)
+        return t.__class__(detach(x, clone) for x in t)
     elif isinstance(t, Mapping):
-        return t.__class__((k, detach(v)) for k, v in t.items())
+        return t.__class__((k, detach(v, clone)) for k, v in t.items())
     else:
         return t
 

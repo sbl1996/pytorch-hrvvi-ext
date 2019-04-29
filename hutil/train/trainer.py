@@ -1,8 +1,5 @@
-import re
-import os
 from collections import defaultdict
 
-import itchat
 from toolz.curried import get, keyfilter
 
 import torch
@@ -11,9 +8,10 @@ from ignite.engine import Engine, Events
 from ignite.handlers import Timer
 
 from hutil.common import CUDA, detach
-from hutil.ext.checkpoint import ModelCheckpoint
 from hutil.train.metrics import TrainLoss, Loss
-from hutil.train._utils import _prepare_batch, send_weixin, set_lr
+from hutil.train._utils import _prepare_batch, set_lr
+from tensorboardX import SummaryWriter
+from hutil.train import Save
 
 
 def create_supervised_evaluator(model, metrics=None,
@@ -26,17 +24,17 @@ def create_supervised_evaluator(model, metrics=None,
     def _inference(engine, batch):
         model.eval()
         with torch.no_grad():
-            inputs, targets = prepare_batch(batch, device=device)
+            input, target = prepare_batch(batch, device=device)
             if hasattr(model, 'inference'):
-                preds = model.inference(*inputs)
+                preds = model.inference(*input)
             else:
-                preds = model(*inputs)
+                preds = model(*input)
             if torch.is_tensor(preds):
                 preds = (preds,)
             output = {
-                "y_pred": preds,
-                "y": targets,
-                'batch_size': inputs[0].size(0),
+                "preds": preds,
+                "target": target,
+                'batch_size': input[0].size(0),
             }
             return output
 
@@ -49,27 +47,29 @@ def create_supervised_evaluator(model, metrics=None,
 
 
 def create_supervised_trainer(
-        model, criterion, optimizer, lr_scheduler=None, metrics={},
+        model, criterion, optimizer, metrics=None,
         device=None, prepare_batch=_prepare_batch):
 
+    if metrics is None:
+        metrics = {}
     if device:
         model.to(device)
 
     def _update(engine, batch):
         model.train()
         optimizer.zero_grad()
-        x, y = prepare_batch(batch, device=device)
-        y_pred = model(*x)
-        if torch.is_tensor(y_pred):
-            y_pred = (y_pred,)
-        loss = criterion(*y_pred, *y)
+        input, target = prepare_batch(batch, device=device)
+        preds = model(*input)
+        if torch.is_tensor(preds):
+            y_pred = (preds,)
+        loss = criterion(*preds, *target)
         loss.backward()
         optimizer.step()
         output = {
-            "y_pred": detach(y_pred),
-            "y": detach(y),
+            "preds": detach(preds),
+            "target": detach(target),
             "loss": loss.item(),
-            "batch_size": x[0].size(0),
+            "batch_size": input[0].size(0),
         }
         return output
 
@@ -83,140 +83,118 @@ def create_supervised_trainer(
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics={}, evaluate_metrics=None, device=None, save_path=".", name="Net"):
+                 metrics=None, evaluate_metrics=None, save_path=".", name="Net"):
 
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
-        self.metrics = metrics
+        self.metrics = metrics or {}
         self.evaluate_metrics = evaluate_metrics
         if evaluate_metrics is None:
             self.evaluate_metrics = metrics.copy()
             if 'loss' in metrics and isinstance(metrics['loss'], TrainLoss):
                 self.evaluate_metrics['loss'] = Loss(criterion=criterion)
-        self.device = device or ('cuda' if CUDA else 'cpu')
         self.save_path = save_path
         self.name = name
 
+        self._writer = SummaryWriter("runs/" + self.name)
+
         self.metric_history = defaultdict(list)
-        self._print_callbacks = {lambda msg: print(msg, end='')}
-        self._weixin_logined = False
+        self._device = 'cuda' if CUDA else 'cpu'
         self._timer = Timer()
         self._epochs = 0
 
-        self.evaluator = create_supervised_evaluator(
-            self.model, self.evaluate_metrics, self.device)
-
-    def _fprint(self, msg):
-        for f in self._print_callbacks:
-            try:
-                f(msg)
-            except Exception:
-                pass
-
-    def _enable_send_weixin(self):
-        if self._weixin_logined:
-            self._print_callbacks.add(send_weixin)
-        else:
-            print("Weixin is not logged in.")
-
-    def _disable_send_weixin(self):
-        self._print_callbacks.discard(send_weixin)
-
     def _log_epochs(self, engine, epochs):
-        self._fprint("Epoch %d/%d\n" %
+        print("Epoch %d/%d" %
                      (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine):
         self.lr_scheduler.step()
 
-    def _evaluate(self, engine, val_loader):
-        self.evaluator.run(val_loader)
+    def _evaluate(self, engine, evaluator, val_loader):
+        evaluator.run(val_loader)
 
     def _increment_epoch(self, engine):
         self._epochs += 1
 
-    def _log_results(self, engine, validate):
+    def _log_results(self, engine, evaluator=None):
         elapsed = int(self._timer.value())
-        msg = ""
-        msg += "elapsed: %ds\t" % elapsed
+        msg = "elapsed: %ds\t" % elapsed
         for name, val in engine.state.metrics.items():
             if isinstance(val, float):
                 msg += "%s: %.4f\t" % (name, val)
+                self._writer.add_scalar(name, val, self.epochs())
             else:
                 msg += "%s: %s\t" % (name, val)
+                for i, v in enumerate(val):
+                    self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history[name].append(val)
         msg += '\n'
-        if validate:
+        if evaluator:
             msg += "validate ------\t"
-            for name, val in self.evaluator.state.metrics.items():
+            for name, val in evaluator.state.metrics.items():
                 if isinstance(val, float):
                     msg += "%s: %.4f\t" % (name, val)
+                    self._writer.add_scalar(name, val, self.epochs())
                 else:
                     msg += "%s: %s\t" % (name, val)
+                    for i, v in enumerate(val):
+                        self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
                 self.metric_history["val_" + name].append(val)
-            msg += "\n"
-        self._fprint(msg)
+        print(msg)
 
-    def fit(self, train_loader, epochs, val_loader=None, send_weixin=False,
-            save_per_epochs=None, save_by_metric=None, patience=0, callbacks=[]):
+    def _terminate_on_iterations(self, engine, iterations):
+        if engine.state.iteration == iterations:
+            engine.terminate()
+
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=None):
         validate = val_loader is not None
-        # Weixin
-        if send_weixin:
-            self._enable_send_weixin()
-        else:
-            self._disable_send_weixin()
+        callbacks = callbacks or []
 
         engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer, self.lr_scheduler,
-            self.metrics, self.device)
+            self.model, self.criterion, self.optimizer,
+            self.metrics, self._device)
         if self.lr_scheduler:
-            engine.add_event_handler(
-                Events.EPOCH_STARTED, self._lr_scheduler_step)
+            if isinstance(self.lr_scheduler, StepOnIteration):
+                engine.add_event_handler(
+                    Events.ITERATION_STARTED, self._lr_scheduler_step)
+            else:
+                engine.add_event_handler(
+                    Events.EPOCH_STARTED, self._lr_scheduler_step)
+
         self._timer.attach(engine,
                            start=Events.EPOCH_STARTED)
         engine.add_event_handler(Events.EPOCH_STARTED,
                                  self._log_epochs, epochs)
 
         if validate:
+            evaluator = create_supervised_evaluator(
+                self.model, self.evaluate_metrics, self._device)
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, self._evaluate, val_loader)
+                Events.EPOCH_COMPLETED, lambda _: evaluator.run(val_loader))
+        else:
+            evaluator = None
+
         engine.add_event_handler(Events.EPOCH_COMPLETED,
                                  self._increment_epoch)
         engine.add_event_handler(
-            Events.EPOCH_COMPLETED, self._log_results, validate)
+            Events.EPOCH_COMPLETED, self._log_results, evaluator)
 
         # Set checkpoint
-        if save_by_metric:
-            mat = re.match(
-                "(?P<sign>-?)(?P<metric>val_[a-zA-Z]+)", save_by_metric)
-            assert mat, "save by metric must be of form `-?val_<evaluate_metric>`"
-            sign = -1 if mat.group('sign') else 1
-            save_metric = mat.group('metric')
-            assert save_metric[4:] in self.evaluate_metrics, "the metric used must be one of \
-                evaluate_metrics"
-
-            def score_function(e): return sign * \
-                self.metric_history[save_metric][-1]
-            checkpoint_handler = ModelCheckpoint(
-                self.save_path, self.name,
-                score_name=save_metric, patience=patience,
-                score_function=score_function,
-                save_as_state_dict=True, require_empty=False)
-            checkpoint_handler._iteration = self.epochs()
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
-        elif save_per_epochs:
-            checkpoint_handler = ModelCheckpoint(
-                self.save_path, self.name, save_per_epochs, save_as_state_dict=True, require_empty=False)
-            checkpoint_handler._iteration = self.epochs()
+        if save:
+            checkpoint_handler = save.parse(self)
             engine.add_event_handler(
                 Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
 
         for callback in callbacks:
             engine.add_event_handler(
                 Events.EPOCH_COMPLETED, _callback_wrapper(callback), self)
+
+        if iterations:
+            engine.add_event_handler(
+                Events.ITERATION_COMPLETED, self._terminate_on_iterations, iterations)
+            epochs = 1000
 
         # Run
         engine.run(train_loader, epochs)
@@ -253,17 +231,10 @@ class Trainer:
     def epochs(self):
         return self._epochs
 
-    def login_weixin(self, save_path='.'):
-        itchat.auto_login(hotReload=True, enableCmdQR=2,
-                          statusStorageDir=os.path.join(save_path, 'weixin.pkl'))
-        self._weixin_logined = True
-
-    def logout_weixin(self):
-        itchat.logout()
-        self._weixin_logined = False
-
     def evaluate(self, test_loader):
-        return self.evaluator.run(test_loader).metrics
+        evaluator = create_supervised_evaluator(
+            self.model, self.evaluate_metrics, self._device)
+        return evaluator.run(test_loader).metrics
 
     def set_lr(self, lr):
         set_lr(lr, self.optimizer, self.lr_scheduler)
@@ -273,3 +244,8 @@ def _callback_wrapper(f):
     def func(engine, *args, **kwargs):
         return f(*args, **kwargs)
     return func
+
+class StepOnIteration:
+
+    def __init__(self, lr_scheduler):
+        self.lr_scheduler = lr_scheduler
