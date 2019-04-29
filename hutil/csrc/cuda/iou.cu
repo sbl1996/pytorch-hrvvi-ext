@@ -200,10 +200,11 @@ iou_mn_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         dout.type(), "iou_mn_backward_cuda", [&] {
             iou_mn_backward<scalar_t><<<grid, block, 0, stream>>>(
-                dboxes1.data<scalar_t>(), dboxes2.data<scalar_t>(),
+                output_size, dboxes1.data<scalar_t>(), dboxes2.data<scalar_t>(),
                 dout.contiguous().data<scalar_t>(),
                 boxes1.contiguous().data<scalar_t>(),
                 boxes2.contiguous().data<scalar_t>(),
+                m, n,
                 ious.contiguous().data<scalar_t>());
         });
     THCudaCheck(cudaGetLastError());
