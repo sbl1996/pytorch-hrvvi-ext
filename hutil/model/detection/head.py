@@ -28,7 +28,7 @@ class ThunderRCNNHead(nn.Module):
         if p.ndimension() == 3:
             n1, n2, c = p.size()
             p = p.view(n1 * n2, c)
-            p = self.fc(p.view(n1 * n2, c)).view(n1, n2, c)
+            p = self.fc(p.view(n1 * n2, c)).view(n1, n2, -1)
         else:
             p = self.fc(p)
         loc_p = self.loc_fc(p)
