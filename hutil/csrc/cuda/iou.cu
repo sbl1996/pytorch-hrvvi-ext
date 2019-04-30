@@ -102,7 +102,7 @@ __global__ void iou_mn_forward(const int nthreads, const T *boxes1,
         int j = index % n;
         int i = index / n;
         T iou = iou_11(boxes1 + i * 4, boxes2 + j * 4);
-        ious[i * m + j] = iou;
+        ious[i * n + j] = iou;
     }
 }
 
@@ -113,8 +113,8 @@ __global__ void iou_mn_backward(const int nthreads, T *dboxes1, T *dboxes2,
     CUDA_1D_KERNEL_LOOP(index, nthreads) {
         int j = index % n;
         int i = index / n;
-        iou_11_backward(dboxes1 + i * 4, dboxes2 + j * 4, dout[i * m + j],
-                        boxes1 + i * 4, boxes2 + j * 4, ious[i * m + j]);
+        iou_11_backward(dboxes1 + i * 4, dboxes2 + j * 4, dout[i * n + j],
+                        boxes1 + i * 4, boxes2 + j * 4, ious[i * n + j]);
     }
 }
 

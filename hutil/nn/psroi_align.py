@@ -53,7 +53,7 @@ class PSROIAlign(nn.Module):
     def forward(self, input, rois):
         spatial_scale = self.spatial_scale
         if self.adaptive:
-            spatial_scale = tuple(input.size()[-2:])
+            spatial_scale = tuple(input.size()[2:4])
         return psroi_align(input, rois, self.out_channels, self.output_size, spatial_scale, self.sampling_ratio)
 
     def __repr__(self):

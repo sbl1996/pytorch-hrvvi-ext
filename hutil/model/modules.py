@@ -17,12 +17,12 @@ def upsample_add(x, y):
     h, w = y.size()[2:4]
     return F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False) + y
 
-
-def get_groups(channels, max_groups):
-    g = max_groups
-    while channels % g != 0:
-        g = g // 2
-    return g
+def get_groups(channels, ref=32):
+    xs = filter(lambda x: channels % x == 0, range(2, channels + 1))
+    c = min(xs, key=lambda x: abs(x - ref))
+    if c < 8:
+        c = max(c, channels // c)
+    return channels // c
 
 
 def get_norm_layer(name, channels):
