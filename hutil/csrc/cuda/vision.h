@@ -2,12 +2,12 @@
 #include <torch/extension.h>
 
 at::Tensor
-PSRoIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
+PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
                         const float scale_h, const float scale_w, const int out_channels,
                         const int pooled_height, const int pooled_width,
                         const int sampling_ratio);
 
-at::Tensor PSRoIAlign_backward_cuda(
+at::Tensor PSROIAlign_backward_cuda(
     const at::Tensor &grad, const at::Tensor &rois, const float scale_h, const float scale_w,
     const int out_channels, const int pooled_height, const int pooled_width,
     const int batch_size, const int channels, const int height, const int width,
@@ -19,24 +19,3 @@ at::Tensor iou_mn_forward_cuda(const at::Tensor &boxes1,
 std::tuple<at::Tensor, at::Tensor>
 iou_mn_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
                      const at::Tensor &boxes2, const at::Tensor &ious);
-
-at::Tensor RoIAlign_forward_cuda(const at::Tensor &input,
-                                 const at::Tensor &rois,
-                                 const float scale_h,
-                                 const float scale_w,
-                                 const int pooled_height,
-                                 const int pooled_width,
-                                 const int sampling_ratio);
-
-at::Tensor RoIAlign_backward_cuda(const at::Tensor &grad,
-                                  const at::Tensor &rois,
-                                  const float scale_h,
-                                  const float scale_w,
-                                  const int pooled_height,
-                                  const int pooled_width,
-                                  const int batch_size,
-                                  const int channels,
-                                  const int height,
-                                  const int width,
-                                  const int sampling_ratio);
-

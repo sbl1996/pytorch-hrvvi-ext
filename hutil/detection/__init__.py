@@ -25,7 +25,7 @@ __all__ = [
     "nms_cpu", "soft_nms_cpu", "transform_bbox", "transform_bboxes", "misc_target_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "MultiBoxLoss", "AnchorBasedInference", "get_locations", "generate_anchors", "generate_multi_level_anchors",
-    "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match"
+    "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match", "to_pred"
 ]
 
 
@@ -125,6 +125,13 @@ def _ensure_multi_level(xs):
     else:
         return xs
 
+
+def to_pred(t: torch.Tensor, c: int):
+    b = t.size(0)
+    t = t.permute(0, 3, 2, 1).contiguous().view(b, -1, c)
+    return t
+
+
 def flatten(xs):
     if torch.is_tensor(xs):
         return xs.view(-1, xs.size(-1))
@@ -138,16 +145,12 @@ def batch_anchor_match(image_gts, anchors_xywh, anchors_ltrb, max_iou=True, pos_
     cls_t = []
     batch_size = len(image_gts)
     for i in range(batch_size):
-        i_loc_t, i_cls_t = match_anchors(
-            image_gts[i], anchors_xywh[i], anchors_ltrb[i],
-            max_iou=max_iou, pos_thresh=pos_thresh, neg_thresh=neg_thresh,
-            get_label=get_label, debug=debug)
+        i_loc_t, i_cls_t = match_anchors(image_gts[i], anchors_xywh[i], anchors_ltrb[i], debug=debug)
         loc_t.append(i_loc_t)
         cls_t.append(i_cls_t)
     loc_t = torch.stack(loc_t, dim=0)
     cls_t = torch.stack(cls_t, dim=0)
     return loc_t, cls_t
-
 
 @curry
 def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5, neg_thresh=None,
