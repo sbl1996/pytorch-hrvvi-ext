@@ -1,1 +1,1 @@
-from hutil.nn.psroi_align import PSROIAlign
+from hutil.nn.psroi_align import PSRoIAlign
