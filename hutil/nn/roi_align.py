@@ -14,7 +14,7 @@ class _RoIAlign(Function):
     def forward(ctx, input, roi, output_size, spatial_scale, sampling_ratio):
         ctx.save_for_backward(roi)
         ctx.output_size = _pair(output_size)
-        ctx.spatial_scale = spatial_scale
+        ctx.spatial_scale = _pair(spatial_scale)
         ctx.sampling_ratio = sampling_ratio
         ctx.input_shape = input.size()
         output = _C.roi_align_forward(

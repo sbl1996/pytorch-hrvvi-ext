@@ -1,6 +1,8 @@
 import torch
 
-from hutil.nn.psroi_align import psroi_align
+from hutil import cuda
+from hutil.nn.psroi_align import PSRoIAlign
+from hutil.detection import BBox
 
 
 def test_psroi_align():
@@ -10,7 +12,7 @@ def test_psroi_align():
     pooled_height = 2
     output_size = (pooled_width, pooled_height)
     sampling_ratio = 2
-
+    l = PSRoIAlign(out_channels, output_size, spatial_scale, sampling_ratio=sampling_ratio)
     input = torch.tensor([[
         # (c, w, h)
         # (0, 0, 0)
@@ -62,6 +64,23 @@ def test_psroi_align():
          [0.0339, 0.8859, 0.6292, 0.7069, 0.5664],
          [0.6811, 0.5400, 0.4801, 0.2457, 0.9451]]]], requires_grad=True)
     roi = torch.tensor([[0, 30.5481,  49.9075, 168.1317, 248.5454]])
-    out = psroi_align(input, roi, out_channels, output_size,
-                      spatial_scale, sampling_ratio)
+    out = l(input, roi)
     out.sum().backward()
+
+
+def test_psroi_align_cuda():
+
+    out_channels = 2
+    pooled_width = 3
+    pooled_height = 3
+    output_size = (pooled_width, pooled_height)
+    sampling_ratio = 2
+    l = PSRoIAlign(out_channels, output_size, sampling_ratio=sampling_ratio, adaptive=True)
+    x = torch.randn(2, out_channels * pooled_height * pooled_width, 7, 5)
+    roi =  BBox.convert(torch.rand(6, 4), BBox.XYWH, BBox.LTRB)
+    indices = torch.tensor([0,0,0,1,1,1.]).view(6, 1)
+    roi = torch.cat([indices, roi], dim=1)
+    res = l(x, roi)
+    res_cuda = l(cuda(x), cuda(roi))
+    diff = res - res_cuda.cpu()
+    assert diff.mean() < 1e-8
