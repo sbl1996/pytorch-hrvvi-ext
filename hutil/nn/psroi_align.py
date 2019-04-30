@@ -9,7 +9,7 @@ from torch.nn.modules.utils import _pair
 from hutil import _C
 
 
-class _PSROIAlign(Function):
+class _PSRoIAlign(Function):
     @staticmethod
     def forward(ctx, input, roi, out_channels, output_size, spatial_scale, sampling_ratio):
         ctx.save_for_backward(roi)
@@ -38,10 +38,10 @@ class _PSROIAlign(Function):
         return grad_input, None, None, None, None, None
 
 
-psroi_align = _PSROIAlign.apply
+psroi_align = _PSRoIAlign.apply
 
 
-class PSROIAlign(nn.Module):
+class PSRoIAlign(nn.Module):
     def __init__(self, out_channels, output_size, spatial_scale=None, sampling_ratio=2, adaptive=True):
         super().__init__()
         self.out_channels = out_channels
@@ -62,5 +62,6 @@ class PSROIAlign(nn.Module):
         tmpstr += ', output_size=' + str(self.output_size)
         tmpstr += ', spatial_scale=' + str(self.spatial_scale)
         tmpstr += ', sampling_ratio=' + str(self.sampling_ratio)
+        tmpstr += ', adaptive=' + str(self.adaptive)
         tmpstr += ')'
         return tmpstr
