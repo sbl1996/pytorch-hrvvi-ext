@@ -23,14 +23,16 @@ iou_mn_backward_cuda(const at::Tensor &dout, const at::Tensor &boxes1,
 
 at::Tensor ROIAlign_forward_cuda(const at::Tensor &input,
                                  const at::Tensor &rois,
-                                 const float spatial_scale,
+                                 const float scale_h,
+                                 const float scale_w,
                                  const int pooled_height,
                                  const int pooled_width,
                                  const int sampling_ratio);
 
 at::Tensor ROIAlign_backward_cuda(const at::Tensor &grad,
                                   const at::Tensor &rois,
-                                  const float spatial_scale,
+                                  const float scale_h,
+                                  const float scale_w,
                                   const int pooled_height,
                                   const int pooled_width,
                                   const int batch_size,

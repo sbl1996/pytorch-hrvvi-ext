@@ -62,7 +62,7 @@ __device__ T bilinear_interpolate(const T* input,
 
 template <typename T>
 __global__ void RoIAlignForward(const int nthreads, const T* input,
-    const T spatial_scale, const int channels,
+    const T scale_h, const T scale_w, const int channels,
     const int height, const int width,
     const int pooled_height, const int pooled_width,
     const int sampling_ratio,
@@ -78,10 +78,10 @@ __global__ void RoIAlignForward(const int nthreads, const T* input,
     int roi_batch_ind = offset_rois[0];
 
     // Do not using rounding; this implementation detail is critical
-    T roi_start_w = offset_rois[1] * spatial_scale;
-    T roi_start_h = offset_rois[2] * spatial_scale;
-    T roi_end_w = offset_rois[3] * spatial_scale;
-    T roi_end_h = offset_rois[4] * spatial_scale;
+    T roi_start_w = offset_rois[1] * scale_w;
+    T roi_start_h = offset_rois[2] * scale_h;
+    T roi_end_w = offset_rois[3] * scale_w;
+    T roi_end_h = offset_rois[4] * scale_h;
 
     // Force malformed ROIs to be 1x1
     T roi_width = max(roi_end_w - roi_start_w, (T)1.);
@@ -171,7 +171,7 @@ __device__ void bilinear_interpolate_gradient(
 
 template <typename T>
 __global__ void RoIAlignBackward(const int nthreads, const T* grad_output,
-    const T spatial_scale,
+    const T scale_h, const T scale_w,
     const int channels, const int height, const int width,
     const int pooled_height, const int pooled_width,
     const int sampling_ratio,
@@ -190,10 +190,10 @@ __global__ void RoIAlignBackward(const int nthreads, const T* grad_output,
     int roi_batch_ind = offset_rois[0];
 
     // Do not using rounding; this implementation detail is critical
-    T roi_start_w = offset_rois[1] * spatial_scale;
-    T roi_start_h = offset_rois[2] * spatial_scale;
-    T roi_end_w = offset_rois[3] * spatial_scale;
-    T roi_end_h = offset_rois[4] * spatial_scale;
+    T roi_start_w = offset_rois[1] * scale_w;
+    T roi_start_h = offset_rois[2] * scale_h;
+    T roi_end_w = offset_rois[3] * scale_w;
+    T roi_end_h = offset_rois[4] * scale_h;
 
     // Force malformed ROIs to be 1x1
     T roi_width = max(roi_end_w - roi_start_w, (T)1.);
@@ -250,7 +250,8 @@ __global__ void RoIAlignBackward(const int nthreads, const T* grad_output,
 
 at::Tensor ROIAlign_forward_cuda(const at::Tensor& input,
                                  const at::Tensor& rois,
-                                 const float spatial_scale,
+                                 const float scale_h,
+                                 const float scale_w,
                                  const int pooled_height,
                                  const int pooled_width,
                                  const int sampling_ratio) {
@@ -279,7 +280,8 @@ at::Tensor ROIAlign_forward_cuda(const at::Tensor& input,
     RoIAlignForward<scalar_t><<<grid, block, 0, stream>>>(
          output_size,
          input.data<scalar_t>(),
-         spatial_scale,
+         scale_h,
+         scale_w,
          channels,
          height,
          width,
@@ -296,7 +298,8 @@ at::Tensor ROIAlign_forward_cuda(const at::Tensor& input,
 
 at::Tensor ROIAlign_backward_cuda(const at::Tensor& grad,
                                   const at::Tensor& rois,
-                                  const float spatial_scale,
+                                  const float scale_h,
+                                  const float scale_w,
                                   const int pooled_height,
                                   const int pooled_width,
                                   const int batch_size,
@@ -329,7 +332,8 @@ at::Tensor ROIAlign_backward_cuda(const at::Tensor& grad,
     RoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
          grad.numel(),
          grad.data<scalar_t>(),
-         spatial_scale,
+         scale_h,
+         scale_w,
          channels,
          height,
          width,

@@ -15,14 +15,16 @@ at::Tensor PSROIAlign_backward_cpu(
 
 at::Tensor ROIAlign_forward_cpu(const at::Tensor &input,
                                 const at::Tensor &rois,
-                                const float spatial_scale,
+                                const float scale_h,
+                                const float scale_w,
                                 const int pooled_height,
                                 const int pooled_width,
                                 const int sampling_ratio);
 
 at::Tensor ROIAlign_backward_cpu(const at::Tensor &grad,
                                  const at::Tensor &rois,
-                                 const float spatial_scale,
+                                 const float scale_h,
+                                 const float scale_w,
                                  const int pooled_height,
                                  const int pooled_width,
                                  const int batch_size,

@@ -13,12 +13,12 @@ class _ROIAlign(Function):
     @staticmethod
     def forward(ctx, input, roi, output_size, spatial_scale, sampling_ratio):
         ctx.save_for_backward(roi)
-        ctx.output_size = _pair(output_size)
+        ctx.output_size = output_size
         ctx.spatial_scale = spatial_scale
         ctx.sampling_ratio = sampling_ratio
         ctx.input_shape = input.size()
         output = _C.roi_align_forward(
-                input, roi, spatial_scale,
+                input, roi, spatial_scale[0], spatial_scale[1],
                 output_size[0], output_size[1], sampling_ratio)
         return output
 
@@ -31,7 +31,7 @@ class _ROIAlign(Function):
         sampling_ratio = ctx.sampling_ratio
         bs, ch, h, w = ctx.input_shape
         grad_input = _C.roi_align_backward(
-                grad_output, rois, spatial_scale,
+                grad_output, rois, spatial_scale[0], spatial_scale[1],
                 output_size[0], output_size[1], bs, ch, h, w, sampling_ratio)
         return grad_input, None, None, None, None
 
@@ -40,19 +40,24 @@ roi_align = _ROIAlign.apply
 
 
 class RoIAlign(nn.Module):
-    def __init__(self, output_size, spatial_scale, sampling_ratio):
+    def __init__(self, output_size, spatial_scale=None, sampling_ratio=2, adaptive=True):
         super().__init__()
-        self.output_size = output_size
-        self.spatial_scale = spatial_scale
+        self.output_size = _pair(output_size)
+        self.spatial_scale = _pair(spatial_scale)
         self.sampling_ratio = sampling_ratio
+        self.adaptive = adaptive
 
     def forward(self, input, rois):
-        return roi_align(input, rois, self.output_size, self.spatial_scale, self.sampling_ratio)
+        spatial_scale = self.spatial_scale
+        if self.adaptive:
+            spatial_scale = tuple(input.size()[2:4])
+        return roi_align(input, rois, self.output_size, spatial_scale, self.sampling_ratio)
 
     def __repr__(self):
         tmpstr = self.__class__.__name__ + '('
         tmpstr += 'output_size=' + str(self.output_size)
         tmpstr += ', spatial_scale=' + str(self.spatial_scale)
         tmpstr += ', sampling_ratio=' + str(self.sampling_ratio)
+        tmpstr += ', adaptive=' + str(self.adaptive)
         tmpstr += ')'
         return tmpstr

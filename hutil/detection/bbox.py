@@ -7,6 +7,20 @@ class BBox:
     XYWH = 2  # [cx,   cy,   width, height]
 
     @staticmethod
+    def to_absolute(bbox, size, inplace=True):
+        if torch.is_tensor(bbox):
+            return bboxes_to_absolute(bbox, size, inplace=inplace)
+        else:
+            return bbox_to_absolute(bbox, size, inplace=inplace)
+
+    @staticmethod
+    def to_percent(bbox, size, inplace=True):
+        if torch.is_tensor(bbox):
+            return bboxes_to_percent(bbox, size, inplace=inplace)
+        else:
+            return bbox_to_percent(bbox, size, inplace=inplace)
+
+    @staticmethod
     def convert(bbox, format=0, to=1, inplace=False):
         if torch.is_tensor(bbox):
             return transform_bboxes(bbox, format=format, to=to, inplace=inplace)
@@ -40,6 +54,51 @@ class BBox:
         if self.segmentation is not None:
             ann['segmentation'] = self.segmentation
         return ann
+
+
+def bbox_to_percent(bbox, size, inplace=False):
+    if not inplace:
+        bbox = list(bbox)
+    w, h = size
+    bbox[0] /= w
+    bbox[1] /= h
+    bbox[2] /= w
+    bbox[3] /= h
+    return bbox
+
+
+def bbox_to_absolute(bbox, size, inplace=False):
+    if not inplace:
+        bbox = list(bbox)
+    w, h = size
+    bbox[0] *= w
+    bbox[1] *= h
+    bbox[2] *= w
+    bbox[3] *= h
+    return bbox
+
+
+def bboxes_to_percent(bboxes, size, inplace=False):
+    if not inplace:
+        bboxes = bboxes.clone()
+    w, h = size
+    bboxes[..., 0] /= w
+    bboxes[..., 1] /= h
+    bboxes[..., 2] /= w
+    bboxes[..., 3] /= h
+    return bboxes
+
+
+def bboxes_to_absolute(bboxes, size, inplace=False):
+    if not inplace:
+        bboxes = bboxes.clone()
+    w, h = size
+    bboxes[..., 0] *= w
+    bboxes[..., 1] *= h
+    bboxes[..., 2] *= w
+    bboxes[..., 3] *= h
+    return bboxes
+
 
 
 def get_bbox_area(bbox, format=BBox.LTRB):
