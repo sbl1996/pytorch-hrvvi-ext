@@ -63,11 +63,11 @@ __device__ T bilinear_interpolate(const T *input, const int height,
 
 template <typename T>
 __global__ void
-PSRoIAlignForward(const int nthreads, const T *input, const T scale_h,
-                  const T scale_w, const int channels, const int height,
-                  const int width, const int out_channels,
-                  const int pooled_height, const int pooled_width,
-                  const int sampling_ratio, const T *rois, T *output) {
+PSRoIAlignForward(const int nthreads, const T *input, const T spatial_scale,
+                  const int channels, const int height, const int width,
+                  const int out_channels, const int pooled_height,
+                  const int pooled_width, const int sampling_ratio,
+                  const T *rois, T *output) {
     CUDA_1D_KERNEL_LOOP(index, nthreads) {
         // (n, c, ph, pw) is an element in the pooled output
         int pw = index % pooled_width;
@@ -80,12 +80,12 @@ PSRoIAlignForward(const int nthreads, const T *input, const T scale_h,
         int roi_batch_ind = offset_rois[0];
 
         // Do not using rounding; this implementation detail is critical
-        T roi_start_w = offset_rois[1] * scale_w;
-        T roi_start_h = offset_rois[2] * scale_h;
-        T roi_end_w = offset_rois[3] * scale_w;
-        T roi_end_h = offset_rois[4] * scale_h;
+        T roi_start_w = offset_rois[1] * spatial_scale;
+        T roi_start_h = offset_rois[2] * spatial_scale;
+        T roi_end_w = offset_rois[3] * spatial_scale;
+        T roi_end_h = offset_rois[4] * spatial_scale;
 
-        // Force malformed RoIs to be 1x1
+        // Force malformed ROIs to be 1x1
         T roi_width = max(roi_end_w - roi_start_w, (T)1.);
         T roi_height = max(roi_end_h - roi_start_h, (T)1.);
         T bin_size_h =
@@ -184,7 +184,7 @@ bilinear_interpolate_gradient(const int height, const int width, T y, T x,
 
 template <typename T>
 __global__ void PSRoIAlignBackward(
-    const int nthreads, const T *grad_output, const T scale_h, const T scale_w,
+    const int nthreads, const T *grad_output, const T spatial_scale,
     const int channels, const int height, const int width,
     const int out_channels, const int pooled_height, const int pooled_width,
     const int sampling_ratio, T *grad_input, const T *rois, const int n_stride,
@@ -201,12 +201,12 @@ __global__ void PSRoIAlignBackward(
         int roi_batch_ind = offset_rois[0];
 
         // Do not using rounding; this implementation detail is critical
-        T roi_start_w = offset_rois[1] * scale_w;
-        T roi_start_h = offset_rois[2] * scale_h;
-        T roi_end_w = offset_rois[3] * scale_w;
-        T roi_end_h = offset_rois[4] * scale_h;
+        T roi_start_w = offset_rois[1] * spatial_scale;
+        T roi_start_h = offset_rois[2] * spatial_scale;
+        T roi_end_w = offset_rois[3] * spatial_scale;
+        T roi_end_h = offset_rois[4] * spatial_scale;
 
-        // Force malformed RoIs to be 1x1
+        // Force malformed ROIs to be 1x1
         T roi_width = max(roi_end_w - roi_start_w, (T)1.);
         T roi_height = max(roi_end_h - roi_start_h, (T)1.);
         T bin_size_h =
@@ -271,18 +271,17 @@ __global__ void PSRoIAlignBackward(
     }             // CUDA_1D_KERNEL_LOOP
 } // RoIAlignBackward
 
-at::Tensor PSROIAlign_forward_cuda(const at::Tensor &input,
-                                   const at::Tensor &rois, const float scale_h,
-                                   const float scale_w, const int out_channels,
-                                   const int pooled_height,
-                                   const int pooled_width,
-                                   const int sampling_ratio) {
+at::Tensor
+PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
+                        const float spatial_scale, const int out_channels,
+                        const int pooled_height, const int pooled_width,
+                        const int sampling_ratio) {
     AT_ASSERTM(input.device().is_cuda(), "input must be a CUDA tensor");
     AT_ASSERTM(rois.device().is_cuda(), "rois must be a CUDA tensor");
 
     // at::TensorArg input_t{input, "input", 1}, rois_t{rois, "rois", 2};
 
-    // at::CheckedFrom c = "PSRoIAlign_forward_cuda";
+    // at::CheckedFrom c = "PSROIAlign_forward_cuda";
     // at::checkAllSameGPU(c, {input_t, rois_t});
     // at::checkAllSameType(c, {input_t, rois_t});
 
@@ -292,7 +291,7 @@ at::Tensor PSROIAlign_forward_cuda(const at::Tensor &input,
     auto channels = input.size(1);
     auto height = input.size(2);
     auto width = input.size(3);
-    AT_ASSERTM(channels == (out_channels * pooled_height * pooled_width),
+    AT_ASSERTM(channels == (out_channels * pooled_height * pooled_height),
                "the number of input channels must be equal to out_channels * "
                "pooled_height * pooled_height");
 
@@ -313,8 +312,8 @@ at::Tensor PSROIAlign_forward_cuda(const at::Tensor &input,
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         input.type(), "PSROIAlign_forward", [&] {
             PSRoIAlignForward<scalar_t><<<grid, block, 0, stream>>>(
-                output_size, input.contiguous().data<scalar_t>(), scale_h,
-                scale_w, channels, height, width, out_channels, pooled_height,
+                output_size, input.contiguous().data<scalar_t>(), spatial_scale,
+                channels, height, width, out_channels, pooled_height,
                 pooled_width, sampling_ratio,
                 rois.contiguous().data<scalar_t>(), output.data<scalar_t>());
         });
@@ -323,16 +322,16 @@ at::Tensor PSROIAlign_forward_cuda(const at::Tensor &input,
 }
 
 at::Tensor PSROIAlign_backward_cuda(
-    const at::Tensor &grad, const at::Tensor &rois, const float scale_h,
-    const float scale_w, const int out_channels, const int pooled_height,
-    const int pooled_width, const int batch_size, const int channels,
-    const int height, const int width, const int sampling_ratio) {
+    const at::Tensor &grad, const at::Tensor &rois, const float spatial_scale,
+    const int out_channels, const int pooled_height, const int pooled_width,
+    const int batch_size, const int channels, const int height, const int width,
+    const int sampling_ratio) {
     AT_ASSERTM(grad.device().is_cuda(), "grad must be a CUDA tensor");
     AT_ASSERTM(rois.device().is_cuda(), "rois must be a CUDA tensor");
 
     // at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2};
 
-    // at::CheckedFrom c = "PSRoIAlign_backward_cuda";
+    // at::CheckedFrom c = "PSROIAlign_backward_cuda";
     // at::checkAllSameGPU(c, {grad_t, rois_t});
     // at::checkAllSameType(c, {grad_t, rois_t});
 
@@ -360,9 +359,9 @@ at::Tensor PSROIAlign_backward_cuda(
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         grad.type(), "PSROIAlign_backward", [&] {
             PSRoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
-                grad.numel(), grad.data<scalar_t>(), scale_h, scale_w, channels,
-                height, width, out_channels, pooled_height, pooled_width,
-                sampling_ratio, grad_input.data<scalar_t>(),
+                grad.numel(), grad.contiguous().data<scalar_t>(), spatial_scale,
+                channels, height, width, out_channels, pooled_height,
+                pooled_width, sampling_ratio, grad_input.data<scalar_t>(),
                 rois.contiguous().data<scalar_t>(), n_stride, c_stride,
                 h_stride, w_stride);
         });
