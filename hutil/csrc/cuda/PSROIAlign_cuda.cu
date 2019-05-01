@@ -309,9 +309,9 @@ at::Tensor PSROIAlign_forward_cuda(const at::Tensor &input,
         THCudaCheck(cudaGetLastError());
         return output;
     }
-    AT_ASSERTM(1 == 2, "1 == 2");
+
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        input.type(), "PSRoIAlign_forward", [&] {
+        input.type(), "PSROIAlign_forward", [&] {
             PSRoIAlignForward<scalar_t><<<grid, block, 0, stream>>>(
                 output_size, input.contiguous().data<scalar_t>(), scale_h,
                 scale_w, channels, height, width, out_channels, pooled_height,
@@ -358,7 +358,7 @@ at::Tensor PSROIAlign_backward_cuda(
     int w_stride = grad.stride(3);
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        grad.type(), "PSRoIAlign_backward", [&] {
+        grad.type(), "PSROIAlign_backward", [&] {
             PSRoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
                 grad.numel(), grad.data<scalar_t>(), scale_h, scale_w, channels,
                 height, width, out_channels, pooled_height, pooled_width,

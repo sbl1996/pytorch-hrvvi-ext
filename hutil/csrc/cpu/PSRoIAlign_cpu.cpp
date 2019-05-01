@@ -103,12 +103,11 @@ void pre_calc_for_bilinear_interpolate(
 }
 
 template <typename T>
-void PSRoIAlignForward(const int nthreads, const T *input,
-                       const T scale_h, const T scale_w, const int channels,
-                       const int height, const int width,
-                       const int out_channels, const int pooled_height,
-                       const int pooled_width, const int sampling_ratio,
-                       const T *rois, T *output) {
+void PSRoIAlignForward(const int nthreads, const T *input, const T scale_h,
+                       const T scale_w, const int channels, const int height,
+                       const int width, const int out_channels,
+                       const int pooled_height, const int pooled_width,
+                       const int sampling_ratio, const T *rois, T *output) {
     int n_rois = nthreads / out_channels / pooled_width / pooled_height;
     // (n, c, ph, pw) is an element in the pooled output
     // can be parallelized using omp
@@ -332,18 +331,19 @@ void PSRoIAlignBackward(const int nthreads, const T *grad_output,
     }             // for
 } // RoIAlignBackward
 
-at::Tensor
-PSRoIAlign_forward_cpu(const at::Tensor &input, const at::Tensor &rois,
-                       const float scale_h, const float scale_w, const int out_channels,
-                       const int pooled_height, const int pooled_width,
-                       const int sampling_ratio) {
+at::Tensor PSROIAlign_forward_cpu(const at::Tensor &input,
+                                  const at::Tensor &rois, const float scale_h,
+                                  const float scale_w, const int out_channels,
+                                  const int pooled_height,
+                                  const int pooled_width,
+                                  const int sampling_ratio) {
     AT_ASSERTM(input.device().is_cpu(), "input must be a CPU tensor");
     AT_ASSERTM(rois.device().is_cpu(), "rois must be a CPU tensor");
 
-    at::TensorArg input_t{input, "input", 1}, rois_t{rois, "rois", 2};
+    // at::TensorArg input_t{input, "input", 1}, rois_t{rois, "rois", 2};
 
-    at::CheckedFrom c = "PSRoIAlign_forward_cpu";
-    at::checkAllSameType(c, {input_t, rois_t});
+    // at::CheckedFrom c = "PSRoIAlign_forward_cpu";
+    // at::checkAllSameType(c, {input_t, rois_t});
 
     auto num_rois = rois.size(0);
     auto channels = input.size(1);
@@ -362,28 +362,30 @@ PSRoIAlign_forward_cpu(const at::Tensor &input, const at::Tensor &rois,
         return output;
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        input.type(), "PSRoIAlign_forward", [&] {
+        input.type(), "PSROIAlign_forward", [&] {
             PSRoIAlignForward<scalar_t>(
-                output_size, input.contiguous().data<scalar_t>(), scale_h, scale_w,
-                channels, height, width, out_channels, pooled_height,
+                output_size, input.contiguous().data<scalar_t>(), scale_h,
+                scale_w, channels, height, width, out_channels, pooled_height,
                 pooled_width, sampling_ratio,
                 rois.contiguous().data<scalar_t>(), output.data<scalar_t>());
         });
     return output;
 }
 
-at::Tensor PSRoIAlign_backward_cpu(
-    const at::Tensor &grad, const at::Tensor &rois, const float scale_h, const float scale_w,
-    const int out_channels, const int pooled_height, const int pooled_width,
-    const int batch_size, const int channels, const int height, const int width,
-    const int sampling_ratio) {
+at::Tensor PSROIAlign_backward_cpu(const at::Tensor &grad,
+                                   const at::Tensor &rois, const float scale_h,
+                                   const float scale_w, const int out_channels,
+                                   const int pooled_height,
+                                   const int pooled_width, const int batch_size,
+                                   const int channels, const int height,
+                                   const int width, const int sampling_ratio) {
     AT_ASSERTM(grad.device().is_cpu(), "grad must be a CPU tensor");
     AT_ASSERTM(rois.device().is_cpu(), "rois must be a CPU tensor");
 
-    at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2};
+    // at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2};
 
-    at::CheckedFrom c = "PSRoIAlign_backward_cpu";
-    at::checkAllSameType(c, {grad_t, rois_t});
+    // at::CheckedFrom c = "PSRoIAlign_backward_cpu";
+    // at::checkAllSameType(c, {grad_t, rois_t});
 
     at::Tensor grad_input =
         at::zeros({batch_size, channels, height, width}, grad.options());
@@ -400,11 +402,11 @@ at::Tensor PSRoIAlign_backward_cpu(
     int w_stride = grad.stride(3);
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-        grad.type(), "PSRoIAlign_backward", [&] {
+        grad.type(), "PSROIAlign_backward", [&] {
             PSRoIAlignBackward<scalar_t>(
-                grad.numel(), grad.data<scalar_t>(), scale_h, scale_w,
-                channels, height, width, out_channels, pooled_height,
-                pooled_width, sampling_ratio, grad_input.data<scalar_t>(),
+                grad.numel(), grad.data<scalar_t>(), scale_h, scale_w, channels,
+                height, width, out_channels, pooled_height, pooled_width,
+                sampling_ratio, grad_input.data<scalar_t>(),
                 rois.contiguous().data<scalar_t>(), n_stride, c_stride,
                 h_stride, w_stride);
         });

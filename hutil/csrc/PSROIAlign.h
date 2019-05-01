@@ -27,7 +27,7 @@ at::Tensor PSROIAlign_forward(
         AT_ERROR("Not compiled with GPU support");
 #endif
     }
-    return PSRoIAlign_forward_cpu(input, rois, scale_h, scale_w, out_channels,
+    return PSROIAlign_forward_cpu(input, rois, scale_h, scale_w, out_channels,
                                   pooled_height, pooled_width, sampling_ratio);
 };
 
@@ -46,7 +46,7 @@ at::Tensor PSROIAlign_backward(const at::Tensor &grad, const at::Tensor &rois,
         AT_ERROR("Not compiled with GPU support");
 #endif
     }
-    return PSRoIAlign_backward_cpu(grad, rois, scale_h, scale_w, out_channels,
+    return PSROIAlign_backward_cpu(grad, rois, scale_h, scale_w, out_channels,
                                    pooled_height, pooled_width, batch_size,
                                    channels, height, width, sampling_ratio);
 };
