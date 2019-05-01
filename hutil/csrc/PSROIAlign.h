@@ -11,7 +11,7 @@ at::Tensor PSROIAlign_forward(
     const at::Tensor &input,   // Input feature map.
     const at::Tensor &rois,    // List of ROIs to pool over.
     const float scale_h, // The scale of the image features. ROIs will be
-    const float scale_w  // scaled to this.
+    const float scale_w,  // scaled to this.
     const int out_channels,    // The number of output channels.
     const int pooled_height,   // The height of the pooled feature map.
     const int pooled_width,    // The width of the pooled feature
