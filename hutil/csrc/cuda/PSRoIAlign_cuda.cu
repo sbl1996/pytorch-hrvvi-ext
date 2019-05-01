@@ -63,11 +63,11 @@ __device__ T bilinear_interpolate(const T *input, const int height,
 
 template <typename T>
 __global__ void
-PSRoIAlignForward(const int nthreads, const T *input, const T scale_h, const T scale_w,
-                  const int channels, const int height, const int width,
-                  const int out_channels, const int pooled_height,
-                  const int pooled_width, const int sampling_ratio,
-                  const T *rois, T *output) {
+PSRoIAlignForward(const int nthreads, const T *input, const T scale_h,
+                  const T scale_w, const int channels, const int height,
+                  const int width, const int out_channels,
+                  const int pooled_height, const int pooled_width,
+                  const int sampling_ratio, const T *rois, T *output) {
     CUDA_1D_KERNEL_LOOP(index, nthreads) {
         // (n, c, ph, pw) is an element in the pooled output
         int pw = index % pooled_width;
@@ -271,11 +271,12 @@ __global__ void PSRoIAlignBackward(
     }             // CUDA_1D_KERNEL_LOOP
 } // RoIAlignBackward
 
-at::Tensor
-PSRoIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
-                        const float scale_h, const float scale_w, const int out_channels,
-                        const int pooled_height, const int pooled_width,
-                        const int sampling_ratio) {
+at::Tensor PSROIAlign_forward_cuda(const at::Tensor &input,
+                                   const at::Tensor &rois, const float scale_h,
+                                   const float scale_w, const int out_channels,
+                                   const int pooled_height,
+                                   const int pooled_width,
+                                   const int sampling_ratio) {
     AT_ASSERTM(input.device().is_cuda(), "input must be a CUDA tensor");
     AT_ASSERTM(rois.device().is_cuda(), "rois must be a CUDA tensor");
 
@@ -308,12 +309,12 @@ PSRoIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
         THCudaCheck(cudaGetLastError());
         return output;
     }
-
+    AT_ASSERTM(1 == 2, "1 == 2");
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         input.type(), "PSRoIAlign_forward", [&] {
             PSRoIAlignForward<scalar_t><<<grid, block, 0, stream>>>(
-                output_size, input.contiguous().data<scalar_t>(), scale_h, scale_w,
-                channels, height, width, out_channels, pooled_height,
+                output_size, input.contiguous().data<scalar_t>(), scale_h,
+                scale_w, channels, height, width, out_channels, pooled_height,
                 pooled_width, sampling_ratio,
                 rois.contiguous().data<scalar_t>(), output.data<scalar_t>());
         });
@@ -321,11 +322,11 @@ PSRoIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
     return output;
 }
 
-at::Tensor PSRoIAlign_backward_cuda(
-    const at::Tensor &grad, const at::Tensor &rois, const float scale_h, const float scale_w,
-    const int out_channels, const int pooled_height, const int pooled_width,
-    const int batch_size, const int channels, const int height, const int width,
-    const int sampling_ratio) {
+at::Tensor PSROIAlign_backward_cuda(
+    const at::Tensor &grad, const at::Tensor &rois, const float scale_h,
+    const float scale_w, const int out_channels, const int pooled_height,
+    const int pooled_width, const int batch_size, const int channels,
+    const int height, const int width, const int sampling_ratio) {
     AT_ASSERTM(grad.device().is_cuda(), "grad must be a CUDA tensor");
     AT_ASSERTM(rois.device().is_cuda(), "rois must be a CUDA tensor");
 
@@ -359,9 +360,9 @@ at::Tensor PSRoIAlign_backward_cuda(
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         grad.type(), "PSRoIAlign_backward", [&] {
             PSRoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
-                grad.numel(), grad.data<scalar_t>(), scale_h, scale_w,
-                channels, height, width, out_channels, pooled_height,
-                pooled_width, sampling_ratio, grad_input.data<scalar_t>(),
+                grad.numel(), grad.data<scalar_t>(), scale_h, scale_w, channels,
+                height, width, out_channels, pooled_height, pooled_width,
+                sampling_ratio, grad_input.data<scalar_t>(),
                 rois.contiguous().data<scalar_t>(), n_stride, c_stride,
                 h_stride, w_stride);
         });

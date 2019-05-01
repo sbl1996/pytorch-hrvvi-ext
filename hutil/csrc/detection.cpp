@@ -1,5 +1,4 @@
-#include "PSRoIAlign.h"
-// #include "RoIAlign.h"
+#include "PSROIAlign.h"
 #include "iou.h"
 #include <torch/extension.h>
 
@@ -177,8 +176,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("soft_nms_cpu", &soft_nms_cpu, "soft_nms_cpu");
     m.def("iou_mn_forward", &iou_mn_forward, "iou_mn_forward");
     m.def("iou_mn_backward", &iou_mn_backward, "iou_mn_backward");
-    m.def("psroi_align_forward", &PSRoIAlign_forward, "PSRoIAlign_forward");
-    m.def("psroi_align_backward", &PSRoIAlign_backward, "PSRoIAlign_backward");
+    m.def("psroi_align_forward", &PSROIAlign_forward, "PSROIAlign_forward");
+    m.def("psroi_align_backward", &PSROIAlign_backward, "PSROIAlign_backward");
     // m.def("roi_align_forward", &RoIAlign_forward, "RoIAlign_forward");
     // m.def("roi_align_backward", &RoIAlign_backward, "RoIAlign_backward");
 }
