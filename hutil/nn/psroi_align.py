@@ -13,13 +13,13 @@ class _PSROIAlign(Function):
     @staticmethod
     def forward(ctx, input, roi, out_channels, output_size, spatial_scale, sampling_ratio):
         ctx.save_for_backward(roi)
-        ctx.output_size = _pair(output_size)
+        ctx.output_size = output_size
         ctx.out_channels = out_channels
         ctx.spatial_scale = spatial_scale
         ctx.sampling_ratio = sampling_ratio
         ctx.input_shape = input.size()
         output = _C.psroi_align_forward(
-            input, roi, spatial_scale, out_channels,
+            input, roi, spatial_scale[0], spatial_scale[1], out_channels,
             output_size[0], output_size[1], sampling_ratio)
         return output
 
@@ -33,7 +33,7 @@ class _PSROIAlign(Function):
         sampling_ratio = ctx.sampling_ratio
         bs, ch, h, w = ctx.input_shape
         grad_input = _C.psroi_align_backward(
-            grad_output, rois, spatial_scale, out_channels,
+            grad_output, rois, spatial_scale[0], spatial_scale[1], out_channels,
             output_size[0], output_size[1], bs, ch, h, w, sampling_ratio)
         return grad_input, None, None, None, None, None
 
@@ -45,8 +45,8 @@ class PSROIAlign(nn.Module):
     def __init__(self, out_channels, output_size, spatial_scale, sampling_ratio):
         super().__init__()
         self.out_channels = out_channels
-        self.output_size = output_size
-        self.spatial_scale = spatial_scale
+        self.output_size = _pair(output_size)
+        self.spatial_scale = _pair(spatial_scale)
         self.sampling_ratio = sampling_ratio
 
     def forward(self, input, rois):

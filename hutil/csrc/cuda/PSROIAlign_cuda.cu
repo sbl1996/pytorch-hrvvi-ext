@@ -63,7 +63,7 @@ __device__ T bilinear_interpolate(const T *input, const int height,
 
 template <typename T>
 __global__ void
-PSRoIAlignForward(const int nthreads, const T *input, const T spatial_scale,
+PSRoIAlignForward(const int nthreads, const T *input, const T scale_h, const T scale_w,
                   const int channels, const int height, const int width,
                   const int out_channels, const int pooled_height,
                   const int pooled_width, const int sampling_ratio,
@@ -80,10 +80,10 @@ PSRoIAlignForward(const int nthreads, const T *input, const T spatial_scale,
         int roi_batch_ind = offset_rois[0];
 
         // Do not using rounding; this implementation detail is critical
-        T roi_start_w = offset_rois[1] * spatial_scale;
-        T roi_start_h = offset_rois[2] * spatial_scale;
-        T roi_end_w = offset_rois[3] * spatial_scale;
-        T roi_end_h = offset_rois[4] * spatial_scale;
+        T roi_start_w = offset_rois[1] * scale_w;
+        T roi_start_h = offset_rois[2] * scale_h;
+        T roi_end_w = offset_rois[3] * scale_w;
+        T roi_end_h = offset_rois[4] * scale_h;
 
         // Force malformed ROIs to be 1x1
         T roi_width = max(roi_end_w - roi_start_w, (T)1.);
@@ -184,7 +184,7 @@ bilinear_interpolate_gradient(const int height, const int width, T y, T x,
 
 template <typename T>
 __global__ void PSRoIAlignBackward(
-    const int nthreads, const T *grad_output, const T spatial_scale,
+    const int nthreads, const T *grad_output, const T scale_h, const T scale_w,
     const int channels, const int height, const int width,
     const int out_channels, const int pooled_height, const int pooled_width,
     const int sampling_ratio, T *grad_input, const T *rois, const int n_stride,
@@ -201,10 +201,10 @@ __global__ void PSRoIAlignBackward(
         int roi_batch_ind = offset_rois[0];
 
         // Do not using rounding; this implementation detail is critical
-        T roi_start_w = offset_rois[1] * spatial_scale;
-        T roi_start_h = offset_rois[2] * spatial_scale;
-        T roi_end_w = offset_rois[3] * spatial_scale;
-        T roi_end_h = offset_rois[4] * spatial_scale;
+        T roi_start_w = offset_rois[1] * scale_w;
+        T roi_start_h = offset_rois[2] * scale_h;
+        T roi_end_w = offset_rois[3] * scale_w;
+        T roi_end_h = offset_rois[4] * scale_h;
 
         // Force malformed ROIs to be 1x1
         T roi_width = max(roi_end_w - roi_start_w, (T)1.);
@@ -273,7 +273,7 @@ __global__ void PSRoIAlignBackward(
 
 at::Tensor
 PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
-                        const float spatial_scale, const int out_channels,
+                        const float scale_h, const float scale_w, const int out_channels,
                         const int pooled_height, const int pooled_width,
                         const int sampling_ratio) {
     AT_ASSERTM(input.device().is_cuda(), "input must be a CUDA tensor");
@@ -312,7 +312,7 @@ PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         input.type(), "PSROIAlign_forward", [&] {
             PSRoIAlignForward<scalar_t><<<grid, block, 0, stream>>>(
-                output_size, input.contiguous().data<scalar_t>(), spatial_scale,
+                output_size, input.contiguous().data<scalar_t>(), scale_h, scale_w,
                 channels, height, width, out_channels, pooled_height,
                 pooled_width, sampling_ratio,
                 rois.contiguous().data<scalar_t>(), output.data<scalar_t>());
@@ -322,7 +322,7 @@ PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
 }
 
 at::Tensor PSROIAlign_backward_cuda(
-    const at::Tensor &grad, const at::Tensor &rois, const float spatial_scale,
+    const at::Tensor &grad, const at::Tensor &rois, const float scale_h, const float scale_w,
     const int out_channels, const int pooled_height, const int pooled_width,
     const int batch_size, const int channels, const int height, const int width,
     const int sampling_ratio) {
@@ -359,7 +359,7 @@ at::Tensor PSROIAlign_backward_cuda(
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
         grad.type(), "PSROIAlign_backward", [&] {
             PSRoIAlignBackward<scalar_t><<<grid, block, 0, stream>>>(
-                grad.numel(), grad.contiguous().data<scalar_t>(), spatial_scale,
+                grad.numel(), grad.contiguous().data<scalar_t>(), scale_h, scale_w,
                 channels, height, width, out_channels, pooled_height,
                 pooled_width, sampling_ratio, grad_input.data<scalar_t>(),
                 rois.contiguous().data<scalar_t>(), n_stride, c_stride,
