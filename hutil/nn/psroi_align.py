@@ -41,16 +41,20 @@ class _PSROIAlign(Function):
 psroi_align = _PSROIAlign.apply
 
 
-class PSROIAlign(nn.Module):
-    def __init__(self, out_channels, output_size, spatial_scale, sampling_ratio):
+class PSRoIAlign(nn.Module):
+    def __init__(self, out_channels, output_size, spatial_scale=None, sampling_ratio=2, adaptive=True):
         super().__init__()
         self.out_channels = out_channels
         self.output_size = _pair(output_size)
         self.spatial_scale = _pair(spatial_scale)
         self.sampling_ratio = sampling_ratio
+        self.adaptive = adaptive
 
     def forward(self, input, rois):
-        return psroi_align(input, rois, self.out_channels, self.output_size, self.spatial_scale, self.sampling_ratio)
+        spatial_scale = self.spatial_scale
+        if self.adaptive:
+            spatial_scale = tuple(input.size()[2:4])
+        return psroi_align(input, rois, self.out_channels, self.output_size, spatial_scale, self.sampling_ratio)
 
     def __repr__(self):
         tmpstr = self.__class__.__name__ + '('
@@ -58,5 +62,6 @@ class PSROIAlign(nn.Module):
         tmpstr += ', output_size=' + str(self.output_size)
         tmpstr += ', spatial_scale=' + str(self.spatial_scale)
         tmpstr += ', sampling_ratio=' + str(self.sampling_ratio)
+        tmpstr += ', adaptive=' + str(self.adaptive)
         tmpstr += ')'
         return tmpstr
