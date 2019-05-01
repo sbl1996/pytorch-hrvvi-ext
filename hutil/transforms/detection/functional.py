@@ -105,10 +105,10 @@ def random_sample_crop(anns, size, min_iou, min_ar, max_ar, max_attemps=50):
 
 @curry
 def resized_crop(anns, size, left, upper, width, height, output_size, drop=True):
-    anns = crop(anns, size, left, upper, width, height)
+    anns = crop(anns, left, upper, width, height)
     if drop:
         anns = drop_boundary_bboxes(anns, size)
-    anns = resize(anns, size, output_size)
+    anns = resize(anns, (width, height), output_size)
     return anns
 
 
@@ -183,8 +183,12 @@ def crop(anns, left, upper, width, height):
         l -= left
         t -= upper
         if l + w > 0 and t + h > 0:
-            l = max(0, l)
-            t = max(0, t)
+            if l < 0:
+                w += l
+                l = 0
+            if t < 0:
+                h += t
+                t = 0
             w = min(width - l, w)
             h = min(height - t, h)
             new_anns.append({**ann, "bbox": [l, t, w, h]})
@@ -208,7 +212,7 @@ def resize(anns, size, output_size):
         (output_size * width / height, output_size)
     """
     w, h = size
-    if isinstance(size, int):
+    if isinstance(output_size, int):
         if (w <= h and w == output_size) or (h <= w and h == output_size):
             return anns
         if w < h:
@@ -218,10 +222,9 @@ def resize(anns, size, output_size):
             oh = output_size
             sw = sh = oh / h
     else:
-        oh, ow = output_size
+        ow, oh = output_size
         sw = ow / w
         sh = oh / h
-
     new_anns = []
     for ann in anns:
         bbox = list(ann['bbox'])

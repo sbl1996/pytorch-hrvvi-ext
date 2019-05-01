@@ -71,8 +71,9 @@ class RandomSampleCrop(JointTransform):
             return img, anns
         else:
             anns, l, t, w, h = returns
-            img = img.crop(l, t, l + w, t + h)
-            return img, HF.crop(anns, l, t, w, h)
+            img = img.crop([l, t, l + w, t + h])
+            anns = HF.crop(anns, l, t, w, h)
+            return img, anns
 
 
 class RandomResizedCrop(JointTransform):
@@ -165,8 +166,8 @@ class RandomResizedCrop(JointTransform):
 
     def __call__(self, img, anns):
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
+        anns = HF.resized_crop(anns, img.size, j, i, w, h, self.size, drop=self.drop)
         img = VF.resized_crop(img, i, j, h, w, self.size, self.interpolation)
-        anns = HF.resized_crop(anns, img.size, j, i, w, h, self.size)
         return img, anns
 
     def __repr__(self):
@@ -201,8 +202,8 @@ class Resize(JointTransform):
             size = self.size[::-1]
         else:
             size = self.size
-        img = VF.resize(img, size)
         anns = HF.resize(anns, img.size, size)
+        img = VF.resize(img, size)
         return img, anns
 
     def __repr__(self):
