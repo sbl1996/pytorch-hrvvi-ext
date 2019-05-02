@@ -11,6 +11,9 @@ class Transform:
     def __call__(self, input, target):
         pass
 
+    def __repr__(self):
+        return pprint(self)
+
 
 class JointTransform(Transform):
 
@@ -20,6 +23,9 @@ class JointTransform(Transform):
 
     def __call__(self, input, target):
         return self.transform(input, target)
+
+    def __repr__(self):
+        return self.__class__.__name__ + '()'
 
 
 class InputTransform(Transform):
@@ -31,6 +37,14 @@ class InputTransform(Transform):
     def __call__(self, input, target):
         return self.transform(input), target
 
+    # def __repr__(self):
+    #     return pprint(self)
+        # format_string = self.__class__.__name__ + '('
+        # format_string += '\n'
+        # format_string += '    {0}'.format(self.transform)
+        # format_string += '\n)'
+        # return format_string
+
 
 class TargetTransform(Transform):
 
@@ -40,6 +54,9 @@ class TargetTransform(Transform):
 
     def __call__(self, input, target):
         return input, self.transform(target)
+
+    # def __repr__(self):
+    #     return pprint(self)
 
 
 class Compose(Transform):
@@ -65,13 +82,14 @@ class Compose(Transform):
             # print("%.4f" % ((time.time() - start) * 1000))
         return img, target
 
-    def __repr__(self):
-        format_string = self.__class__.__name__ + '('
-        for t in self.transforms:
-            format_string += '\n'
-            format_string += '    {0}'.format(t)
-        format_string += '\n)'
-        return format_string
+    # def __repr__(self):
+    #     return pprint(self)
+        # format_string = self.__class__.__name__ + '('
+        # for t in self.transforms:
+        #     format_string += '\n'
+        #     format_string += '    {0}'.format(t)
+        # format_string += '\n)'
+        # return format_string
 
 
 class UseOriginal(Transform):
@@ -83,10 +101,6 @@ class UseOriginal(Transform):
 
     def __call__(self, img, target):
         return img, target
-
-    def __repr__(self):
-        format_string = self.__class__.__name__ + '()'
-        return format_string
 
 
 class RandomApply(Transform):
@@ -100,6 +114,15 @@ class RandomApply(Transform):
             for t in self.transforms:
                 img, target = t(img, target)
         return img, target
+
+    # def __repr__(self):
+    #     return pprint(self)
+        # format_string = self.__class__.__name__ + '('
+        # for t in self.transforms:
+        #     format_string += '\n'
+        #     format_string += '    {0}'.format(t)
+        # format_string += '\n)'
+        # return format_string
 
 
 class RandomChoice(Transform):
@@ -123,13 +146,14 @@ class RandomChoice(Transform):
         img, target = t(img, target)
         return img, target
 
-    def __repr__(self):
-        format_string = self.__class__.__name__ + '('
-        for t in self.transforms:
-            format_string += '\n'
-            format_string += '    {0}'.format(t)
-        format_string += '\n)'
-        return format_string
+    # def __repr__(self):
+    #     return pprint(self)
+        # format_string = self.__class__.__name__ + '('
+        # for t in self.transforms:
+        #     format_string += '\n'
+        #     format_string += '    {0}'.format(t)
+        # format_string += '\n)'
+        # return format_string
 
 
 class ToTensor(JointTransform):
@@ -140,5 +164,24 @@ class ToTensor(JointTransform):
     def __call__(self, img, anns):
         return VF.to_tensor(img), anns
 
-    def __repr__(self):
-        return self.__class__.__name__ + "()"
+
+def pprint(t, level=0, sep='    '):
+    pre = sep * level
+    if not isinstance(t, Transform) or isinstance(t, JointTransform):
+        return pre + repr(t)
+    format_string = pre + type(t).__name__ + '('
+    if hasattr(t, 'transforms'):
+        for t in getattr(t, 'transforms'):
+            format_string += '\n'
+            format_string += pprint(t, level + 1)
+        format_string += '\n'
+        format_string += pre + ')'
+    elif hasattr(t, 'transform'):
+        format_string += '\n'
+        format_string += pprint(getattr(t, 'transform'), level + 1)
+        format_string += '\n'
+        format_string += pre + ')'
+    else:
+        format_string += ')'
+    return format_string
+

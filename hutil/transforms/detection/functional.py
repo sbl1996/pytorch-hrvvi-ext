@@ -5,7 +5,6 @@ import random
 import numpy as np
 from toolz import curry
 from toolz.curried import get
-from PIL import Image
 
 __all__ = [
     "resize", "resized_crop", "center_crop", "drop_boundary_bboxes",
@@ -104,11 +103,12 @@ def random_sample_crop(anns, size, min_iou, min_ar, max_ar, max_attemps=50):
 
 
 @curry
-def resized_crop(anns, size, left, upper, width, height, output_size, drop=True):
+def resized_crop(anns, left, upper, width, height, output_size, drop=True):
     anns = crop(anns, left, upper, width, height)
+    size = (width, height)
     if drop:
         anns = drop_boundary_bboxes(anns, size)
-    anns = resize(anns, (width, height), output_size)
+    anns = resize(anns, size, output_size)
     return anns
 
 

@@ -6,8 +6,9 @@ from typing import Sequence, Tuple
 
 from PIL import Image
 import torchvision.transforms.functional as VF
+from torchvision.transforms import ColorJitter
 
-from hutil.transforms import JointTransform, Compose, ToTensor
+from hutil.transforms import JointTransform, Compose, ToTensor, InputTransform, RandomChoice, RandomApply, UseOriginal
 from hutil.transforms.detection import functional as HF
 
 
@@ -38,6 +39,13 @@ class RandomExpand(JointTransform):
 
         new_anns = HF.move(anns, left, top)
         return expand_image, new_anns
+
+    def __repr__(self):
+        format_string = self.__class__.__name__
+        format_string += '(ratio={0})'.format(tuple(round(r, 4)
+                                                    for r in self.ratios))
+        return format_string
+
 
 
 class RandomSampleCrop(JointTransform):
@@ -166,8 +174,8 @@ class RandomResizedCrop(JointTransform):
 
     def __call__(self, img, anns):
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
-        anns = HF.resized_crop(anns, img.size, j, i, w, h, self.size, drop=self.drop)
-        img = VF.resized_crop(img, i, j, h, w, self.size, self.interpolation)
+        anns = HF.resized_crop(anns, j, i, w, h, self.size, drop=self.drop)
+        img = VF.resized_crop(img, i, j, h, w, self.size[::-1], self.interpolation)
         return img, anns
 
     def __repr__(self):
@@ -198,11 +206,13 @@ class Resize(JointTransform):
         self.size = size
 
     def __call__(self, img, anns):
+        if img.size == self.size:
+            return img, anns
+        anns = HF.resize(anns, img.size, self.size)
         if isinstance(self.size, Tuple):
             size = self.size[::-1]
         else:
             size = self.size
-        anns = HF.resize(anns, img.size, size)
         img = VF.resize(img, size)
         return img, anns
 
@@ -304,3 +314,29 @@ class RandomVerticalFlip(JointTransform):
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
+
+
+def SSDTransform(size, color_jitter=True, scale=(0.1, 1)):
+    transforms = []
+    if color_jitter:
+        transforms.append(
+            InputTransform(
+                ColorJitter(
+                    brightness=0.1, contrast=0.5,
+                    saturation=0.5, hue=0.05,
+                )
+            )
+        )
+    transforms += [
+        RandomApply([
+            RandomExpand((1, 4)),
+        ]),
+        RandomChoice([
+            UseOriginal(),
+            RandomSampleCrop(),
+            RandomResizedCrop(size, scale=scale, ratio=(1 / 2, 2 / 1)),
+        ]),
+        RandomHorizontalFlip(),
+        Resize(size)
+    ]
+    return Compose(transforms)
