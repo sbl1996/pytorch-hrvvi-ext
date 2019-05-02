@@ -1,3 +1,5 @@
+from math import log
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -52,6 +54,22 @@ class ThunderRPNHead(nn.Module):
             f_channels, num_anchors * 4, kernel_size=1)
         self.cls_fc = Conv2d(
             f_channels, num_anchors * 2, kernel_size=1)
+
+
+        for m in [self.loc_fc, self.cls_fc]:
+            m.apply(self._init_new_layers)
+        self.cls_fc.apply(self._init_final_cls_layer)
+
+    def _init_new_layers(self, m):
+        name = type(m).__name__
+        if "Linear" in name or "Conv" in name:
+            nn.init.normal_(m.weight, 0, 0.01)
+            nn.init.constant_(m.bias, 0)
+
+    def _init_final_cls_layer(self, m, p=0.01):
+        name = type(m).__name__
+        if "Linear" in name or "Conv" in name:
+            nn.init.constant_(m.bias, -log((1 - p) / p))
 
     def forward(self, p):
         p = self.conv(p)

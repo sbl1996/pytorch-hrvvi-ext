@@ -159,6 +159,12 @@ def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5
         neg = loc_t.new_ones(num_anchors, dtype=torch.uint8)
 
     bboxes = loc_t.new_tensor([ann['bbox'] for ann in anns])
+    if len(bboxes) == 0:
+        target = [loc_t, cls_t]
+        if pos_thresh and neg_thresh:
+            target.append(~neg)
+        return target
+
     bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
     labels = loc_t.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
 
@@ -179,6 +185,8 @@ def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5
             loc_t[ipos] = coords_to_target(bbox, anchors_xywh[ipos])
             cls_t[ipos] = label
 
+    if torch.isnan(loc_t.max()):
+        print(anns)
     target = [loc_t, cls_t]
 
     if pos_thresh and neg_thresh:
@@ -266,13 +274,12 @@ class MultiBoxLoss(nn.Module):
         else:
             if self.criterion == focal_loss2:
                 cls_t = one_hot(cls_t, C=cls_p.size(-1))
-            cls_loss_pos = self.criterion(
-                cls_p[pos], cls_t[pos], reduction='sum')
-
-            cls_loss_neg = self.criterion(
-                cls_p[neg], cls_t[neg], reduction='sum')
-            cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
-
+                cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
+            else:
+                C = cls_p.size(-1)
+                cls_p = cls_p.view(-1, C)
+                cls_t = cls_t.view(-1)
+                cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
         loss = cls_loss + loc_loss
         if random.random() < self.p:
             print("loc: %.4f | cls: %.4f" %

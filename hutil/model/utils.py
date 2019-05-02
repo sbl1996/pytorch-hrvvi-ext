@@ -53,7 +53,7 @@ def clip(model, tol=1e-6):
     return model
 
 
-def get_loc_cls_preds(ps, num_classes):
+def get_loc_cls_preds(ps, num_classes, concat=True):
     loc_preds = []
     cls_preds = []
     b = ps[0].size(0)
@@ -62,4 +62,8 @@ def get_loc_cls_preds(ps, num_classes):
             b, -1, 4 + num_classes)
         loc_preds.append(p[..., :4])
         cls_preds.append(p[..., 4:])
+    if concat:
+        loc_p = torch.cat(loc_preds, dim=1)
+        cls_p = torch.cat(cls_preds, dim=1)
+        return loc_p, cls_p
     return loc_preds, cls_preds

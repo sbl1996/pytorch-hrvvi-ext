@@ -182,7 +182,7 @@ def crop(anns, left, upper, width, height):
         l, t, w, h = ann['bbox']
         l -= left
         t -= upper
-        if l + w > 0 and t + h > 0:
+        if l + w >= 0 and l <= width and t + h >= 0 and t <= height:
             if l < 0:
                 w += l
                 l = 0
@@ -395,3 +395,4 @@ def move(anns, x, y):
         bbox[1] += y
         new_anns.append({**ann, "bbox": bbox})
     return new_anns
+

@@ -1,3 +1,5 @@
+import os
+from datetime import datetime
 from collections import defaultdict
 
 from toolz.curried import get, keyfilter
@@ -6,12 +8,11 @@ import torch
 
 from ignite.engine import Engine, Events
 from ignite.handlers import Timer
+from tensorboardX import SummaryWriter
 
 from hutil.common import CUDA, detach
 from hutil.train.metrics import TrainLoss, Loss
 from hutil.train._utils import _prepare_batch, set_lr
-from tensorboardX import SummaryWriter
-from hutil.train import Save
 
 
 def create_supervised_evaluator(model, metrics=None,
@@ -98,7 +99,9 @@ class Trainer:
         self.save_path = save_path
         self.name = name
 
-        self._writer = SummaryWriter("runs/" + self.name)
+        current_time = datetime.now().strftime('%b%d_%H-%M-%S')
+        log_dir = os.path.join('runs', self.name, current_time)
+        self._writer = SummaryWriter(log_dir)
 
         self.metric_history = defaultdict(list)
         self._device = 'cuda' if CUDA else 'cpu'
@@ -130,26 +133,41 @@ class Trainer:
                 for i, v in enumerate(val):
                     self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history[name].append(val)
-        msg += '\n'
-        if evaluator:
-            msg += "validate ------\t"
-            for name, val in evaluator.state.metrics.items():
-                if isinstance(val, float):
-                    msg += "%s: %.4f\t" % (name, val)
-                    self._writer.add_scalar(name, val, self.epochs())
-                else:
-                    msg += "%s: %s\t" % (name, val)
-                    for i, v in enumerate(val):
-                        self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
-                self.metric_history["val_" + name].append(val)
         print(msg)
+
+    def _log_val_results(self, engine, evaluator, per_epochs=1):
+        if engine.state.epoch % per_epochs != 0:
+            return
+        msg = "validate ------\t"
+        for name, val in evaluator.state.metrics.items():
+            if isinstance(val, float):
+                msg += "%s: %.4f\t" % (name, val)
+                self._writer.add_scalar(name, val, self.epochs())
+            else:
+                msg += "%s: %s\t" % (name, val)
+                for i, v in enumerate(val):
+                    self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
+            self.metric_history["val_" + name].append(val)
+        print(msg)
+
+
+    def _evaluate(self, engine, evaluator, val_loader, per_epochs=1):
+        if engine.state.epoch % per_epochs == 0:
+            evaluator.run(val_loader)
 
     def _terminate_on_iterations(self, engine, iterations):
         if engine.state.iteration == iterations:
             engine.terminate()
 
     def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=None):
-        validate = val_loader is not None
+        if val_loader is not None:
+            validate = True
+            if isinstance(val_loader, tuple):
+                val_loader, eval_per_epochs = val_loader
+            else:
+                eval_per_epochs = 1
+        else:
+            validate = False
         callbacks = callbacks or []
 
         engine = create_supervised_trainer(
@@ -172,7 +190,7 @@ class Trainer:
             evaluator = create_supervised_evaluator(
                 self.model, self.evaluate_metrics, self._device)
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, lambda _: evaluator.run(val_loader))
+                Events.EPOCH_COMPLETED, self._evaluate, evaluator, val_loader, eval_per_epochs)
         else:
             evaluator = None
 
@@ -180,6 +198,9 @@ class Trainer:
                                  self._increment_epoch)
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, self._log_results, evaluator)
+        if validate:
+            engine.add_event_handler(
+                Events.EPOCH_COMPLETED, self._log_val_results, evaluator, eval_per_epochs)
 
         # Set checkpoint
         if save:

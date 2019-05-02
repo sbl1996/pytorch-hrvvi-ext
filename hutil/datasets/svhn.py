@@ -56,7 +56,7 @@ class SVHNDetection(Dataset):
         self.img_dir = self.root / split
         self.ann_filename = split + ".json"
         self.ann_dir = self.root / "annotations"
-        self.ann_dir.mkdir(exist_ok=True)
+        self.ann_dir.mkdir(exist_ok=True, parents=True)
         self.ann_file = self.ann_dir / self.ann_filename
 
         if download:
