@@ -108,6 +108,8 @@ class Trainer:
         self._timer = Timer()
         self._epochs = 0
 
+        self.model.to(self._device)
+
     def _log_epochs(self, engine, epochs):
         print("Epoch %d/%d" %
                      (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
