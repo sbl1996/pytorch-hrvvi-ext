@@ -32,7 +32,7 @@ def get_norm_layer(name, channels):
         return nn.BatchNorm2d(channels)
     elif name == 'gn':
         num_groups = get_groups(channels, 32)
-        return nn.GroupNorm(channels // num_groups, channels)
+        return nn.GroupNorm(num_groups, channels)
     else:
         raise NotImplementedError
 
