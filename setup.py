@@ -41,6 +41,7 @@ REQUIRED = [
     "xmltodict",
     "googledrivedownloader",
     "tensorboardX",
+    "pybind11",
 ]
 
 # What packages are optional?
