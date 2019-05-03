@@ -116,6 +116,9 @@ def get_torch_extensions():
 
     return ext_modules
 
+def get_pybind_include(user=False):
+    import pybind11
+    return pybind11.get_include(user)
 
 def get_numpy_extensions():
     extensions_dir = os.path.join(here, IMPORT_NAME, 'csrc', 'numpy')
@@ -127,7 +130,11 @@ def get_numpy_extensions():
         extra_compile_args['cxx'] += ['-stdlib=libc++',
                                       '-mmacosx-version-min=10.9']
 
-    include_dirs = [extensions_dir]
+    include_dirs = [
+        extensions_dir,
+        get_pybind_include(),
+        get_pybind_include(user=True),
+    ]
 
     ext_modules = [
         Extension(
