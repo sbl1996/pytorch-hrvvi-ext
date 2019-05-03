@@ -9,7 +9,7 @@ import os
 import sys
 import glob
 from shutil import rmtree
-from setuptools import find_packages, setup, Command
+from setuptools import find_packages, setup, Command, Extension
 
 import torch
 from torch.utils.cpp_extension import CppExtension, CUDAExtension, CUDA_HOME, BuildExtension
@@ -73,7 +73,7 @@ else:
     about['__version__'] = VERSION
 
 
-def get_extensions():
+def get_torch_extensions():
     extensions_dir = os.path.join(here, IMPORT_NAME, 'csrc')
 
     main_file = glob.glob(os.path.join(extensions_dir, '*.cpp'))
@@ -115,6 +115,29 @@ def get_extensions():
 
     return ext_modules
 
+
+def get_numpy_extensions():
+    extensions_dir = os.path.join(here, IMPORT_NAME, 'csrc', 'numpy')
+
+    main_file = glob.glob(os.path.join(extensions_dir, '*.cpp'))
+
+    extra_compile_args = {'cxx': []}
+    if sys.platform == 'darwin':
+        extra_compile_args['cxx'] += ['-stdlib=libc++',
+                                      '-mmacosx-version-min=10.9']
+
+    include_dirs = [extensions_dir]
+
+    ext_modules = [
+        Extension(
+            IMPORT_NAME + '._numpy',
+            main_file,
+            include_dirs=include_dirs,
+            extra_compile_args=extra_compile_args,
+        )
+    ]
+
+    return ext_modules
 
 class UploadCommand(Command):
     """Support setup.py upload."""
@@ -182,7 +205,7 @@ setup(
     extras_require=EXTRAS,
     # include_package_data=True,
     license='MIT',
-    ext_modules=get_extensions(),
+    ext_modules=get_torch_extensions() + get_numpy_extensions(),
     # $ setup.py publish support.
     cmdclass={
         'upload': UploadCommand,

@@ -19,13 +19,15 @@ from hutil import _C
 
 from hutil.detection.bbox import BBox, transform_bbox, transform_bboxes
 from hutil.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
+from hutil.detection.anchor import find_priors_kmeans
 
 __all__ = [
     "coords_to_target", "MatchAnchors", "BBox",
     "nms_cpu", "soft_nms_cpu", "transform_bbox", "transform_bboxes", "misc_target_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "MultiBoxLoss", "AnchorBasedInference", "get_locations", "generate_anchors", "generate_multi_level_anchors",
-    "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match"
+    "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match", "generate_anchors_with_priors",
+    "find_priors_kmeans",
 ]
 
 
@@ -116,6 +118,18 @@ def generate_anchors(input_size, stride=16, aspect_ratios=(1 / 2, 1 / 1, 2 / 1),
         sw = sh = scales
     anchors[:, :, :, 2] = (sw * aspect_ratios).view(-1) / width
     anchors[:, :, :, 3] = (sh / aspect_ratios).view(-1) / height
+    return anchors
+
+
+def generate_anchors_with_priors(input_size, stride, priors):
+    lx, ly = get_locations(input_size, [stride])[0]
+    num_anchors = len(priors)
+    anchors = torch.zeros(lx, ly, num_anchors, 4)
+    anchors[:, :, :, 0] = (torch.arange(
+        lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, num_anchors) + 0.5) / lx
+    anchors[:, :, :, 1] = (torch.arange(
+        ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, num_anchors) + 0.5) / ly
+    anchors[:, :, :, 2:] = priors
     return anchors
 
 
