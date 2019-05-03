@@ -67,7 +67,7 @@ def Conv2d(in_channels, out_channels,
     conv = nn.Conv2d(
         in_channels, out_channels,
         kernel_size, stride, padding, dilation, groups, bias)
-    nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
+    nn.init.kaiming_normal_(conv.weight, nonlinearity=activation or 'relu')
     if bias:
         nn.init.zeros_(conv.bias)
     layers.append(conv)
