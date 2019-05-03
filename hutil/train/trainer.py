@@ -50,7 +50,6 @@ def create_supervised_evaluator(model, metrics=None,
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
         device=None, prepare_batch=_prepare_batch):
-
     if metrics is None:
         metrics = {}
     if device:
@@ -112,13 +111,10 @@ class Trainer:
 
     def _log_epochs(self, engine, epochs):
         print("Epoch %d/%d" %
-                     (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
+              (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine):
-        self.lr_scheduler.step()
-
-    def _evaluate(self, engine, evaluator, val_loader):
-        evaluator.run(val_loader)
+        self.lr_scheduler.step(self.epochs())
 
     def _increment_epoch(self, engine):
         self._epochs += 1
@@ -151,7 +147,6 @@ class Trainer:
                     self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history["val_" + name].append(val)
         print(msg)
-
 
     def _evaluate(self, engine, evaluator, val_loader, per_epochs=1):
         if engine.state.epoch % per_epochs == 0:
@@ -266,7 +261,9 @@ class Trainer:
 def _callback_wrapper(f):
     def func(engine, *args, **kwargs):
         return f(*args, **kwargs)
+
     return func
+
 
 class StepOnIteration:
 

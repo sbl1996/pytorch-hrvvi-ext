@@ -21,9 +21,9 @@ class ShuffleNetV2(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, mult=0.5, feature_levels=(3, 4, 5), norm_layer='bn'):
+    def __init__(self, mult=0.5, feature_levels=(3, 4, 5), **kwargs):
         super().__init__()
-        net = BShuffleNetV2(num_classes=1, mult=mult, norm_layer=norm_layer)
+        net = BShuffleNetV2(num_classes=1, mult=mult, **kwargs)
         del net.fc
         channels = net.channels
         self.layer1 = net.conv1
@@ -68,10 +68,9 @@ class SNet(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, version=49, feature_levels=(3, 4, 5), norm_layer='bn'):
+    def __init__(self, version=49, feature_levels=(3, 4, 5), **kwargs):
         super().__init__()
-        net = BSNet(num_classes=1, version=version,
-                    norm_layer=norm_layer)
+        net = BSNet(num_classes=1, version=version, **kwargs)
         del net.fc
         channels = net.channels
         self.layer1 = net.conv1

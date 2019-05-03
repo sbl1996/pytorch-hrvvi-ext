@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.model.modules import Conv2d
+from hutil.model.modules import Conv2d, SELayer
 
 
 def channel_shuffle(x, g):
@@ -23,8 +23,9 @@ class ShuffleBlock(nn.Module):
 
 
 class BasicBlock(nn.Module):
-    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn'):
+    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn', with_se=True):
         super().__init__()
+        self.with_se = with_se
         channels = in_channels // 2
         self.conv1 = Conv2d(
             channels, channels, kernel_size=1,
@@ -38,6 +39,8 @@ class BasicBlock(nn.Module):
             channels, channels, kernel_size=1,
             norm_layer=norm_layer, activation='relu',
         )
+        if with_se:
+            self.se = SELayer(channels, reduction=8)
         self.shuffle = ShuffleBlock(shuffle_groups)
 
     def forward(self, x):
@@ -48,6 +51,8 @@ class BasicBlock(nn.Module):
         x2 = self.conv1(x2)
         x2 = self.conv2(x2)
         x2 = self.conv3(x2)
+        if self.with_se:
+            x2 = self.se(x2)
         x = torch.cat((x1, x2), dim=1)
         x = self.shuffle(x)
         return x
@@ -100,13 +105,14 @@ class SNet(nn.Module):
         535: [48, 248, 496, 992],
     }
 
-    def __init__(self, num_classes=1000, version=49, norm_layer='bn'):
+    def __init__(self, num_classes=1000, version=49, norm_layer='bn', with_se=True):
         super().__init__()
         num_layers = [4, 8, 4]
         self.num_layers = num_layers
         channels = self.cfg[version]
         self.channels = channels
         self.norm_layer = norm_layer
+        self.with_se = with_se
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
@@ -131,7 +137,7 @@ class SNet(nn.Module):
     def _make_layer(self, num_layers, in_channels, out_channels):
         layers = [DownBlock(in_channels, out_channels, norm_layer=self.norm_layer)]
         for i in range(num_layers - 1):
-            layers.append(BasicBlock(out_channels, norm_layer=self.norm_layer))
+            layers.append(BasicBlock(out_channels, norm_layer=self.norm_layer, with_se=self.with_se))
         return nn.Sequential(*layers)
 
     def forward(self, x):
