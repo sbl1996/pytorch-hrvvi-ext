@@ -17,6 +17,7 @@ def upsample_add(x, y):
     h, w = y.size()[2:4]
     return F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False) + y
 
+
 def get_groups(channels, ref=32):
     xs = filter(lambda x: channels % x == 0, range(2, channels + 1))
     c = min(xs, key=lambda x: abs(x - ref))
@@ -63,9 +64,13 @@ def Conv2d(in_channels, out_channels,
             padding = (kernel_size - 1) // 2
     layers = []
     bias = norm_layer is None
-    layers.append(nn.Conv2d(
+    conv = nn.Conv2d(
         in_channels, out_channels,
-        kernel_size, stride, padding, dilation, groups, bias))
+        kernel_size, stride, padding, dilation, groups, bias)
+    nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
+    if bias:
+        nn.init.zeros_(conv.bias)
+    layers.append(conv)
     if norm_layer is not None:
         layers.append(get_norm_layer(norm_layer, out_channels))
     if activation is not None:
