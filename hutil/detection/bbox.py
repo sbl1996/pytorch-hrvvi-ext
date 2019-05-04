@@ -1,5 +1,6 @@
-import torch
+import numpy as np
 
+import torch
 
 class BBox:
     LTWH = 0  # [xmin, ymin, width, height]
@@ -22,7 +23,7 @@ class BBox:
 
     @staticmethod
     def convert(bbox, format=0, to=1, inplace=False):
-        if torch.is_tensor(bbox):
+        if torch.is_tensor(bbox) or (isinstance(bbox, np.ndarray) and inplace):
             return transform_bboxes(bbox, format=format, to=to, inplace=inplace)
         else:
             return transform_bbox(bbox, format, to)
@@ -54,6 +55,13 @@ class BBox:
         if self.segmentation is not None:
             ann['segmentation'] = self.segmentation
         return ann
+
+
+def get_bbox_area(bbox, format=BBox.LTRB):
+    if format == BBox.LTRB:
+        return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+    else:
+        return bbox[2] * bbox[3]
 
 
 def bbox_to_percent(bbox, size, inplace=False):
@@ -98,14 +106,6 @@ def bboxes_to_absolute(bboxes, size, inplace=False):
     bboxes[..., 2] *= w
     bboxes[..., 3] *= h
     return bboxes
-
-
-
-def get_bbox_area(bbox, format=BBox.LTRB):
-    if format == BBox.LTRB:
-        return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-    else:
-        return bbox[2] * bbox[3]
 
 
 def boxes_ltwh_to_ltrb(boxes, inplace=False):

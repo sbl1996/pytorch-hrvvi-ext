@@ -52,7 +52,7 @@ def get_activation(name):
 def Conv2d(in_channels, out_channels,
            kernel_size=3, stride=1,
            padding='same', dilation=1, groups=1,
-           norm_layer=None, activation=None):
+           norm_layer=None, activation=None, with_se=False, preact=False):
 
     if padding == 'same':
         if isinstance(kernel_size, tuple):
@@ -70,9 +70,33 @@ def Conv2d(in_channels, out_channels,
     nn.init.kaiming_normal_(conv.weight, nonlinearity=activation or 'relu')
     if bias:
         nn.init.zeros_(conv.bias)
-    layers.append(conv)
     if norm_layer is not None:
         layers.append(get_norm_layer(norm_layer, out_channels))
+    if activation is not None:
+        layers.append(get_activation(activation))
+    if preact:
+        assert len(layers) == 2, "Preact can only be used when normalization and activation is not None"
+        layers.append(conv)
+    else:
+        layers = [conv] + layers
+    if with_se:
+        layers.append(SELayer(out_channels, reduction=16))
+    return nn.Sequential(*layers)
+
+
+def Linear(in_channels, out_channels,
+           norm_layer=None, activation=None):
+    layers = []
+    bias = norm_layer is None
+    fc = nn.Linear(in_channels, out_channels)
+    nn.init.kaiming_normal_(fc.weight, nonlinearity=activation or 'relu')
+    if bias:
+        nn.init.zeros_(fc.bias)
+    layers.append(fc)
+    if norm_layer == 'bn':
+        layers.append(nn.BatchNorm1d(out_channels))
+    elif norm_layer == 'gn':
+        layers.append(nn.GroupNorm(get_groups(out_channels, 32), out_channels))
     if activation is not None:
         layers.append(get_activation(activation))
     return nn.Sequential(*layers)

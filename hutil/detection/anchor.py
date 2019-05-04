@@ -2,8 +2,9 @@ import numpy as np
 import torch
 
 from hutil._numpy import iou_mn, iou_11, iou_mm
+from hutil.detection import BBox
 
-def kmeans(X, k, max_iter=300, tol=1e-4, verbose=True):
+def kmeans(X, k, max_iter=300, tol=1e-6, verbose=True):
     n, d = X.shape
     centers = X[np.random.choice(n, size=k, replace=False)]
     for i in range(max_iter):
@@ -19,7 +20,7 @@ def kmeans(X, k, max_iter=300, tol=1e-4, verbose=True):
                 centers[ki] = center
         loss /= k
         if verbose:
-            print("Iter %d: %.4f" % (i, loss))
+            print("Iter %d: %.6f" % (i, loss))
         if loss < tol:
             break
     return y, centers
@@ -47,14 +48,14 @@ def find_centers_kmeans(bboxes, k, max_iter=100, verbose=True):
     return centers
 
 
-def find_priors_kmeans(bboxes, k, max_iter=100, verbose=True):
+def find_priors_kmeans(sizes, k, max_iter=100, verbose=True):
     r"""
     Find bounding box centers by kmeans.
 
     Parameters
     ----------
-    bboxes : ``numpy.ndarray``
-        Bounding boxes of normalized [xmin, ymin, xmax, ymax].
+    sizes : ``numpy.ndarray``
+        Bounding boxes of normalized [width, height].
     k : ``int``
         Number of clusters (priors).
     max_iter : ``int``
@@ -62,6 +63,8 @@ def find_priors_kmeans(bboxes, k, max_iter=100, verbose=True):
     verbose: ``bool``
         Whether to print info.
     """
+    bboxes = np.concatenate([np.full_like(sizes, 0.5), sizes], axis=-1)
+    bboxes = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB, inplace=True)
     centers = find_centers_kmeans(bboxes, k, max_iter, verbose)
     centers[:, 2] -= centers[:, 0]
     centers[:, 3] -= centers[:, 1]

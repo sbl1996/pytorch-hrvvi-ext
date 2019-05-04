@@ -59,7 +59,7 @@ class BasicBlock(nn.Module):
 
 
 class DownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn'):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn', **kwargs):
         super().__init__()
         channels = out_channels // 2
         self.conv11 = Conv2d(
@@ -105,39 +105,37 @@ class SNet(nn.Module):
         535: [48, 248, 496, 992],
     }
 
-    def __init__(self, num_classes=1000, version=49, norm_layer='bn', with_se=True):
+    def __init__(self, num_classes=1000, version=49, **kwargs):
         super().__init__()
         num_layers = [4, 8, 4]
         self.num_layers = num_layers
         channels = self.cfg[version]
         self.channels = channels
-        self.norm_layer = norm_layer
-        self.with_se = with_se
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='relu'
+            activation='relu', **kwargs
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,
         )
         self.stage2 = self._make_layer(
-            num_layers[0], channels[0], channels[1])
+            num_layers[0], channels[0], channels[1], **kwargs)
         self.stage3 = self._make_layer(
-            num_layers[1], channels[1], channels[2])
+            num_layers[1], channels[1], channels[2], **kwargs)
         self.stage4 = self._make_layer(
-            num_layers[2], channels[2], channels[3])
+            num_layers[2], channels[2], channels[3], **kwargs)
         if len(self.channels) == 5:
             self.conv5 = Conv2d(
-                channels[3], channels[4], kernel_size=1, norm_layer=norm_layer)
+                channels[3], channels[4], kernel_size=1, **kwargs)
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(channels[-1], num_classes)
 
-    def _make_layer(self, num_layers, in_channels, out_channels):
-        layers = [DownBlock(in_channels, out_channels, norm_layer=self.norm_layer)]
+    def _make_layer(self, num_layers, in_channels, out_channels, **kwargs):
+        layers = [DownBlock(in_channels, out_channels, **kwargs)]
         for i in range(num_layers - 1):
-            layers.append(BasicBlock(out_channels, norm_layer=self.norm_layer, with_se=self.with_se))
+            layers.append(BasicBlock(out_channels, **kwargs))
         return nn.Sequential(*layers)
 
     def forward(self, x):

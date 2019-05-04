@@ -157,7 +157,7 @@ class VOCDetection(Dataset):
         for i, c in enumerate(VOC_CATEGORIES[1:]):
             categories.append({
                 'supercategory': 'object',
-                'id': i,
+                'id': i + 1,
                 'name': c
             })
         images = []

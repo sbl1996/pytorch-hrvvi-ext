@@ -7,6 +7,8 @@ import numpy as np
 
 def summary(model, input_size, batch_size=-1, dtype=None):
 
+    visited = set()
+
     def register_hook(module):
 
         def hook(module, input, output):
@@ -16,8 +18,8 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             m_key = "%s-%i" % (class_name, module_idx + 1)
 
             summary[m_key] = OrderedDict()
-            summary[m_key]["input_shape"] = list(input[0].size())
-            summary[m_key]["input_shape"][0] = batch_size
+            # summary[m_key]["input_shape"] = list(input[0].size())
+            # summary[m_key]["input_shape"][0] = batch_size
             if isinstance(output, (list, tuple)):
                 summary[m_key]["output_shape"] = [
                     [-1] + list(o.size())[1:] for o in output
@@ -26,13 +28,17 @@ def summary(model, input_size, batch_size=-1, dtype=None):
                 summary[m_key]["output_shape"] = list(output.size())
                 summary[m_key]["output_shape"][0] = batch_size
 
-            params = 0
-            if hasattr(module, "weight") and hasattr(module.weight, "size"):
-                params += torch.prod(torch.LongTensor(list(module.weight.size())))
-                summary[m_key]["trainable"] = module.weight.requires_grad
-            if hasattr(module, "bias") and hasattr(module.bias, "size"):
-                params += torch.prod(torch.LongTensor(list(module.bias.size())))
-            summary[m_key]["nb_params"] = params
+            if module not in visited:
+                params = 0
+                if hasattr(module, "weight") and hasattr(module.weight, "size"):
+                    params += torch.prod(torch.LongTensor(list(module.weight.size())))
+                    summary[m_key]["trainable"] = module.weight.requires_grad
+                if hasattr(module, "bias") and hasattr(module.bias, "size"):
+                    params += torch.prod(torch.LongTensor(list(module.bias.size())))
+                summary[m_key]["nb_params"] = params
+                visited.add(module)
+            else:
+                summary[m_key]["nb_params"] = 0
 
         if (
             not isinstance(module, nn.Sequential)

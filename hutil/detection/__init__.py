@@ -1,6 +1,7 @@
 import random
 import numbers
-from typing import List
+from typing import List, Sequence
+from math import sqrt
 
 from toolz import curry
 from toolz.curried import get, groupby
@@ -27,8 +28,15 @@ __all__ = [
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "MultiBoxLoss", "AnchorBasedInference", "get_locations", "generate_anchors", "generate_multi_level_anchors",
     "mAP", "match_anchors", "anchor_based_inference", "batch_anchor_match", "generate_anchors_with_priors",
-    "find_priors_kmeans",
+    "find_priors_kmeans", "calc_anchor_sizes",
 ]
+
+
+def _pair(x):
+    if not isinstance(x, Sequence):
+        return x, x
+    else:
+        return x
 
 
 def get_locations(size, strides):
@@ -74,28 +82,25 @@ def target_to_coords(loc_t, anchors):
     return loc_t
 
 
-def generate_multi_level_anchors(input_size, strides=(8, 16, 32, 64, 128), aspect_ratios=(1 / 2, 1 / 1, 2 / 1),
-                                 scales=(32, 64, 128, 256, 512)):
+def calc_anchor_sizes(size, aspect_ratios, scales=(1,)):
+    w, h = _pair(size)
+    sw = [w * sqrt(ars) * s for ars in aspect_ratios for s in scales]
+    sh = [h / sqrt(ars) * s for ars in aspect_ratios for s in scales]
+    return torch.tensor([sw, sh], dtype=torch.float32).transpose(1, 0)
+
+
+def generate_multi_level_anchors(input_size, strides, anchor_sizes):
     width, height = input_size
     locations = get_locations(input_size, strides)
-    if isinstance(aspect_ratios[0], numbers.Number):
-        aspect_ratios_of_level = [aspect_ratios] * len(strides)
-    else:
-        aspect_ratios_of_level = aspect_ratios
-    aspect_ratios_of_level = torch.tensor(aspect_ratios_of_level)
     anchors_of_level = []
-    for (lx, ly), ars, scale in zip(locations, aspect_ratios_of_level, scales):
-        if isinstance(scale, tuple):
-            sw, sh = scale
-        else:
-            sw = sh = scale
-        anchors = torch.zeros(lx, ly, len(ars), 4)
+    for (lx, ly), sizes in zip(locations, anchor_sizes):
+        anchors = torch.zeros(lx, ly, len(sizes), 4)
         anchors[:, :, :, 0] = (torch.arange(
-            lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(ars)) + 0.5) / lx
+            lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(sizes)) + 0.5) / lx
         anchors[:, :, :, 1] = (torch.arange(
-            ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(ars)) + 0.5) / ly
-        anchors[:, :, :, 2] = sw * ars.sqrt() / width
-        anchors[:, :, :, 3] = sh / ars.sqrt() / height
+            ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(sizes)) + 0.5) / ly
+        anchors[:, :, :, 2] = sizes[:, 0] / width
+        anchors[:, :, :, 3] = sizes[:, 1] / height
         anchors_of_level.append(anchors)
     return anchors_of_level
 
@@ -487,5 +492,12 @@ def draw_bboxes(img, anns, categories=None):
         ax.add_patch(rect)
         if categories:
             ax.text(bbox[0], bbox[1],
-                    categories[ann["category_id"]], fontsize=12)
+                    categories[ann["category_id"]], fontsize=12,
+                    bbox=dict(boxstyle="round",
+                              ec=(1., 0.5, 0.5),
+                              fc=(1., 0.8, 0.8),
+                              facecolor='red', alpha=0.5, edgecolor='red'
+                              )
+                    )
     return fig, ax
+
