@@ -41,8 +41,9 @@ class ThunderRPNHead(nn.Module):
     r"""
     Light head for RPN, not for R-CNN.
     """
-    def __init__(self, num_anchors, in_channels=245, f_channels=256, norm_layer='bn', with_se=False):
+    def __init__(self, num_anchors, in_channels=245, f_channels=256, return_features=True, norm_layer='bn', with_se=False):
         super().__init__()
+        self.return_features = return_features
         self.conv = nn.Sequential(
             Conv2d(in_channels, in_channels, kernel_size=5, groups=in_channels,
                    norm_layer=norm_layer),
@@ -65,7 +66,10 @@ class ThunderRPNHead(nn.Module):
         p = self.conv(p)
         loc_p = to_pred(self.loc_fc(p), 4)
         cls_p = to_pred(self.cls_fc(p), 2)
-        return loc_p, cls_p
+        if self.return_features:
+            return loc_p, cls_p, p
+        else:
+            return loc_p, cls_p
 
 
 def _make_head(f_channels, num_layers, out_channels, **kwargs):

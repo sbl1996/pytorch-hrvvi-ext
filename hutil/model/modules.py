@@ -45,6 +45,8 @@ def get_activation(name):
         return nn.ReLU(inplace=True)
     elif name == 'leaky_relu':
         return nn.LeakyReLU(inplace=True)
+    elif name == 'sigmoid':
+        return nn.Sigmoid()
     else:
         return NotImplementedError
 
@@ -67,7 +69,13 @@ def Conv2d(in_channels, out_channels,
     conv = nn.Conv2d(
         in_channels, out_channels,
         kernel_size, stride, padding, dilation, groups, bias)
-    nn.init.kaiming_normal_(conv.weight, nonlinearity=activation or 'relu')
+    if activation is not None:
+        if activation == 'sigmoid':
+            nn.init.xavier_normal_(conv.weight)
+        else:
+            nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
+    else:
+        nn.init.kaiming_normal_(conv.weight, nonlinearity='relu')
     if bias:
         nn.init.zeros_(conv.bias)
     if norm_layer is not None:
