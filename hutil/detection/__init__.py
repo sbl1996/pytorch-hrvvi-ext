@@ -310,7 +310,8 @@ class MultiBoxLoss(nn.Module):
 def anchor_based_inference(
         loc_p, cls_p, anchors, conf_threshold=0.01,
         iou_threshold=0.5, topk=100,
-        conf_strategy='softmax', nms='soft_nms'):
+        conf_strategy='softmax', nms='soft_nms', soft_nms_threshold=None):
+
     dets = []
     bboxes = loc_p
     logits = cls_p
@@ -344,8 +345,10 @@ def anchor_based_inference(
         else:
             indices = range(len(scores))
     else:
+        if soft_nms_threshold is None:
+            soft_nms_threshold = conf_threshold / 100
         indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, conf_threshold=conf_threshold / 100)
+            bboxes, scores, iou_threshold, topk, conf_threshold=soft_nms_threshold)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
     for ind in indices:

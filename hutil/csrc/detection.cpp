@@ -19,7 +19,7 @@ at::Tensor nms_cpu_kernel(const at::Tensor &dets, const at::Tensor &scores,
     auto x2_t = dets.select(1, 2).contiguous();
     auto y2_t = dets.select(1, 3).contiguous();
 
-    at::Tensor areas_t = (x2_t - x1_t + 1) * (y2_t - y1_t + 1);
+    at::Tensor areas_t = (x2_t - x1_t + 0.01) * (y2_t - y1_t + 0.01);
 
     auto order_t = std::get<1>(scores.sort(0, /* descending=*/true));
 
@@ -54,8 +54,8 @@ at::Tensor nms_cpu_kernel(const at::Tensor &dets, const at::Tensor &scores,
             auto xx2 = std::min(ix2, x2[j]);
             auto yy2 = std::min(iy2, y2[j]);
 
-            auto w = std::max(static_cast<scalar_t>(0), xx2 - xx1 + 1);
-            auto h = std::max(static_cast<scalar_t>(0), yy2 - yy1 + 1);
+            auto w = std::max(static_cast<scalar_t>(0), xx2 - xx1 + static_cast<scalar_t>(0.01));
+            auto h = std::max(static_cast<scalar_t>(0), yy2 - yy1 + static_cast<scalar_t>(0.01));
             auto inter = w * h;
             auto ovr = inter / (iarea + areas[j] - inter);
             if (ovr >= threshold)
@@ -93,7 +93,7 @@ at::Tensor soft_nms_cpu_kernel(const at::Tensor &dets_t, at::Tensor &scores_t,
     auto x2_t = dets_t.select(1, 2).contiguous();
     auto y2_t = dets_t.select(1, 3).contiguous();
 
-    at::Tensor areas_t = (x2_t - x1_t + 1) * (y2_t - y1_t + 1);
+    at::Tensor areas_t = (x2_t - x1_t + 0.01) * (y2_t - y1_t + 0.01);
 
     auto ndets = dets_t.size(0);
     at::Tensor suppressed_t =
@@ -138,8 +138,8 @@ at::Tensor soft_nms_cpu_kernel(const at::Tensor &dets_t, at::Tensor &scores_t,
             auto xx2 = std::min(ix2, x2[j]);
             auto yy2 = std::min(iy2, y2[j]);
 
-            auto w = std::max(static_cast<scalar_t>(0), xx2 - xx1 + 1);
-            auto h = std::max(static_cast<scalar_t>(0), yy2 - yy1 + 1);
+            auto w = std::max(static_cast<scalar_t>(0), xx2 - xx1 + static_cast<scalar_t>(0.01));
+            auto h = std::max(static_cast<scalar_t>(0), yy2 - yy1 + static_cast<scalar_t>(0.01));
             auto inter = w * h;
             auto iou = inter / (iarea + areas[j] - inter);
             if (iou >= iou_threshold) {
