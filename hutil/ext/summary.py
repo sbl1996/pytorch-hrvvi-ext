@@ -18,8 +18,8 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             m_key = "%s-%i" % (class_name, module_idx + 1)
 
             summary[m_key] = OrderedDict()
-            # summary[m_key]["input_shape"] = list(input[0].size())
-            # summary[m_key]["input_shape"][0] = batch_size
+            summary[m_key]["input_shape"] = list(input[0].size())
+            summary[m_key]["input_shape"][0] = batch_size
             if isinstance(output, (list, tuple)):
                 summary[m_key]["output_shape"] = [
                     [-1] + list(o.size())[1:] for o in output
@@ -117,8 +117,8 @@ def summary(model, input_size, batch_size=-1, dtype=None):
                 trainable_params += summary[layer]["nb_params"]
 
     # assume 4 bytes/number (float on cuda).
-    total_input_size = abs(np.prod(input_size) *
-                           batch_size * 4. / (1024 ** 2.))
+    total_input_size = sum([abs(np.prod(size) *
+                           batch_size * 4. / (1024 ** 2.)) for size in input_size])
     total_output_size = abs(2. * total_output * 4. /
                             (1024 ** 2.))  # x2 for gradients
     total_params_size = abs(total_params.numpy() * 4. / (1024 ** 2.))
