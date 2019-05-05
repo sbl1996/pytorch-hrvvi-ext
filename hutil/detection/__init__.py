@@ -341,6 +341,8 @@ def anchor_based_inference(
         bboxes = bboxes[indices]
         if len(scores) > topk:
             indices = scores.topk(topk)[1]
+        else:
+            indices = range(len(scores))
     else:
         indices = soft_nms_cpu(
             bboxes, scores, iou_threshold, topk, conf_threshold=conf_threshold / 100)
