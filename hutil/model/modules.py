@@ -18,6 +18,12 @@ def upsample_add(x, y):
     return F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False) + y
 
 
+def upsample_concat(x, y):
+    h, w = y.size()[2:4]
+    x = F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False)
+    return torch.cat((x, y), dim=1)
+
+
 def get_groups(channels, ref=32):
     xs = filter(lambda x: channels % x == 0, range(2, channels + 1))
     c = min(xs, key=lambda x: abs(x - ref))
@@ -44,7 +50,7 @@ def get_activation(name):
     if name == 'relu':
         return nn.ReLU(inplace=True)
     elif name == 'leaky_relu':
-        return nn.LeakyReLU(inplace=True)
+        return nn.LeakyReLU(negative_slope=0.1, inplace=True)
     elif name == 'sigmoid':
         return nn.Sigmoid()
     else:
@@ -72,6 +78,8 @@ def Conv2d(in_channels, out_channels,
     if activation is not None:
         if activation == 'sigmoid':
             nn.init.xavier_normal_(conv.weight)
+        elif activation == 'leaky_relu':
+            nn.init.kaiming_normal_(conv.weight, a=0.1, nonlinearity='leaky_relu')
         else:
             nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
     else:

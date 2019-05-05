@@ -9,6 +9,7 @@ from hutil.model.shufflenet import ShuffleNetV2 as BShuffleNetV2
 from hutil.model.snet import SNet as BSNet
 from hutil.model.squeezenext import SqueezeNext as BSqueezeNext
 from hutil.model.utils import get_out_channels
+from hutil.model.darknet import Darknet as BDarknet
 
 
 class ShuffleNetV2(nn.Module):
@@ -275,6 +276,61 @@ class SqueezeNet(nn.Module):
         return outs
 
 
+class Darknet(nn.Module):
+    def __init__(self, feature_levels=(3, 4, 5), f_channels=128):
+        super().__init__()
+        backbone = BDarknet(num_classes=1, f_channels=f_channels)
+        del backbone.fc
+        self.f_channels = backbone.f_channels
+        self.layer1 = nn.Sequential(
+            backbone.conv0,
+            backbone.down1,
+            backbone.layer1,
+        )
+
+        self.layer2 = nn.Sequential(
+            backbone.down2,
+            backbone.layer2,
+        )
+
+        self.layer3 = nn.Sequential(
+            backbone.down3,
+            backbone.layer3,
+        )
+
+        self.layer4 = nn.Sequential(
+            backbone.down4,
+            backbone.layer4,
+        )
+
+        self.layer5 = nn.Sequential(
+            backbone.down5,
+            backbone.layer5,
+        )
+
+        self.feature_levels = feature_levels
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        outs = []
+        x = self.layer1(x)
+        x = self.layer2(x)
+        if 2 in self.feature_levels:
+            outs.append(x)
+        x = self.layer3(x)
+        if 3 in self.feature_levels:
+            outs.append(x)
+        x = self.layer4(x)
+        if 4 in self.feature_levels:
+            outs.append(x)
+        x = self.layer5(x)
+        if 5 in self.feature_levels:
+            outs.append(x)
+        return outs
+
 # class SqueezeNext(nn.Module):
 #     r"""SqueezeNext: Hardware-Aware Neural Network Design
 #
@@ -321,3 +377,4 @@ class SqueezeNet(nn.Module):
 #             x = self.layer5(x)
 #             outs.append(x)
 #         return outs
+

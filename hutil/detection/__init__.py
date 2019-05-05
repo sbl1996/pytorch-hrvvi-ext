@@ -204,8 +204,6 @@ def match_anchors(anns, anchors_xywh, anchors_ltrb, max_iou=True, pos_thresh=0.5
             loc_t[ipos] = coords_to_target(bbox, anchors_xywh[ipos])
             cls_t[ipos] = label
 
-    if torch.isnan(loc_t.max()):
-        print(anns)
     target = [loc_t, cls_t]
 
     if pos_thresh and neg_thresh:
