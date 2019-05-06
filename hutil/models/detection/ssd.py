@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.model.utils import get_out_channels, get_loc_cls_preds
-from hutil.model.modules import Conv2d
+from hutil.models.utils import get_out_channels, get_loc_cls_preds
+from hutil.models.modules import Conv2d
 
 
 class DownBlock(nn.Module):

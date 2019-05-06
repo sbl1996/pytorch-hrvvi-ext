@@ -2,6 +2,7 @@ import numpy as np
 
 import torch
 
+
 class BBox:
     LTWH = 0  # [xmin, ymin, width, height]
     LTRB = 1  # [xmin, ymin, xmax,  ymax]

@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.model.modules import Conv2d, upsample_add
-
+from hutil.models.modules import Conv2d, upsample_add
 
 class ContextEnhance(nn.Module):
     def __init__(self, in_channels, out_channels, norm_layer='bn'):
@@ -16,6 +15,7 @@ class ContextEnhance(nn.Module):
                               norm_layer=norm_layer)
 
     def forward(self, *cs):
+        print(len(cs))
         size = cs[0].size()[2:4]
         p = self.lats[0](cs[0])
         for c, lat in zip(cs[1:], self.lats[1:]):

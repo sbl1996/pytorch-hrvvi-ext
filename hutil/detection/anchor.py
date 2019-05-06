@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 
-from hutil._numpy import iou_mn, iou_11, iou_mm
+from hutil._numpy import iou_mn, iou_11
 from hutil.detection import BBox
+
 
 def kmeans(X, k, max_iter=300, tol=1e-6, verbose=True):
     n, d = X.shape

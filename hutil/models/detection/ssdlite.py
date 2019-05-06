@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.model.modules import Conv2d, get_norm_layer
-from hutil.model.utils import get_out_channels, get_loc_cls_preds
+from hutil.models.modules import Conv2d, get_norm_layer
+from hutil.models.utils import get_out_channels, get_loc_cls_preds
 
 
 def depthwise_seperable_conv3x3(in_channels, out_channels, stride=1, padding=1):

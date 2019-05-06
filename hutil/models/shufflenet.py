@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.model.modules import Conv2d, SELayer
+from hutil.models.modules import Conv2d, SELayer
 
 
 def channel_shuffle(x, g):

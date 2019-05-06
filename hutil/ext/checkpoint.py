@@ -69,8 +69,8 @@ class ModelCheckpoint(object):
         >>> from torch import nn
         >>> trainer = Engine(lambda batch: None)
         >>> handler = ModelCheckpoint('/tmp/models', 'myprefix', save_interval=2, n_saved=2, create_dir=True)
-        >>> model = nn.Linear(3, 3)
-        >>> trainer.add_event_handler(Events.EPOCH_COMPLETED, handler, {'mymodel': model})
+        >>> models = nn.Linear(3, 3)
+        >>> trainer.add_event_handler(Events.EPOCH_COMPLETED, handler, {'mymodel': models})
         >>> trainer.run([0], max_epochs=6)
         >>> os.listdir('/tmp/models')
         ['myprefix_mymodel_4.pth', 'myprefix_mymodel_6.pth']

@@ -6,8 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from hutil import one_hot
-from hutil.model.modules import upsample_concat, Conv2d
-from hutil.model.detection.backbone import Darknet
+from hutil.models.modules import upsample_concat, Conv2d
+from hutil.models.detection.backbone import Darknet
 
 from hutil.detection import BBox, iou_1m, soft_nms_cpu
 
@@ -113,7 +113,7 @@ def match_anchors(anns, anchors_xywh_of_levels, anchors_ltrb_of_levels, ignore_t
     as_xywh = []
     as_ltrb = []
     for a_xywh, a_ltrb in zip(anchors_xywh_of_levels, anchors_ltrb_of_levels):
-        lx, ly, num_priors = a_xywh.shape
+        lx, ly, num_priors = a_xywh.shape[:3]
         num_anchors = lx * ly * num_priors
         loc_targets.append(torch.zeros(num_anchors, 4))
         cls_targets.append(torch.zeros(num_anchors, dtype=torch.long))
@@ -140,11 +140,11 @@ def match_anchors(anns, anchors_xywh_of_levels, anchors_ltrb_of_levels, ignore_t
         f_i, (max_iou, i) = max(
             enumerate(max_ious), key=lambda x: x[1][0])
         if debug:
-            print("")
+            print("%d: %f" % (f_i, max_iou))
         lx, ly = locations[f_i]
         loc_targets[f_i][i, 0] = inverse_sigmoid(x * lx % 1)
         loc_targets[f_i][i, 1] = inverse_sigmoid(y * ly % 1)
-        loc_targets[f_i][i, 2:] = (bbox[2:] / as_xywh[i][i, 2:]).log()
+        loc_targets[f_i][i, 2:] = (bbox[2:] / as_xywh[f_i][i, 2:]).log()
         cls_targets[f_i][i] = label
 
     loc_t = torch.cat(loc_targets, dim=0)

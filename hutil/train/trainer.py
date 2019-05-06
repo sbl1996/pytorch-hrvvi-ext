@@ -99,7 +99,7 @@ class Trainer:
         self.name = name
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        log_dir = os.path.join('runs', self.name, current_time)
+        log_dir = os.path.join(save_path, 'runs', self.name, current_time)
         self._writer = SummaryWriter(log_dir)
 
         self.metric_history = defaultdict(list)
@@ -227,7 +227,7 @@ class Trainer:
     def state_dict(self):
         s = {
             "epochs": self.epochs(),
-            "model": self.model.state_dict(),
+            "models": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": None,
             "metric_history": self.metric_history,
@@ -238,7 +238,7 @@ class Trainer:
 
     def load_state_dict(self, state_dict):
         epochs, model, optimizer, lr_scheduler, metric_history = get(
-            ["epochs", "model", "optimizer", "lr_scheduler", "metric_history"], state_dict)
+            ["epochs", "models", "optimizer", "lr_scheduler", "metric_history"], state_dict)
         self._epochs = epochs
         self.model.load_state_dict(model)
         self.optimizer.load_state_dict(optimizer)

@@ -197,7 +197,7 @@ class GANTrainer:
     def state_dict(self):
         s = {
             "epochs": self.epochs(),
-            "model": self.model.state_dict(),
+            "models": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "criterion": self.criterion.state_dict(),
             "lr_scheduler": None,
@@ -209,7 +209,7 @@ class GANTrainer:
 
     def load_state_dict(self, state_dict):
         epochs, model, optimizer, criterion, lr_scheduler, metric_history = get(
-            ["epochs", "model", "optimizer", "criterion", "lr_scheduler", "metric_history"], state_dict)
+            ["epochs", "models", "optimizer", "criterion", "lr_scheduler", "metric_history"], state_dict)
         self._epochs = epochs
         self.model.load_state_dict(model)
         self.optimizer.load_state_dict(optimizer)

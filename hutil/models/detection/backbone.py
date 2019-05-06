@@ -4,12 +4,12 @@ import torch.nn.functional as F
 
 from torchvision.models import resnet18, resnet50, resnet101
 
-from hutil.model.mobilenet import mobilenet_v2
-from hutil.model.shufflenet import ShuffleNetV2 as BShuffleNetV2
-from hutil.model.snet import SNet as BSNet
-from hutil.model.squeezenext import SqueezeNext as BSqueezeNext
-from hutil.model.utils import get_out_channels
-from hutil.model.darknet import Darknet as BDarknet
+from hutil.models.mobilenet import mobilenet_v2
+from hutil.models.shufflenet import ShuffleNetV2 as BShuffleNetV2
+from hutil.models.snet import SNet as BSNet
+from hutil.models.squeezenext import SqueezeNext as BSqueezeNext
+from hutil.models.utils import get_out_channels
+from hutil.models.darknet import Darknet as BDarknet
 
 
 class ShuffleNetV2(nn.Module):
@@ -106,7 +106,7 @@ class SNet(nn.Module):
         x = self.layer5(x)
         if 5 in self.feature_levels:
             outs.append(x)
-        return outs
+        return tuple(outs)
 
 
 class ResNet(nn.Module):
@@ -225,7 +225,7 @@ class MobileNetV2(nn.Module):
 
 
 class SqueezeNet(nn.Module):
-    r"""SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB model size
+    r"""SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB models size
 
     Args:
         feature_levels (list of int): features of which layers to output
