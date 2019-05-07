@@ -125,7 +125,6 @@ class MultiBoxLoss(nn.Module):
         num_pos = pos.sum().item()
         if num_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
-        print(num_pos)
         if loc_p.size()[:-1] == pos.size():
             loc_p = loc_p[pos]
         loc_t = loc_t[pos]

@@ -103,11 +103,11 @@ def random_sample_crop(anns, size, min_iou, min_ar, max_ar, max_attemps=50):
 
 
 @curry
-def resized_crop(anns, left, upper, width, height, output_size, drop=True):
-    anns = crop(anns, left, upper, width, height)
+def resized_crop(anns, left, upper, width, height, output_size, min_area_frac):
+    anns = crop(anns, left, upper, width, height, min_area_frac)
     size = (width, height)
-    if drop:
-        anns = drop_boundary_bboxes(anns, size)
+    # if drop:
+    #     anns = drop_boundary_bboxes(anns, size)
     anns = resize(anns, size, output_size)
     return anns
 
@@ -160,7 +160,7 @@ def center_crop(anns, size, output_size):
 
 
 @curry
-def crop(anns, left, upper, width, height):
+def crop(anns, left, upper, width, height, minimal_area_fraction=0.25):
     r"""
     Crop the bounding boxes of the given PIL Image.
 
@@ -180,6 +180,7 @@ def crop(anns, left, upper, width, height):
     new_anns = []
     for ann in anns:
         l, t, w, h = ann['bbox']
+        area = w * h
         l -= left
         t -= upper
         if l + w >= 0 and l <= width and t + h >= 0 and t <= height:
@@ -191,6 +192,8 @@ def crop(anns, left, upper, width, height):
                 t = 0
             w = min(width - l, w)
             h = min(height - t, h)
+            if w * h < area * minimal_area_fraction:
+                continue
             new_anns.append({**ann, "bbox": [l, t, w, h]})
     return new_anns
 

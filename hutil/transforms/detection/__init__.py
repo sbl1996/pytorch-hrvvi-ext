@@ -104,11 +104,11 @@ class RandomResizedCrop(JointTransform):
         Range of aspect ratio of the origin aspect ratio cropped.
     interpolation:
         Default: PIL.Image.BILINEAR
-    drop: ``bool``
-        Whether to drop the object if the center of it is not in the crop.
+    min_area_frac: ``float``
+        Minimal area fraction requirement of the original bounding box.
     """
 
-    def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), interpolation=Image.BILINEAR, drop=True):
+    def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), min_area_frac=0.25, interpolation=Image.BILINEAR):
         super().__init__()
         if isinstance(size, tuple):
             self.size = size
@@ -120,7 +120,7 @@ class RandomResizedCrop(JointTransform):
         self.interpolation = interpolation
         self.scale = scale
         self.ratio = ratio
-        self.drop = drop
+        self.min_area_frac = min_area_frac
 
     @staticmethod
     def get_params(img, scale, ratio):
@@ -174,9 +174,12 @@ class RandomResizedCrop(JointTransform):
 
     def __call__(self, img, anns):
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
-        anns = HF.resized_crop(anns, j, i, w, h, self.size, drop=self.drop)
+        new_anns = HF.resized_crop(anns, j, i, w, h, self.size, self.min_area_frac)
+        if len(new_anns) == 0:
+            # print("Fail")
+            return img, anns
         img = VF.resized_crop(img, i, j, h, w, self.size[::-1], self.interpolation)
-        return img, anns
+        return img, new_anns
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '(size={0}'.format(self.size)
@@ -184,7 +187,7 @@ class RandomResizedCrop(JointTransform):
                                                     for s in self.scale))
         format_string += ', ratio={0}'.format(tuple(round(r, 4)
                                                     for r in self.ratio))
-        format_string += ', drop={0})'.format(self.drop)
+        format_string += ', min_area_frac={0})'.format(self.min_area_frac)
         return format_string
 
 
@@ -208,12 +211,7 @@ class Resize(JointTransform):
     def __call__(self, img, anns):
         if img.size == self.size:
             return img, anns
-        # for ann in anns:
-        #     bbox = ann['bbox']
-        #     print(bbox)
-        #     for b in bbox:
-        #         if b < 0:
-        #             print(ann)
+
         anns = HF.resize(anns, img.size, self.size)
         if isinstance(self.size, Tuple):
             size = self.size[::-1]
@@ -322,7 +320,7 @@ class RandomVerticalFlip(JointTransform):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-def SSDTransform(size, color_jitter=True, scale=(0.1, 1)):
+def SSDTransform(size, color_jitter=True, scale=(0.1, 1), expand=(1, 4), min_area_frac=0.25):
     transforms = []
     if color_jitter:
         transforms.append(
@@ -335,12 +333,12 @@ def SSDTransform(size, color_jitter=True, scale=(0.1, 1)):
         )
     transforms += [
         RandomApply([
-            RandomExpand((1, 4)),
+            RandomExpand(expand),
         ]),
         RandomChoice([
             UseOriginal(),
             RandomSampleCrop(),
-            RandomResizedCrop(size, scale=scale, ratio=(1 / 2, 2 / 1)),
+            RandomResizedCrop(size, scale=scale, ratio=(1/2, 2/1), min_area_frac=min_area_frac),
         ]),
         RandomHorizontalFlip(),
         Resize(size)
