@@ -119,7 +119,6 @@ class MultiBoxLoss(nn.Module):
         self.criterion = criterion
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
-
         pos = cls_t != 0
         neg = ~pos
         if ignore is not None:

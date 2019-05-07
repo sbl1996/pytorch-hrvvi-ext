@@ -22,7 +22,7 @@ class ShuffleBlock(nn.Module):
 
 
 class BasicBlock(nn.Module):
-    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn', with_se=True):
+    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn', with_se=False):
         super().__init__()
         self.with_se = with_se
         channels = in_channels // 2

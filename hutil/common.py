@@ -57,3 +57,19 @@ def cpu(t):
         return t.__class__((k, cpu(v)) for k, v in t.items())
     else:
         return t
+
+
+def _tuple(x, n=-1):
+    if x is None:
+        return ()
+    elif torch.is_tensor(x):
+        return (x,)
+    elif not isinstance(x, Sequence):
+        assert n > 0, "Length must be positive, but got %d" % n
+        return (x,) * n
+    else:
+        if n == -1:
+            n = len(x)
+        else:
+            assert len(x) == n, "The length of x is %d, not equal to the expected length %d" % (len(x), n)
+        return tuple(x)

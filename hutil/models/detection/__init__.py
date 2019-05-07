@@ -1,12 +1,7 @@
 import torch
 import torch.nn as nn
 
-
-def _seq(x):
-    if torch.is_tensor(x):
-        return (x,)
-    else:
-        return x
+from hutil.common import _tuple
 
 
 class OneStageDetector(nn.Module):
@@ -20,13 +15,12 @@ class OneStageDetector(nn.Module):
     def forward(self, x):
         cs = self.backbone(x)
         ps = self.fpn(*cs)
-        loc_p, cls_p = self.head(*_seq(ps))
-        return loc_p, cls_p
+        return self.head(*_tuple(ps))
 
     def inference(self, x):
         self.eval()
         with torch.no_grad():
             preds = self.forward(x)
-        dets = self._inference(*_seq(preds))
+        dets = self._inference(*_tuple(preds))
         self.train()
         return dets

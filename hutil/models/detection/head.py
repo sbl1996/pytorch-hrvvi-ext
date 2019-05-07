@@ -4,8 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hutil.models.modules import Conv2d
-
+from hutil.models.modules import Conv2d, depthwise_seperable_conv3x3
+from hutil.models.utils import get_out_channels, get_loc_cls_preds
+from hutil.common import _tuple
 
 def to_pred(p, c: int):
     b = p.size(0)
@@ -122,4 +123,56 @@ class ConvHead(nn.Module):
             cls_preds.append(cls_p)
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
+        return loc_p, cls_p
+
+
+class SSDHead(nn.Module):
+    def __init__(self, num_anchors, num_classes, in_channels):
+        super().__init__()
+        self.num_classes = num_classes
+        num_anchors = _tuple(num_anchors, len(in_channels))
+        self.preds = nn.ModuleList([
+            Conv2d(c, n * (num_classes + 4))
+            for c, n in zip(in_channels, num_anchors)
+        ])
+
+    def forward(self, *ps):
+        ps = [pred(p) for p, pred in zip(ps, self.preds)]
+        loc_p, cls_p = get_loc_cls_preds(ps, self.num_classes)
+        return loc_p, cls_p
+
+
+class SSDLightHead(nn.Module):
+    r"""
+    Head of SSDLite.
+
+    Parameters
+    ----------
+    num_anchors : int or tuple of ints
+        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
+    num_classes : int
+        Number of classes.
+    in_channels : tuple of ints
+        Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
+    norm_layer : str
+        Type of normalization layer in the middle of depthwise seperable convolution.
+
+    """
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
+        super().__init__()
+        self.num_classes = num_classes
+        num_anchors = _tuple(num_anchors, len(in_channels))
+        self.convs = nn.ModuleList([
+            depthwise_seperable_conv3x3(c, n * (num_classes + 4), norm_layer=norm_layer)
+            for c, n in zip(in_channels, num_anchors)
+        ])
+
+    def forward(self, *ps):
+        preds = []
+        for p, conv in zip(ps, self.convs):
+            print(conv)
+            preds.append(conv(p))
+        # preds = [conv(p) for p, conv in zip(ps, self.convs)]
+        print("Sep")
+        loc_p, cls_p = get_loc_cls_preds(preds, self.num_classes)
         return loc_p, cls_p

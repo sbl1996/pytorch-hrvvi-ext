@@ -61,7 +61,7 @@ def create_supervised_trainer(
         input, target = prepare_batch(batch, device=device)
         preds = model(*input)
         if torch.is_tensor(preds):
-            y_pred = (preds,)
+            preds = (preds,)
         loss = criterion(*preds, *target)
         loss.backward()
         optimizer.step()

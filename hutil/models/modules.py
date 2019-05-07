@@ -135,3 +135,12 @@ class SELayer(nn.Module):
         s = self.avgpool(x).view(b, c)
         s = self.layers(s).view(b, c, 1, 1)
         return x * s
+
+
+def depthwise_seperable_conv3x3(in_channels, out_channels, stride=1, padding=1,
+                                norm_layer='bn'):
+    return nn.Sequential(
+        Conv2d(in_channels, in_channels, kernel_size=3, stride=stride, padding=padding, groups=in_channels,
+               norm_layer=norm_layer),
+        Conv2d(in_channels, out_channels, kernel_size=1),
+    )

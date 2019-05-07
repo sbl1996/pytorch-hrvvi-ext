@@ -65,7 +65,7 @@ class SNet(nn.Module):
     Args:
         version (int): 49, 146, 535
             Default: 49
-        feature_levels (list of int): features of which layers to output
+        feature_levels (sequence of int): features of which layers to output
             Default: (3, 4, 5)
     """
 
