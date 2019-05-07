@@ -70,7 +70,6 @@ def match_anchors_flat(anns, anchors_xywh, anchors_ltrb, pos_thresh=0.5, neg_thr
     if neg_thresh:
         ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0)
         target.append(ignore)
-
     return target
 
 
@@ -124,6 +123,9 @@ class MultiBoxLoss(nn.Module):
         if ignore is not None:
             neg = neg & ~ignore
         num_pos = pos.sum().item()
+        if num_pos == 0:
+            return loc_p.new_tensor(0, requires_grad=True)
+        print(num_pos)
         if loc_p.size()[:-1] == pos.size():
             loc_p = loc_p[pos]
         loc_t = loc_t[pos]

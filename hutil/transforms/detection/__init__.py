@@ -208,6 +208,12 @@ class Resize(JointTransform):
     def __call__(self, img, anns):
         if img.size == self.size:
             return img, anns
+        # for ann in anns:
+        #     bbox = ann['bbox']
+        #     print(bbox)
+        #     for b in bbox:
+        #         if b < 0:
+        #             print(ann)
         anns = HF.resize(anns, img.size, self.size)
         if isinstance(self.size, Tuple):
             size = self.size[::-1]

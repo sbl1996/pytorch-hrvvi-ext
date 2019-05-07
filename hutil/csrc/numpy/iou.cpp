@@ -8,7 +8,6 @@
 #include <numeric>
 #include <random>
 #include <tuple>
-#include <unistd.h>
 #include <vector>
 
 #include <pybind11/numpy.h>
