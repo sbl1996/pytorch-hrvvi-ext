@@ -2,7 +2,6 @@ torch
 torchvision
 numpy
 bidict
-itchat
 nltk
 toolz
 pytorch-ignite

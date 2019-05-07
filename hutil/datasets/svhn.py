@@ -4,7 +4,6 @@ import tarfile
 from pathlib import Path
 
 from PIL import Image
-from pycocotools.coco import COCO
 from torch.utils.data import Dataset
 from torchvision.datasets.utils import download_url
 from hutil.datasets.utils import download_google_drive
@@ -65,6 +64,7 @@ class SVHNDetection(Dataset):
         with open(self.ann_file, 'r') as f:
             self.data = json.load(f)
 
+        from pycocotools.coco import COCO
         self.coco = COCO(self.data, verbose=False)
         self.ids = list(self.coco.imgs.keys())
 

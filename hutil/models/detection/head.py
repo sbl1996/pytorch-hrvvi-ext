@@ -127,6 +127,19 @@ class ConvHead(nn.Module):
 
 
 class SSDHead(nn.Module):
+    r"""
+    Head of SSD.
+
+    Parameters
+    ----------
+    num_anchors : int or tuple of ints
+        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
+    num_classes : int
+        Number of classes.
+    in_channels : tuple of ints
+        Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
+
+    """
     def __init__(self, num_anchors, num_classes, in_channels):
         super().__init__()
         self.num_classes = num_classes
@@ -170,9 +183,8 @@ class SSDLightHead(nn.Module):
     def forward(self, *ps):
         preds = []
         for p, conv in zip(ps, self.convs):
-            print(conv)
+            print(p.shape)
             preds.append(conv(p))
         # preds = [conv(p) for p, conv in zip(ps, self.convs)]
-        print("Sep")
         loc_p, cls_p = get_loc_cls_preds(preds, self.num_classes)
         return loc_p, cls_p
