@@ -5,6 +5,15 @@ from toolz import curry
 from hutil.ext.summary import summary
 
 
+def _concat(preds, dim=1):
+    if torch.is_tensor(preds):
+        return preds
+    elif len(preds) == 1:
+        return preds[0]
+    else:
+        return torch.cat(preds, dim=dim)
+
+
 def get_last_conv(m):
     r"""
     Get the last conv layer in an Module.
@@ -63,7 +72,7 @@ def get_loc_cls_preds(ps, num_classes, concat=True):
         loc_preds.append(p[..., :4])
         cls_preds.append(p[..., 4:])
     if concat:
-        loc_p = torch.cat(loc_preds, dim=1)
-        cls_p = torch.cat(cls_preds, dim=1)
+        loc_p = _concat(loc_preds, dim=1)
+        cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
     return loc_preds, cls_preds

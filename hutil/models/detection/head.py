@@ -5,20 +5,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from hutil.models.modules import Conv2d, depthwise_seperable_conv3x3
-from hutil.models.utils import get_out_channels, get_loc_cls_preds
+from hutil.models.utils import get_out_channels, get_loc_cls_preds, _concat
 from hutil.common import _tuple
 
 def to_pred(p, c: int):
     b = p.size(0)
     p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, c)
     return p
-
-
-def _concat(preds, dim=1):
-    if len(preds) == 1:
-        return preds
-    return torch.cat(preds, dim=dim)
-
 
 class ThunderRCNNHead(nn.Module):
     r"""
@@ -182,9 +175,6 @@ class SSDLightHead(nn.Module):
 
     def forward(self, *ps):
         preds = []
-        for p, conv in zip(ps, self.convs):
-            print(p.shape)
-            preds.append(conv(p))
-        # preds = [conv(p) for p, conv in zip(ps, self.convs)]
+        preds = [conv(p) for p, conv in zip(ps, self.convs)]
         loc_p, cls_p = get_loc_cls_preds(preds, self.num_classes)
         return loc_p, cls_p
