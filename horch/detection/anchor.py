@@ -71,3 +71,25 @@ def find_priors_kmeans(sizes, k, max_iter=100, verbose=True):
     centers[:, 3] -= centers[:, 1]
     priors = centers[:, 2:]
     return torch.from_numpy(priors).float()
+
+
+def find_priors_coco(ds, k=3, max_iter=100, verbose=True):
+    assert hasattr(ds, "to_coco"), "ds must have `to_coco()` method"
+    from hpycocotools.coco import COCO
+    coco = COCO(ds.to_coco(), verbose=False)
+    bboxes = []
+    for img_id, anns in coco.imgToAnns.items():
+        img = coco.loadImgs(img_id)[0]
+        height = img['height']
+        width = img['width']
+        for ann in anns:
+            l, t, w, h = ann['bbox']
+            l /= width
+            t /= height
+            w /= width
+            h /= height
+            bboxes.append([l, t, w, h])
+    bboxes = np.array(bboxes, dtype=np.float32)
+    sizes = bboxes[:, 2:]
+    priors = find_priors_kmeans(sizes, k=k, max_iter=max_iter, verbose=verbose)
+    return priors
