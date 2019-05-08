@@ -19,7 +19,7 @@ from torch.utils.cpp_extension import CppExtension, CUDAExtension, CUDA_HOME, Bu
 
 # Package meta-data.
 NAME = 'pytorch-hrvvi-ext'
-IMPORT_NAME = 'hutil'
+IMPORT_NAME = 'horch'
 DESCRIPTION = "HrvvI's extension to PyTorch"
 URL = 'https://github.com/sbl1996/pytorch-hrvvi-ext'
 EMAIL = 'sbl1996@126.com'

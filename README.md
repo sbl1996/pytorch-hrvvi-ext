@@ -1,13 +1,19 @@
 # Overview
 [pytorch-hrvvi-ext](https://github.com/sbl1996/pytorch-hrvvi-ext) is my extension to PyTorch, which contains many "out of the box" tools to facilitate my everyday study. It is very easy to use them and integrate them to your projects.
-I will call it `hutil` below because of `import hutil`.
+I will call it `horch` below because of `import horch`.
 
 # Install
 
 ```bash
 pip install pybind11
+
+# Install with no extras
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
+
+# Install with extras if you want to use these provided datasets
+pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git#egg=pytorch-hrvvi-ext[coco]
 ```
+
 
 # Hightlights
 
@@ -18,37 +24,41 @@ pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
 - Automatic gpu support like Keras
 - Metric for both CV and NLP (Loss, Accuracy, Top-K Accuracy, mAP, BLEU)
 - Checkpoints of the whole trainer by epochs or metrics
-- Send metric history to WeChat
 
 ## Datasets
-`hutil` contains many datasets wrapped by me providing `torchvison.datasets` style API. Some of them is much easier to train than VOC or COCO and more suitable for *BEGINNERS* in object detection.
+`horch` contains many datasets wrapped by me providing `torchvison.datasets` style API. Some of them is much easier to train than VOC or COCO and more suitable for *BEGINNERS* in object detection.
 
 - CaptchaDetectionOnline: generate captcha image and bounding boxes of chars online
 - SVHNDetection: [SVHN](http://ufldl.stanford.edu/housenumbers/) dataset for object detection
 - VOCDetection: enhanced `torchvision.datasets.VOCDetection` with test set
 - VOCSegmentation: enhanced `torchvision.datasets.VOCVOCSegmentation` with [trainaug](http://home.bharathh.info/pubs/codes/SBD/download.html) set
+- Costom COCO format dataset with COCOEval
 
 ## Transforms
-Transoforms in `hutil` transform inputs and targets of datasets simultaneously, which is more flexible than `torchvison.transforms` and makes it easier to do data augmentation for object detection with `torchvision.transforms` style API.
+Transoforms in `horch` transform inputs and targets of datasets simultaneously, which is more flexible than `torchvison.transforms` and makes it easier to do data augmentation for object detection with `torchvision.transforms` style API.
 
 - Resize
 - CenterCrop
 - RandomResizedCrop
+- RandomSampleCrop
 - ToPercentCoords
 - RandomHorizontalFlip
+- SSDTransform
 
 ### Detection
-`hutil.detection` provides many useful functions for object detection includeing:
+`horch.detection` provides many useful functions for object detection includeing:
 
 - BBox: bounding box class supporting three formats (LTRB, XYWH, LTWH)
 - transform_bbox: transform bounding box between three formats
 - iou_1m: calculate IOU between 1 and many
 - non_max_suppression
 
+### Models
+
 ### Others
 - train_test_split: Split a dataset to a train set and a test set with different (or same) transforms
 - init_weights: Initialize weights of your model in the right and easy way
-- Fullset: Transform your dataset to `hutil` style dataset
+- Fullset: Transform your dataset to `horch` style dataset
 
 # Examples
 

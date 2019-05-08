@@ -1,7 +1,7 @@
 import numpy as np
 
-from hutil.detection import BBox
-from hutil.train.metrics import mAP
+from horch.detection import BBox
+from horch.train.metrics import mAP
 
 
 def test_mAP():

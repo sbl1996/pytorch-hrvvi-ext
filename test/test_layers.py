@@ -1,8 +1,8 @@
 import torch
 
-from hutil import cuda
-from hutil.nn.psroi_align import PSRoIAlign
-from hutil.detection import BBox
+from horch import cuda
+from horch.nn.psroi_align import PSRoIAlign
+from horch.detection import BBox
 
 
 def test_psroi_align():

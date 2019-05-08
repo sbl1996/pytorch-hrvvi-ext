@@ -1,1 +1,1 @@
-from hutil.ext.detection import non_max_suppression
+from horch.ext.detection import non_max_suppression
