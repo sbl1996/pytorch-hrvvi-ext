@@ -1,4 +1,5 @@
 import os
+import json
 from PIL import Image
 from torch.utils.data import Dataset
 
@@ -7,12 +8,30 @@ from torch.utils.data import Dataset
 
 class CocoDetection(Dataset):
 
-    def __init__(self, root, annFile, transform=None):
+    def __init__(self, root, ann_file, transform=None):
         from hpycocotools.coco import COCO
         self.root = root
-        self.coco = COCO(annFile)
+        self.ann_file = ann_file
+
+        with open(self.ann_file, 'r') as f:
+            self.data = json.load(f)
+
+        self.coco = COCO(self.data, verbose=False)
         self.ids = list(self.coco.imgs.keys())
         self.transform = transform
+
+    def to_coco(self, indices=None):
+        if indices is None:
+            return self.data
+        ids = [self.ids[i] for i in indices]
+        images = self.coco.loadImgs(ids)
+        ann_ids = self.coco.getAnnIds(ids)
+        annotations = self.coco.loadAnns(ann_ids)
+        return {
+            **self.data,
+            "images": images,
+            "annotations": annotations,
+        }
 
     def __getitem__(self, index):
         """

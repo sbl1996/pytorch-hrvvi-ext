@@ -111,11 +111,12 @@ class MatchAnchors:
 
 class MultiBoxLoss(nn.Module):
 
-    def __init__(self, pos_neg_ratio=None, p=0.1, criterion='softmax'):
+    def __init__(self, pos_neg_ratio=None, p=0.1, criterion='softmax', prefix=""):
         super().__init__()
         self.pos_neg_ratio = pos_neg_ratio
         self.p = p
         self.criterion = criterion
+        self.prefix = prefix
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
         pos = cls_t != 0
@@ -143,7 +144,10 @@ class MultiBoxLoss(nn.Module):
             cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
         else:
             if self.criterion == 'focal':
-                cls_t = one_hot(cls_t, C=cls_p.size(-1))
+                if cls_p.ndimension() - cls_t.ndimension() == 1:
+                    cls_t = one_hot(cls_t, C=cls_p.size(-1))
+                else:
+                    cls_t = cls_t.float()
                 cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
             else:
                 cls_p = cls_p.view(-1, cls_p.size(-1))
@@ -151,8 +155,12 @@ class MultiBoxLoss(nn.Module):
                 cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
         loss = cls_loss + loc_loss
         if random.random() < self.p:
-            print("loc: %.4f | cls: %.4f" %
-                  (loc_loss.item(), cls_loss.item()))
+            if self.prefix:
+                print("[%s]loc: %.4f | cls: %.4f" %
+                      (self.prefix, loc_loss.item(), cls_loss.item()))
+            else:
+                print("loc: %.4f | cls: %.4f" %
+                      (loc_loss.item(), cls_loss.item()))
         return loss
 
 
