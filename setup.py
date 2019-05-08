@@ -45,7 +45,7 @@ REQUIRED = [
 
 # What packages are optional?
 EXTRAS = {
-    'coco': ['pycocotools'],
+    'coco': ['git+https://github.com/sbl1996/hpycocotools.git'],
     'matplotlib': ['matplotlib'],
 }
 

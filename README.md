@@ -5,7 +5,8 @@ I will call it `hutil` below because of `import hutil`.
 # Install
 
 ```bash
-!pip3 install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
+pip install pybind11
+pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
 ```
 
 # Hightlights

@@ -105,7 +105,7 @@ class CaptchaDetectionOnline(Dataset):
         for i, c in enumerate(letters):
             self.table[ord(c)] = i+1
 
-        from pycocotools.mask import area, encode
+        from hpycocotools.mask import area, encode
         self.area_fn = area
         self.encode_fn = encode
 

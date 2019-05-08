@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 class CocoDetection(Dataset):
 
     def __init__(self, root, annFile, transform=None):
-        from pycocotools.coco import COCO
+        from hpycocotools.coco import COCO
         self.root = root
         self.coco = COCO(annFile)
         self.ids = list(self.coco.imgs.keys())

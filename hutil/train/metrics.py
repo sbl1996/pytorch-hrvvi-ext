@@ -176,7 +176,7 @@ class COCOEval(Metric):
         super().__init__()
 
     def reset(self):
-        from pycocotools.coco import COCO
+        from hpycocotools.coco import COCO
         self.coco_gt = COCO(self.annotations, verbose=False)
         self.res = []
 
@@ -191,8 +191,8 @@ class COCOEval(Metric):
                 self.res.append(d)
 
     def compute(self):
-        from pycocotools.cocoeval import COCOeval
-        from pycocotools.mask import encode
+        from hpycocotools.cocoeval import COCOeval
+        from hpycocotools.mask import encode
         if self.iou_type == 'segm':
             for dt in self.res:
                 img = self.coco_gt.imgs[dt['image_id']]

@@ -2,7 +2,7 @@ import json
 import time
 from collections import defaultdict
 
-from pycocotools.coco import COCO as COCOoriginal
+from hpycocotools.coco import COCO as COCOoriginal
 
 
 class COCO(COCOoriginal):

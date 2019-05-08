@@ -1,7 +1,6 @@
 import os
 from collections import defaultdict
 
-import itchat
 from toolz.curried import get, identity, curry, keyfilter
 
 import torch
@@ -222,12 +221,14 @@ class GANTrainer:
         return self._epochs
 
     def login_weixin(self, save_path='.'):
+        import itchat
         itchat.logout()
         itchat.auto_login(hotReload=True, enableCmdQR=2,
                           statusStorageDir=os.path.join(save_path, 'weixin.pkl'))
         self._weixin_logined = True
 
     def logout_weixin(self):
+        import itchat
         itchat.logout()
         self._weixin_logined = False
 

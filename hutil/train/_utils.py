@@ -4,8 +4,6 @@ import torch
 from hutil.common import Args
 from hutil.functools import find
 
-import itchat
-
 
 def to_device(args, device):
     if torch.is_tensor(args):
@@ -51,4 +49,5 @@ def set_lr(lr, optimizer, lr_scheduler=None):
 
 
 def send_weixin(msg):
+    import itchat
     itchat.send(msg, toUserName='filehelper')
