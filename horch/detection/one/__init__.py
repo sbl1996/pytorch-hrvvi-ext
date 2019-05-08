@@ -156,7 +156,7 @@ class MultiBoxLoss(nn.Module):
         loss = cls_loss + loc_loss
         if random.random() < self.p:
             if self.prefix:
-                print("[%s]loc: %.4f | cls: %.4f" %
+                print("[%s] loc: %.4f | cls: %.4f" %
                       (self.prefix, loc_loss.item(), cls_loss.item()))
             else:
                 print("loc: %.4f | cls: %.4f" %

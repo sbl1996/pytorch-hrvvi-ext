@@ -92,4 +92,5 @@ def find_priors_coco(ds, k=3, max_iter=100, verbose=True):
     bboxes = np.array(bboxes, dtype=np.float32)
     sizes = bboxes[:, 2:]
     priors = find_priors_kmeans(sizes, k=k, max_iter=max_iter, verbose=verbose)
+    priors = torch.stack(sorted(priors, key=lambda x: x[0] * x[1]))
     return priors

@@ -8,10 +8,16 @@ from horch.models.modules import Conv2d, depthwise_seperable_conv3x3
 from horch.models.utils import get_out_channels, get_loc_cls_preds, _concat
 from horch.common import _tuple
 
+
 def to_pred(p, c: int):
     b = p.size(0)
-    p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, c)
+    p = p.permute(0, 3, 2, 1).contiguous()
+    if c == 1:
+        p = p.view(b, -1)
+    else:
+        p = p.view(b, -1, c)
     return p
+
 
 class ThunderRCNNHead(nn.Module):
     r"""

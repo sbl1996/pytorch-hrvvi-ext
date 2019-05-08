@@ -154,9 +154,9 @@ class ModelCheckpoint(object):
         self._iteration += 1
 
         if self._score_function is not None:
-            priority = self._score_function(engine)
             if self._iteration <= self._patience:
                 return
+            priority = self._score_function(engine)
 
         else:
             priority = self._iteration

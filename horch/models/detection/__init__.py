@@ -24,3 +24,9 @@ class OneStageDetector(nn.Module):
         dets = self._inference(*_tuple(preds))
         self.train()
         return dets
+
+def get_basic_levels(levels):
+    return tuple(range(levels[0], 6))
+
+def get_extra_levels(levels):
+    return tuple(range(6, levels[-1] + 1))

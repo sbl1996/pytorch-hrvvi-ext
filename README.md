@@ -62,6 +62,126 @@ Transoforms in `horch` transform inputs and targets of datasets simultaneously, 
 
 # Examples
 
+## SVHNDetection
+
+```python
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.optim import Adam, SGD
+from torch.optim.lr_scheduler import LambdaLR, MultiStepLR
+from torch.utils.data import DataLoader
+
+from horch import cuda
+from horch.datasets import train_test_split, Fullset, CocoDetection
+
+from horch.train import Trainer, Save
+from horch.train.metrics import TrainLoss, COCOEval
+from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
+
+from horch.transforms import Compose, ToTensor
+from horch.transforms.detection import Resize, ToPercentCoords, SSDTransform
+
+from horch.detection import generate_mlvl_anchors, misc_target_collate, find_priors_coco
+from horch.detection.one import MatchAnchors
+
+from horch.models.utils import summary
+from horch.models.detection import get_basic_levels, get_extra_levels
+from horch.models.detection.backbone import SNet
+from horch.models.detection.refinedet import RefineLoss, AnchorRefineInference, RefineDet
+
+# Describe your dataset
+
+WIDTH = 256
+HEIGHT = 128
+LEVELS = (4, 5, 6)
+PRIORS_PER_LEVEL = 3
+NUM_CLASSES = 11  # num_classes + *1* (background)
+
+# Define the path to your dataset
+
+root = "/Users/hrvvi/Code/study/pytorch/datasets/SVHN/train"
+ds = CocoDetection(root, "/Users/hrvvi/Code/study/pytorch/datasets/SVHN/annotations/train.json")
+
+# Find priors and generate anchors automaticly
+
+STRIDES = [2 ** l for l in LEVELS]
+NUM_LEVELS = len(LEVELS)
+priors = find_priors_coco(ds, k=NUM_LEVELS * PRIORS_PER_LEVEL)
+ANCHOR_SIZES = priors.view(NUM_LEVELS, PRIORS_PER_LEVEL, 2) * torch.tensor([WIDTH, HEIGHT], dtype=torch.float32)
+ANCHORS = generate_mlvl_anchors((WIDTH, HEIGHT), STRIDES, ANCHOR_SIZES)
+
+# Data augmentation
+# Use SSDTransform may improve AP
+
+train_transform = Compose([
+    # SSDTransform((WIDTH, HEIGHT), color_jitter=False, expand=(1,3), min_area_frac=0.4),
+    Resize((WIDTH, HEIGHT)),
+    ToPercentCoords(),
+    ToTensor(),
+    MatchAnchors(ANCHORS, pos_thresh=0.5),
+])
+
+test_transform = Compose([
+    Resize((WIDTH, HEIGHT)),
+    ToPercentCoords(),
+    ToTensor(),
+])
+
+# Use only 0.005% data to try
+
+rest, ds = train_test_split(ds, test_ratio=0.0005)
+
+ds_train = Fullset(ds, train_transform)
+ds_val = Fullset(ds, test_transform)
+
+# Define model
+# Choose `bn` as normalization layer if batch size is enough (e.g > 32)
+
+f_channels = 64
+norm_layer = 'gn'
+backbone = SNet(version=49, feature_levels=get_basic_levels(LEVELS), norm_layer=norm_layer)
+inference = AnchorRefineInference(cuda(ANCHORS), neg_threshold=0.01, r_topk=200, d_topk=100)
+net = RefineDet(backbone, ANCHOR_SIZES.size(1), NUM_CLASSES, f_channels, inference,
+                norm_layer=norm_layer, extra_levels=get_extra_levels(LEVELS))
+summary(net, (3, HEIGHT, WIDTH))
+
+criterion = RefineLoss(neg_threshold=0.01, p=1)  # p means the propability to print loss
+
+
+# Choose optimizer and lr_scheduler
+
+optimizer = Adam(filter(lambda x: x.requires_grad,
+                        net.parameters()), lr=0.001, weight_decay=1e-4)
+lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=100, T_mult=1)  # T_0 should equal to number of epochs
+
+metrics = {
+    'loss': TrainLoss(),
+}
+
+test_metrics = {
+    "AP": COCOEval(ds.dataset.to_coco(ds.indices))
+}
+
+trainer = Trainer(net, criterion, optimizer, lr_scheduler,
+                  metrics=metrics, evaluate_metrics=test_metrics,
+                  save_path="./checkpoints", name="RefineDet-SVHN")
+
+
+# Choose batch size
+
+train_loader = DataLoader(
+    ds_train, batch_size=2, shuffle=True, num_workers=1)
+val_loader = DataLoader(
+    ds_val, batch_size=64, collate_fn=misc_target_collate)
+
+# Train 100 epochs, evaluate every 10 epochs and save model with highest AP
+
+trainer.fit(train_loader, 100, val_loader=(val_loader, 10), save=Save.ByMetric("val_AP", patience=80))
+
+```
+
 ## CIFAR10
 
 ```python

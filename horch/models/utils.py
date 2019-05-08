@@ -69,8 +69,12 @@ def get_loc_cls_preds(ps, num_classes, concat=True):
     for p in ps:
         p = p.permute(0, 3, 2, 1).contiguous().view(
             b, -1, 4 + num_classes)
-        loc_preds.append(p[..., :4])
-        cls_preds.append(p[..., 4:])
+        loc_p = p[..., :4]
+        loc_preds.append(loc_p)
+        cls_p = p[..., 4:]
+        if cls_p.size(-1) == 1:
+            cls_p = cls_p[..., 0]
+        cls_preds.append(cls_p)
     if concat:
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
