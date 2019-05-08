@@ -43,9 +43,12 @@ REQUIRED = [
     "pybind11",
 ]
 
+DEPENDENCY_LINKS = [
+]
+
 # What packages are optional?
 EXTRAS = {
-    'coco': ['git+https://github.com/sbl1996/hpycocotools.git'],
+    'coco': 'pycocotools-hrvvi-ext@git+https://github.com/sbl1996/hpycocotools',
     'matplotlib': ['matplotlib'],
 }
 
@@ -210,6 +213,7 @@ setup(
     # },
     install_requires=REQUIRED,
     extras_require=EXTRAS,
+    dependency_links=DEPENDENCY_LINKS,
     # include_package_data=True,
     license='MIT',
     ext_modules=get_torch_extensions() + get_numpy_extensions(),
