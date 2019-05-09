@@ -6,21 +6,21 @@ import torch.nn.functional as F
 
 from horch.common import _tuple
 from horch.models.utils import get_loc_cls_preds
-from horch.models.modules import Conv2d
+from horch.models.modules import Conv2d, get_norm_layer
 
 from horch.detection.one import MultiBoxLoss, anchor_based_inference, flatten
 
 
 def inverse_sigmoid(x):
-    return math.log(x / (1-x))
+    return math.log(x / (1 - x))
 
 
 class RefineLoss:
 
-    def __init__(self, neg_threshold=0.01, p=0.01):
+    def __init__(self, neg_threshold=0.01, p=0.01, refine_cls_loss='focal'):
         super().__init__()
-        self.r_loss = MultiBoxLoss(criterion='focal', prefix='refine', p=p)
-        self.d_loss = MultiBoxLoss(criterion='softmax', pos_neg_ratio=1/3, prefix='detect', p=p)
+        self.r_loss = MultiBoxLoss(criterion=refine_cls_loss, prefix='refine', p=p)
+        self.d_loss = MultiBoxLoss(criterion='softmax', pos_neg_ratio=1 / 3, prefix='detect', p=p)
         self.neg_threshold = inverse_sigmoid(neg_threshold)
         self.p = p
 
@@ -42,8 +42,7 @@ class RefineLoss:
 
 def anchor_refine_inference(
         r_loc_p, r_cls_p, d_loc_p, d_cls_p, anchors,
-        neg_threshold=inverse_sigmoid(0.01), iou_threshold=0.5, r_topk=400, d_topk=200):
-
+        neg_threshold=inverse_sigmoid(0.01), iou_threshold=0.5, r_topk=400, d_topk=200, detect_conf_strategy='softmax'):
     neg = r_cls_p > neg_threshold
     r_loc_p = r_loc_p[neg]
     r_cls_p = r_cls_p[neg]
@@ -63,18 +62,19 @@ def anchor_refine_inference(
     return anchor_based_inference(
         d_loc_p, d_cls_p, r_loc_p,
         conf_threshold=0, iou_threshold=iou_threshold,
-        topk=d_topk, conf_strategy='sigmoid')
+        topk=d_topk, conf_strategy=detect_conf_strategy)
 
 
 class AnchorRefineInference:
 
     def __init__(self, anchors, neg_threshold=0.01,
-                 iou_threshold=0.5, r_topk=400, d_topk=200):
+                 iou_threshold=0.5, r_topk=400, d_topk=200, detect_conf_strategy='softmax'):
         self.neg_threshold = inverse_sigmoid(neg_threshold)
         self.anchors = flatten(anchors)
         self.iou_threshold = iou_threshold
         self.r_topk = r_topk
         self.d_topk = d_topk
+        self.detect_conf_strategy = detect_conf_strategy
 
     def __call__(self, r_loc_p, r_cls_p, d_loc_p, d_cls_p, *args):
         image_dets = []
@@ -83,7 +83,7 @@ class AnchorRefineInference:
             dets = anchor_refine_inference(
                 r_loc_p[i], r_cls_p[i], d_loc_p[i], d_cls_p[i], self.anchors,
                 self.neg_threshold, self.iou_threshold,
-                self.r_topk, self.d_topk
+                self.r_topk, self.d_topk, self.detect_conf_strategy
             )
             image_dets.append(dets)
         return image_dets
@@ -133,6 +133,11 @@ class TransferConnection(nn.Module):
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
                             norm_layer=norm_layer)
         if not last:
+            # self.deconv1 = nn.Sequential(
+            #     nn.ConvTranspose2d(
+            #         out_channels, out_channels, 4, stride=2, padding=1),
+            #     get_norm_layer(norm_layer, out_channels),
+            # )
             self.deconv1 = nn.ConvTranspose2d(
                 out_channels, out_channels, 4, stride=2, padding=1)
         self.relu2 = nn.ReLU(inplace=True)
@@ -183,6 +188,13 @@ class RefineDet(nn.Module):
             for _ in stages
         ])
 
+        self.rps.apply(self._init_final_cls_layer)
+
+    def _init_final_cls_layer(self, m, p=0.01):
+        name = type(m).__name__
+        if "Linear" in name or "Conv" in name:
+            nn.init.constant_(m.bias, -math.log((1 - p) / p))
+
     def forward(self, x):
         cs = self.backbone(x)
         cs = [cs] if torch.is_tensor(cs) else list(cs)
@@ -207,4 +219,9 @@ class RefineDet(nn.Module):
         return r_loc_p, r_cls_p, d_loc_p, d_cls_p
 
     def inference(self, x):
-        return self._inference(*self.forward(x))
+        self.eval()
+        with torch.no_grad():
+            preds = self.forward(x)
+        dets = self._inference(*_tuple(preds))
+        self.train()
+        return dets
