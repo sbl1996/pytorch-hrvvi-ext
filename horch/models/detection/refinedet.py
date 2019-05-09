@@ -133,13 +133,11 @@ class TransferConnection(nn.Module):
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
                             norm_layer=norm_layer)
         if not last:
-            # self.deconv1 = nn.Sequential(
-            #     nn.ConvTranspose2d(
-            #         out_channels, out_channels, 4, stride=2, padding=1),
-            #     get_norm_layer(norm_layer, out_channels),
-            # )
-            self.deconv1 = nn.ConvTranspose2d(
-                out_channels, out_channels, 4, stride=2, padding=1)
+            self.deconv1 = nn.Sequential(
+                nn.ConvTranspose2d(
+                    out_channels, out_channels, 4, stride=2, padding=1),
+                get_norm_layer(norm_layer, out_channels),
+            )
         self.relu2 = nn.ReLU(inplace=True)
         self.conv3 = Conv2d(out_channels, out_channels, kernel_size=3,
                             norm_layer=norm_layer, activation='relu')
@@ -150,7 +148,7 @@ class TransferConnection(nn.Module):
         if not self.last:
             x = x + self.deconv1(x_next)
         x = self.relu2(x)
-        x = self.conv2(x)
+        x = self.conv3(x)
         return x
 
 
@@ -187,13 +185,6 @@ class RefineDet(nn.Module):
             Conv2d(f_channels, num_anchors * (4 + num_classes), kernel_size=3)
             for _ in stages
         ])
-
-        self.rps.apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            nn.init.constant_(m.bias, -math.log((1 - p) / p))
 
     def forward(self, x):
         cs = self.backbone(x)
