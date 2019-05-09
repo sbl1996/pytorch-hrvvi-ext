@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torchvision.models import resnet18, resnet50, resnet101
 
 from horch.models.mobilenet import mobilenetv2
-from horch.models.shufflenet import ShuffleNetV2 as BShuffleNetV2
 from horch.models.snet import SNet as BSNet
 from horch.models.squeezenext import SqueezeNext as BSqueezeNext
 from horch.models.utils import get_out_channels
@@ -22,11 +21,17 @@ class ShuffleNetV2(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, mult=0.5, feature_levels=(3, 4, 5), **kwargs):
+    def __init__(self, mult=0.5, feature_levels=(3, 4, 5), pretrained=False, re=False, **kwargs):
         super().__init__()
-        net = BShuffleNetV2(num_classes=1, mult=mult, **kwargs)
+        if re:
+            from horch.models.re.shufflenet import shufflenet_v2 as BShuffleNetV2
+            net = BShuffleNetV2(mult=mult, **kwargs)
+            channels = net.out_channels
+        else:
+            from horch.models.shufflenet import shufflenetv2 as BShuffleNetV2
+            net = BShuffleNetV2(mult=mult, pretrained=pretrained, **kwargs)
+            channels = net._stage_out_channels
         del net.fc
-        channels = net.channels
         self.layer1 = net.conv1
         self.layer2 = net.maxpool
         self.layer3 = net.stage2
