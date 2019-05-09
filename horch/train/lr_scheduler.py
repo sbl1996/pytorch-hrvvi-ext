@@ -43,8 +43,21 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         self.T_cur = last_epoch
 
     def get_lr(self):
-        return [self.eta_min + (base_lr - self.eta_min) * (1 + math.cos(math.pi * self.T_cur / self.T_i)) / 2
-                for base_lr in self.base_lrs]
+        lrs = []
+        for base_lr in self.base_lrs:
+            if self.last_epoch < self.warmup:
+                eta_min = base_lr * 0.1
+                T_cur = self.last_epoch
+                T_i = self.warmup
+                mult = (1 + math.cos(math.pi * (1 + T_cur / T_i))) / 2
+            else:
+                eta_min = self.eta_min
+                T_cur = self.T_cur
+                T_i = self.T_i
+                mult = (1 + math.cos(math.pi * T_cur / T_i)) / 2
+            lr = eta_min + (base_lr - eta_min) * mult
+            lrs.append(lr)
+        return lrs
 
     def step(self, epoch=None):
         """Step could be called after every update, i.e. if one epoch has 10 iterations
@@ -61,11 +74,14 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         """
         if epoch is None:
             epoch = self.last_epoch + 1
-            self.T_cur = self.T_cur + 1
-            if self.T_cur >= self.T_i:
-                self.T_cur = self.T_cur - self.T_i
-                self.T_i = self.T_i * self.T_mult
+            if epoch >= self.warmup:
+                self.T_cur = self.T_cur + 1
+                if self.T_cur >= self.T_i:
+                    self.T_cur = self.T_cur - self.T_i
+                    self.T_i = self.T_i * self.T_mult
+            self.last_epoch = math.floor(epoch)
         else:
+            epoch -= self.warmup
             if epoch >= self.T_0:
                 if self.T_mult == 1:
                     self.T_cur = epoch % self.T_0
@@ -76,6 +92,6 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
             else:
                 self.T_i = self.T_0
                 self.T_cur = epoch
-        self.last_epoch = math.floor(epoch)
+            self.last_epoch = math.floor(epoch + self.warmup)
         for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
             param_group['lr'] = lr
