@@ -11,23 +11,23 @@ class BasicBlock(nn.Module):
         self.conv = nn.Sequential(
             Conv2d(
                 in_channels, out_channels // 2, kernel_size=1,
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 out_channels // 2, out_channels // 4, kernel_size=1,
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 out_channels // 4, out_channels // 2, kernel_size=(3, 1),
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 out_channels // 2, out_channels // 2, kernel_size=(1, 3),
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 out_channels // 2, out_channels, kernel_size=1,
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             )
         )
         self.shortcut = nn.Sequential()
@@ -48,23 +48,23 @@ class DownBlock(nn.Module):
         self.conv = nn.Sequential(
             Conv2d(
                 channels, channels, kernel_size=1, stride=2,
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 channels, channels // 2, kernel_size=1,
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 channels // 2, channels, kernel_size=(3, 1),
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 channels, channels, kernel_size=(1, 3),
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             ),
             Conv2d(
                 channels, channels * 2, kernel_size=1,
-                norm_layer=norm_layer, activation='relu'
+                norm_layer=norm_layer, activation='default'
             )
         )
         self.shortcut = Conv2d(
@@ -95,7 +95,7 @@ class SqueezeNext(nn.Module):
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='relu'
+            norm_layer=norm_layer, activation='default'
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,
@@ -109,7 +109,7 @@ class SqueezeNext(nn.Module):
         self.stage51 = DownBlock(channels[3], norm_layer)
         self.stage52 = Conv2d(
             channels[4], channels[5], kernel_size=1,
-            norm_layer=norm_layer, activation='relu'
+            norm_layer=norm_layer, activation='default'
         )
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(channels[5], num_classes)

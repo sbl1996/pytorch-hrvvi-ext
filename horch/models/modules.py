@@ -2,6 +2,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from horch.models.defaults import get_default_activation, get_default_norm_layer
+
+
+def hardswish(x, inplace=False):
+    return x * (F.relu6(x + 3, inplace=inplace) / 6)
+
+
+class HardSwish(nn.Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+
+    def forward(self, x):
+        return hardswish(x, self.inplace)
+
+    def extra_repr(self):
+        inplace_str = 'inplace' if self.inplace else ''
+        return inplace_str
+
 
 def upsample_add(x, y):
     r"""
@@ -47,21 +66,24 @@ def get_norm_layer(name, channels):
 def get_activation(name):
     if isinstance(name, nn.Module):
         return name
-    if name == 'relu':
+    if name == 'default':
+        return get_activation(get_default_activation())
+    elif name == 'relu':
         return nn.ReLU(inplace=True)
     elif name == 'leaky_relu':
         return nn.LeakyReLU(negative_slope=0.1, inplace=True)
     elif name == 'sigmoid':
         return nn.Sigmoid()
+    elif name == 'hswish':
+        return HardSwish(inplace=True)
     else:
-        return NotImplementedError
+        raise NotImplementedError
 
 
 def Conv2d(in_channels, out_channels,
            kernel_size=3, stride=1,
            padding='same', dilation=1, groups=1,
-           norm_layer=None, activation=None, with_se=False, preact=False):
-
+           norm_layer=None, activation=None, preact=False):
     if padding == 'same':
         if isinstance(kernel_size, tuple):
             kh, kw = kernel_size
@@ -81,12 +103,18 @@ def Conv2d(in_channels, out_channels,
         elif activation == 'leaky_relu':
             nn.init.kaiming_normal_(conv.weight, a=0.1, nonlinearity='leaky_relu')
         else:
-            nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
+            try:
+                nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
+            except ValueError:
+                nn.init.kaiming_normal_(conv.weight, nonlinearity='relu')
     else:
         nn.init.kaiming_normal_(conv.weight, nonlinearity='relu')
     if bias:
         nn.init.zeros_(conv.bias)
+
     if norm_layer is not None:
+        if norm_layer == 'default':
+            norm_layer = get_default_norm_layer()
         layers.append(get_norm_layer(norm_layer, out_channels))
     if activation is not None:
         layers.append(get_activation(activation))
@@ -95,8 +123,6 @@ def Conv2d(in_channels, out_channels,
         layers.append(conv)
     else:
         layers = [conv] + layers
-    if with_se:
-        layers.append(SELayer(out_channels, reduction=16))
     return nn.Sequential(*layers)
 
 
@@ -105,7 +131,7 @@ def Linear(in_channels, out_channels,
     layers = []
     bias = norm_layer is None
     fc = nn.Linear(in_channels, out_channels)
-    nn.init.kaiming_normal_(fc.weight, nonlinearity=activation or 'relu')
+    nn.init.kaiming_normal_(fc.weight, nonlinearity=activation or 'default')
     if bias:
         nn.init.zeros_(fc.bias)
     layers.append(fc)

@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
 
+from horch.models.detection.ssd import SSD
+from horch.models.detection.ssdlite import SSDLite
+from horch.models.detection.retinanet import RetinaNet
+
+
 from horch.common import _tuple
 
 

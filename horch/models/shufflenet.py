@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import Conv2d, SELayer
+from horch.models.modules import Conv2d, SELayer, get_activation
 
 
 def channel_shuffle(x, g):
@@ -27,7 +27,7 @@ class BasicBlock(nn.Module):
         channels = in_channels // 2
         self.conv1 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=3, groups=channels,
@@ -35,7 +35,7 @@ class BasicBlock(nn.Module):
         )
         self.conv3 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.shuffle = ShuffleBlock(shuffle_groups)
 
@@ -56,7 +56,7 @@ class ResBlock(nn.Module):
         channels = out_channels - in_channels // 2
         self.conv1 = Conv2d(
             in_channels // 2, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=3, groups=channels,
@@ -70,7 +70,7 @@ class ResBlock(nn.Module):
         if in_channels != out_channels:
             self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
                                    norm_layer=norm_layer)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = get_activation("default")
         self.shuffle = ShuffleBlock(shuffle_groups)
 
     def forward(self, x):
@@ -93,7 +93,7 @@ class SEBlock(nn.Module):
         channels = in_channels // 2
         self.conv1 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=3, groups=channels,
@@ -101,7 +101,7 @@ class SEBlock(nn.Module):
         )
         self.conv3 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.se = SELayer(channels, reduction=2)
         self.shuffle = ShuffleBlock(shuffle_groups)
@@ -124,7 +124,7 @@ class SEResBlock(nn.Module):
         channels = out_channels - in_channels // 2
         self.conv1 = Conv2d(
             in_channels // 2, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=3, groups=channels,
@@ -139,7 +139,7 @@ class SEResBlock(nn.Module):
         if in_channels != out_channels:
             self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
                                    norm_layer=norm_layer)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = get_activation("default")
         self.shuffle = ShuffleBlock(shuffle_groups)
 
     def forward(self, x):
@@ -168,11 +168,11 @@ class DownBlock(nn.Module):
         )
         self.conv12 = Conv2d(
             in_channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv21 = Conv2d(
             in_channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv22 = Conv2d(
             channels, channels, kernel_size=3, stride=2, groups=channels,
@@ -180,7 +180,7 @@ class DownBlock(nn.Module):
         )
         self.conv23 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.shuffle = ShuffleBlock(shuffle_groups)
 
@@ -220,7 +220,7 @@ class ShuffleNetV2_L(nn.Module):
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='relu'
+            norm_layer=norm_layer, activation='default'
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,
@@ -278,7 +278,7 @@ class ShuffleNetV2(nn.Module):
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='relu'
+            norm_layer=norm_layer, activation='default'
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,

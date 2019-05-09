@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from horch.common import _tuple
 from horch.models.utils import get_loc_cls_preds
-from horch.models.modules import Conv2d, get_norm_layer
+from horch.models.modules import Conv2d, get_norm_layer, get_activation
 
 from horch.detection.one import MultiBoxLoss, anchor_based_inference, flatten
 
@@ -99,13 +99,13 @@ class Bottleneck(nn.Module):
         channels = out_channels // expansion
 
         self.conv1 = Conv2d(in_channels, channels, kernel_size=1,
-                            norm_layer=norm_layer, activation='relu')
+                            norm_layer=norm_layer, activation='default')
         self.conv2 = Conv2d(channels, channels, kernel_size=3, stride=stride,
-                            norm_layer=norm_layer, activation='relu')
+                            norm_layer=norm_layer, activation='default')
 
         self.conv3 = Conv2d(channels, out_channels, kernel_size=1,
                             norm_layer=norm_layer)
-        self.relu3 = nn.ReLU(inplace=True)
+        self.relu3 = get_activation('default')
 
         self.downsample = None
         if stride != 1 or in_channels != out_channels:
@@ -129,7 +129,7 @@ class TransferConnection(nn.Module):
         super().__init__()
         self.last = last
         self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='relu')
+                            norm_layer=norm_layer, activation='default')
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
                             norm_layer=norm_layer)
         if not last:
@@ -138,9 +138,37 @@ class TransferConnection(nn.Module):
                     out_channels, out_channels, 4, stride=2, padding=1),
                 get_norm_layer(norm_layer, out_channels),
             )
-        self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = get_activation('default')
         self.conv3 = Conv2d(out_channels, out_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='relu')
+                            norm_layer=norm_layer, activation='default')
+
+    def forward(self, x, x_next=None):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        if not self.last:
+            x = x + self.deconv1(x_next)
+        x = self.relu2(x)
+        x = self.conv3(x)
+        return x
+
+
+class TransferConnectionLite(nn.Module):
+    def __init__(self, in_channels, out_channels, last=False, norm_layer='bn'):
+        super().__init__()
+        self.last = last
+        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3,
+                            norm_layer=norm_layer, activation='default')
+        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
+                            norm_layer=norm_layer)
+        if not last:
+            self.deconv1 = nn.Sequential(
+                nn.ConvTranspose2d(
+                    out_channels, out_channels, 4, stride=2, padding=1),
+                get_norm_layer(norm_layer, out_channels),
+            )
+        self.relu2 = get_activation('default')
+        self.conv3 = Conv2d(out_channels, out_channels, kernel_size=3,
+                            norm_layer=norm_layer, activation='default')
 
     def forward(self, x, x_next=None):
         x = self.conv1(x)

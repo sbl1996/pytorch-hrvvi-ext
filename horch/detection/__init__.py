@@ -49,11 +49,11 @@ def get_locations(size, strides, pad_threshold=3):
     return locations[-len(strides):]
 
 
-def calc_anchor_sizes(size, aspect_ratios, scales=(1,)):
+def calc_anchor_sizes(size, aspect_ratios, scales=(1,), dtype=torch.float32):
     w, h = _pair(size)
     sw = [w * sqrt(ars) * s for ars in aspect_ratios for s in scales]
     sh = [h / sqrt(ars) * s for ars in aspect_ratios for s in scales]
-    return torch.tensor([sw, sh], dtype=torch.float32).transpose(1, 0)
+    return torch.tensor([sw, sh], dtype=dtype).transpose(1, 0)
 
 
 def generate_mlvl_anchors(input_size, strides, anchor_sizes):

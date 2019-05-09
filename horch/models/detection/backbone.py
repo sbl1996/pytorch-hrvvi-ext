@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from torchvision.models import resnet18, resnet50, resnet101
 
-from horch.models.mobilenet import mobilenet_v2
+from horch.models.mobilenet import mobilenetv2
 from horch.models.shufflenet import ShuffleNetV2 as BShuffleNetV2
 from horch.models.snet import SNet as BSNet
 from horch.models.squeezenext import SqueezeNext as BSqueezeNext
@@ -179,26 +179,27 @@ class MobileNetV2(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, feature_levels=(3, 4, 5)):
+    def __init__(self, mult=1.0, feature_levels=(3, 4, 5), pretrained=True):
         super().__init__()
-        backbone = mobilenet_v2(num_classes=1)
+        backbone = mobilenetv2(mult=mult, pretrained=pretrained)
         del backbone.classifier
-        backbone = backbone.features
+        features = backbone.features
 
-        self.layer1 = backbone[:2]
-        self.layer2 = backbone[2:4]
+        self.layer1 = features[:2]
+        self.layer2 = features[2:4]
         self.layer3 = nn.Sequential(
-            *backbone[4:7],
-            backbone[7].conv[0],
+            *features[4:7],
+            features[7].conv[:3],
         )
         self.layer4 = nn.Sequential(
-            backbone[7].conv[1:],
-            *backbone[8:14],
-            backbone[14].conv[0]
+            features[7].conv[3:],
+            *features[8:14],
+            features[14].conv[:3],
         )
         self.layer5 = nn.Sequential(
-            backbone[14].conv[1:],
-            *backbone[15:]
+            features[14].conv[3:],
+            *features[15:],
+            backbone.conv,
         )
         self.feature_levels = feature_levels
         self.out_channels = [

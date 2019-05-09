@@ -28,7 +28,7 @@ class BasicBlock(nn.Module):
         channels = in_channels // 2
         self.conv1 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=5, groups=channels,
@@ -36,7 +36,7 @@ class BasicBlock(nn.Module):
         )
         self.conv3 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         if with_se:
             self.se = SELayer(channels, reduction=8)
@@ -67,11 +67,11 @@ class DownBlock(nn.Module):
         )
         self.conv12 = Conv2d(
             in_channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv21 = Conv2d(
             in_channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.conv22 = Conv2d(
             channels, channels, kernel_size=5, stride=2, groups=channels,
@@ -79,7 +79,7 @@ class DownBlock(nn.Module):
         )
         self.conv23 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='relu',
+            norm_layer=norm_layer, activation='default',
         )
         self.shuffle = ShuffleBlock(shuffle_groups)
 
@@ -113,7 +113,7 @@ class SNet(nn.Module):
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            activation='relu', **kwargs
+            activation='default', **kwargs
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,

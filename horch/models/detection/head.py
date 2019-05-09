@@ -26,7 +26,7 @@ class ThunderRCNNHead(nn.Module):
     def __init__(self, num_classes, in_channels=245, f_channels=256, norm_layer='bn'):
         super().__init__()
         self.fc = Conv2d(in_channels, f_channels, kernel_size=1,
-                         norm_layer=norm_layer, activation='relu')
+                         norm_layer=norm_layer, activation='default')
         self.loc_fc = nn.Linear(f_channels, 4)
         self.cls_fc = nn.Linear(f_channels, num_classes)
 
@@ -55,7 +55,7 @@ class SharedDWConvHead(nn.Module):
             Conv2d(in_channels, in_channels, kernel_size=5, groups=in_channels,
                    norm_layer=norm_layer),
             Conv2d(in_channels, f_channels, kernel_size=1,
-                   norm_layer=norm_layer, activation='relu', with_se=with_se)
+                   norm_layer=norm_layer, activation='default', with_se=with_se)
         )
         self.loc_conv = Conv2d(
             f_channels, num_anchors * 4, kernel_size=1)
@@ -90,7 +90,7 @@ def _make_head(f_channels, num_layers, out_channels, **kwargs):
     layers = []
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
-                             activation='relu', **kwargs))
+                             activation='default', **kwargs))
     layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
     return nn.Sequential(*layers)
 

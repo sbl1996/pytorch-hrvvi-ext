@@ -12,10 +12,10 @@ class DownBlock(nn.Module):
         super().__init__()
         self.conv1 = Conv2d(
             in_channels, out_channels // 2, kernel_size=1,
-            norm_layer=norm_layer, activation='relu')
+            norm_layer=norm_layer, activation='default')
         self.conv2 = Conv2d(
             out_channels // 2, out_channels, kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='relu', padding=padding)
+            norm_layer=norm_layer, activation='default', padding=padding)
 
     def forward(self, x):
         x = self.conv1(x)
