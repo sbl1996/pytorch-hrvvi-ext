@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import _tuple
-from horch.models.detection.head import SSDLightHead
+from horch.models.detection.head import SSDLiteHead
 from horch.models.modules import Conv2d, DWConv2d
 
 
@@ -51,7 +51,7 @@ class SSDLite(nn.Module):
             padding = 1 if pad_layer8 else 0
             self.layer8 = DownBlock(f_channels, f_channels, padding=padding, norm_layer=norm_layer)
             head_in_channels.append(f_channels)
-        self.head = SSDLightHead(num_anchors, num_classes, head_in_channels, norm_layer=norm_layer)
+        self.head = SSDLiteHead(num_anchors, num_classes, head_in_channels, norm_layer=norm_layer)
 
     def forward(self, x):
         cs = list(self.backbone(x))

@@ -170,10 +170,11 @@ class RefineDet(nn.Module):
             stages.append(f_channels)
 
         self.rps = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer(norm_layer, c),
-                Conv2d(c, num_anchors * (4 + 1), kernel_size=3),
-            )
+            # nn.Sequential(
+            #     get_norm_layer(norm_layer, c),
+            #     Conv2d(c, num_anchors * (4 + 1), kernel_size=3)
+            # )
+            Conv2d(c, num_anchors * (4 + 1), kernel_size=3)
             for c in stages
         ])
 
@@ -185,10 +186,11 @@ class RefineDet(nn.Module):
             )
 
         self.dps = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer(norm_layer, f_channels),
-                Conv2d(f_channels, num_anchors * (4 + num_classes), kernel_size=3)
-            )
+            # nn.Sequential(
+            #     get_norm_layer(norm_layer, f_channels),
+            #     Conv2d(f_channels, num_anchors * (4 + num_classes), kernel_size=3)
+            # )
+            Conv2d(f_channels, num_anchors * (4 + num_classes), kernel_size=3)
             for _ in stages
         ])
 

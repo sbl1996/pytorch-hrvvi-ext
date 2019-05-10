@@ -1,41 +1,52 @@
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d
+from horch.models.modules import Conv2d, SELayerM, get_activation
 
 
-class ConvBNReLU(nn.Sequential):
-    def __init__(self, in_planes, out_planes, kernel_size=3, stride=1, groups=1):
-        padding = (kernel_size - 1) // 2
-        super(ConvBNReLU, self).__init__(
-            nn.Conv2d(in_planes, out_planes, kernel_size, stride,
-                      padding, groups=groups, bias=False),
-            nn.BatchNorm2d(out_planes),
-            nn.ReLU6(inplace=True)
-        )
+def _make_divisible(v, divisor=8, min_value=None):
+    """
+    This function is taken from the original tf repo.
+    It ensures that all layers have a channel number that is divisible by 8
+    It can be seen here:
+    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    :param v:
+    :param divisor:
+    :param min_value:
+    :return:
+    """
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, in_channels, out_channels, stride, expand):
+    def __init__(self, in_channels, exp, out_channels, kernel_size, stride, activation='relu6', with_se=True,
+                 norm_layer='bn'):
         super().__init__()
         self.stride = stride
         assert stride in [1, 2]
 
-        channels = int(round(in_channels * expand))
         self.use_res_connect = self.stride == 1 and in_channels == out_channels
 
-        layers = []
-        if expand != 1:
-            # pw
-            layers.append(ConvBNReLU(in_channels, channels, kernel_size=1))
+        layers = [
+            *Conv2d(in_channels, exp, kernel_size=1,
+                   norm_layer=norm_layer, activation=activation),
+            *Conv2d(exp, exp, kernel_size=kernel_size, stride=stride, groups=exp,
+                   norm_layer=norm_layer),
+        ]
+        if with_se:
+            layers.append(SELayerM(exp))
         layers.extend([
-            # dw
-            ConvBNReLU(channels, channels,
-                       stride=stride, groups=channels),
-            # pw-linear
-            nn.Conv2d(channels, out_channels, 1, 1, 0, bias=False),
-            nn.BatchNorm2d(out_channels),
+            get_activation(activation),
+            *Conv2d(exp, out_channels, kernel_size=1,
+                   norm_layer=norm_layer)
         ])
+
         self.conv = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -45,45 +56,60 @@ class InvertedResidual(nn.Module):
             return self.conv(x)
 
 
-class MobileNetV2(nn.Module):
-    def __init__(self, num_classes=1000, width_mult=1.0):
-        super(MobileNetV2, self).__init__()
+class MobileNetV3(nn.Module):
+    def __init__(self, num_classes=1000, width_mult=1.0, norm_layer='bn'):
+        super().__init__()
         block = InvertedResidual
-        input_channel = 32
-        last_channel = 1280
+        in_channels = 16
+        last_channels = 1280
         inverted_residual_setting = [
-            # t, c, n, s
-            [1, 16, 1, 1],
-            [6, 24, 2, 2],
-            [6, 32, 3, 2],
-            [6, 64, 4, 2],
-            [6, 96, 3, 1],
-            [6, 160, 3, 2],
-            [6, 320, 1, 1],
+            # in, k, exp, out, se, nl, s
+            # k, exp, c,  se,     nl,  s,
+            [3, 16, 16, False, 'relu6', 1],
+            [3, 64, 24, False, 'relu6', 2],
+            [3, 72, 24, False, 'relu6', 1],
+            [5, 72, 40, True, 'relu6', 2],
+            [5, 120, 40, True, 'relu6', 1],
+            [5, 120, 40, True, 'relu6', 1],
+            [3, 240, 80, False, 'hswish', 2],
+            [3, 200, 80, False, 'hswish', 1],
+            [3, 184, 80, False, 'hswish', 1],
+            [3, 184, 80, False, 'hswish', 1],
+            [3, 480, 112, True, 'hswish', 1],
+            [3, 672, 112, True, 'hswish', 1],
+            [5, 672, 112, True, 'hswish', 1],
+            [5, 672, 160, True, 'hswish', 2],
+            [5, 960, 160, True, 'hswish', 1],
         ]
 
+        last_channels = _make_divisible(last_channels * width_mult) if width_mult > 1.0 else last_channels
+
         # building first layer
-        input_channel = int(input_channel * width_mult)
-        self.last_channel = int(last_channel * max(1.0, width_mult))
-        features = [ConvBNReLU(3, input_channel, stride=2)]
+        features = [Conv2d(3, in_channels, kernel_size=3, stride=2,
+                           norm_layer=norm_layer, activation='hswish')]
         # building inverted residual blocks
-        for t, c, n, s in inverted_residual_setting:
-            output_channel = int(c * width_mult)
-            for i in range(n):
-                stride = s if i == 0 else 1
-                features.append(
-                    block(input_channel, output_channel, stride, expand_ratio=t))
-                input_channel = output_channel
+        for k, exp, c, se, nl, s in inverted_residual_setting:
+            out_channels = _make_divisible(c * width_mult)
+            exp_channels = _make_divisible(exp * width_mult)
+            features.append(block(
+                in_channels, exp_channels, out_channels, k, s, nl, se))
+            in_channels = out_channels
         # building last several layers
-        features.append(ConvBNReLU(
-            input_channel, self.last_channel, kernel_size=1))
+        features.extend([
+            Conv2d(in_channels, exp_channels, kernel_size=1,
+                   norm_layer=norm_layer, activation='hswish'),
+        ])
+        in_channels = exp_channels
         # make it nn.Sequential
         self.features = nn.Sequential(*features)
 
         # building classifier
         self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(self.last_channel, num_classes),
+            nn.AdaptiveAvgPool2d(1),
+            get_activation('hswish'),
+            Conv2d(in_channels, last_channels, kernel_size=1,
+                   activation='hswish'),
+            Conv2d(last_channels, num_classes, kernel_size=1)
         )
 
         # weight initialization
@@ -101,10 +127,10 @@ class MobileNetV2(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = x.mean([2, 3])
         x = self.classifier(x)
+        x = x.view(x.size()[:2])
         return x
 
 
-def mobilenet_v2(pretrained=False, **kwargs):
-    return MobileNetV2(**kwargs)
+def mobilenetv3(mult=1.0, **kwargs):
+    return MobileNetV3(width_mult=mult, **kwargs)

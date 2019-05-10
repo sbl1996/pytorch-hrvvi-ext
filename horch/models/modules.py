@@ -87,6 +87,8 @@ def get_activation(name):
         return get_activation(get_default_activation())
     elif name == 'relu':
         return nn.ReLU(inplace=True)
+    elif name == 'relu6':
+        return nn.ReLU6(inplace=True)
     elif name == 'leaky_relu':
         return nn.LeakyReLU(negative_slope=0.1, inplace=True)
     elif name == 'sigmoid':

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torchvision.models import resnet18, resnet50, resnet101
 
 from horch.models.mobilenet import mobilenetv2
+from horch.models.mobilenetv3 import mobilenetv3
 from horch.models.snet import SNet as BSNet
 from horch.models.squeezenext import SqueezeNext as BSqueezeNext
 from horch.models.utils import get_out_channels
@@ -43,7 +44,7 @@ class ShuffleNetV2(nn.Module):
         self.feature_levels = feature_levels
         out_channels = [channels[0]] + channels[:3] + [channels[-1]]
         self.out_channels = [
-            out_channels[i-1] for i in feature_levels
+            out_channels[i - 1] for i in feature_levels
         ]
 
     def forward(self, x):
@@ -93,7 +94,7 @@ class SNet(nn.Module):
         out_channels = [channels[0]] + channels[:3] + [channels[-1]]
         self.feature_levels = feature_levels
         self.out_channels = [
-            out_channels[i-1] for i in feature_levels
+            out_channels[i - 1] for i in feature_levels
         ]
 
     def forward(self, x):
@@ -155,7 +156,7 @@ class ResNet(nn.Module):
         ]
         self.feature_levels = feature_levels
         self.out_channels = [
-            out_channels[i-1] for i in feature_levels
+            out_channels[i - 1] for i in feature_levels
         ]
 
     def forward(self, x):
@@ -230,6 +231,59 @@ class MobileNetV2(nn.Module):
         return outs
 
 
+class MobileNetV3(nn.Module):
+    r"""MobileNetV3: Searching for MobileNetV3
+
+    Args:
+        feature_levels (list of int): features of which layers to output
+            Default: (3, 4, 5)
+    """
+
+    def __init__(self, mult=1.0, feature_levels=(3, 4, 5), norm_layer='bn'):
+        super().__init__()
+        backbone = mobilenetv3(mult=mult, num_classes=1, norm_layer=norm_layer)
+        del backbone.classifier
+        features = backbone.features
+
+        self.layer1 = features[:2]
+        self.layer2 = features[2:4]
+        self.layer3 = nn.Sequential(
+            *features[4:7],
+            features[7].conv[:3],
+        )
+        self.layer4 = nn.Sequential(
+            features[7].conv[3:],
+            *features[8:14],
+            features[14].conv[:3],
+        )
+        self.layer5 = nn.Sequential(
+            features[14].conv[3:],
+            *features[15:],
+        )
+        self.feature_levels = feature_levels
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        outs = []
+        x = self.layer1(x)
+        x = self.layer2(x)
+        if 2 in self.feature_levels:
+            outs.append(x)
+        x = self.layer3(x)
+        if 3 in self.feature_levels:
+            outs.append(x)
+        x = self.layer4(x)
+        if 4 in self.feature_levels:
+            outs.append(x)
+        x = self.layer5(x)
+        if 5 in self.feature_levels:
+            outs.append(x)
+        return outs
+
+
 class SqueezeNet(nn.Module):
     r"""SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB models size
 
@@ -261,7 +315,7 @@ class SqueezeNet(nn.Module):
 
         self.feature_levels = feature_levels
         self.out_channels = [
-            channels[i-1] for i in feature_levels
+            channels[i - 1] for i in feature_levels
         ]
 
     def forward(self, x):
@@ -383,4 +437,3 @@ class Darknet(nn.Module):
 #             x = self.layer5(x)
 #             outs.append(x)
 #         return outs
-

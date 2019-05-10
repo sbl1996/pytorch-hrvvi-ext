@@ -30,8 +30,12 @@ class OneStageDetector(nn.Module):
         self.train()
         return dets
 
-def get_basic_levels(levels):
-    return tuple(range(levels[0], 6))
 
-def get_extra_levels(levels):
-    return tuple(range(6, levels[-1] + 1))
+def split_levels(levels, split_at=5):
+    levels = _tuple(levels)
+    lo = levels[0]
+    hi = levels[-1]
+    assert levels == tuple(range(lo, hi + 1))
+    basic_levels = tuple(range(lo, min(hi, split_at) + 1))
+    extra_levels = tuple(range(max(lo, split_at + 1), hi + 1))
+    return basic_levels, extra_levels
