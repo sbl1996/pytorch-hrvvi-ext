@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from horch.common import _tuple
 from horch.models.detection.head import SSDLightHead
-from horch.models.modules import Conv2d, get_norm_layer, depthwise_seperable_conv3x3, get_activation
+from horch.models.modules import Conv2d, DWConv2d
 
 
 class DownBlock(nn.Module):
@@ -13,16 +13,13 @@ class DownBlock(nn.Module):
         channels = out_channels // 2
         self.conv1 = Conv2d(in_channels, channels, kernel_size=1,
                             norm_layer=norm_layer, activation='default')
-        self.conv2 = depthwise_seperable_conv3x3(
-            channels, out_channels, stride=2, padding=padding, norm_layer=norm_layer)
-        self.norm2 = get_norm_layer(norm_layer, out_channels)
-        self.relu2 = get_activation('default')
+        self.conv2 = DWConv2d(
+            channels, out_channels, stride=2, padding=padding,
+            mid_norm_layer=norm_layer, norm_layer=norm_layer, activation='default')
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        x = self.norm2(x)
-        x = self.relu2(x)
         return x
 
 

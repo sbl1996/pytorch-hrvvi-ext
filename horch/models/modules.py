@@ -5,8 +5,25 @@ import torch.nn.functional as F
 from horch.models.defaults import get_default_activation, get_default_norm_layer
 
 
+def hardsigmoid(x, inplace=False):
+    return F.relu6(x + 3, inplace=inplace) / 6
+
+
 def hardswish(x, inplace=False):
     return x * (F.relu6(x + 3, inplace=inplace) / 6)
+
+
+class HardSigmoid(nn.Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+
+    def forward(self, x):
+        return hardsigmoid(x, self.inplace)
+
+    def extra_repr(self):
+        inplace_str = 'inplace' if self.inplace else ''
+        return inplace_str
 
 
 class HardSwish(nn.Module):
@@ -163,10 +180,33 @@ class SELayer(nn.Module):
         return x * s
 
 
-def depthwise_seperable_conv3x3(in_channels, out_channels, stride=1, padding=1,
-                                norm_layer='bn'):
+class SELayerM(nn.Module):
+    def __init__(self, in_channels, reduction=4):
+        super().__init__()
+        channels = in_channels // reduction
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.layers = nn.Sequential(
+            nn.Linear(in_channels, channels),
+            nn.ReLU6(True),
+            nn.Linear(channels, in_channels),
+            HardSigmoid(True),
+        )
+
+    def forward(self, x):
+        b, c = x.size()[:2]
+        s = self.avgpool(x).view(b, c)
+        s = self.layers(s).view(b, c, 1, 1)
+        return x * s
+
+
+def DWConv2d(in_channels, out_channels,
+             kernel_size=3, stride=1,
+             padding='same', mid_norm_layer='bn',
+             norm_layer=None, activation=None):
     return nn.Sequential(
-        Conv2d(in_channels, in_channels, kernel_size=3, stride=stride, padding=padding, groups=in_channels,
-               norm_layer=norm_layer),
-        Conv2d(in_channels, out_channels, kernel_size=1),
+        Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,
+               norm_layer=mid_norm_layer),
+        Conv2d(in_channels, out_channels, kernel_size=1,
+               norm_layer=norm_layer, activation=activation),
+
     )

@@ -4,9 +4,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import Conv2d, depthwise_seperable_conv3x3
-from horch.models.utils import get_out_channels, get_loc_cls_preds, _concat
+from horch.models.modules import Conv2d, DWConv2d, get_norm_layer
+from horch.models.utils import get_loc_cls_preds, _concat
 from horch.common import _tuple
+
 
 
 def to_pred(p, c: int):
@@ -47,7 +48,7 @@ class SharedDWConvHead(nn.Module):
     r"""
     Light head for RPN, not for R-CNN.
     """
-    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256, return_features=False, norm_layer='bn', with_se=False):
+    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256, return_features=False, norm_layer='bn'):
         super().__init__()
         self.num_classes = num_classes
         self.return_features = return_features
@@ -55,7 +56,7 @@ class SharedDWConvHead(nn.Module):
             Conv2d(in_channels, in_channels, kernel_size=5, groups=in_channels,
                    norm_layer=norm_layer),
             Conv2d(in_channels, f_channels, kernel_size=1,
-                   norm_layer=norm_layer, activation='default', with_se=with_se)
+                   norm_layer=norm_layer, activation='default')
         )
         self.loc_conv = Conv2d(
             f_channels, num_anchors * 4, kernel_size=1)
@@ -86,23 +87,23 @@ class SharedDWConvHead(nn.Module):
         return loc_p, cls_p
 
 
-def _make_head(f_channels, num_layers, out_channels, **kwargs):
+def _make_head(f_channels, num_layers, out_channels, norm_layer, **kwargs):
     layers = []
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
-                             activation='default', **kwargs))
+                             norm_layer=norm_layer, activation='default', **kwargs))
     layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
     return nn.Sequential(*layers)
 
 
 class ConvHead(nn.Module):
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, **kwargs):
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', **kwargs):
         super().__init__()
         self.num_classes = num_classes
         self.loc_head = _make_head(
-            f_channels, num_layers, num_anchors * 4, **kwargs)
+            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, **kwargs)
         self.cls_head = _make_head(
-            f_channels, num_layers, num_anchors * num_classes, **kwargs)
+            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, **kwargs)
 
         self.cls_head[-1].apply(self._init_final_cls_layer)
 
@@ -139,14 +140,23 @@ class SSDHead(nn.Module):
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
 
     """
-    def __init__(self, num_anchors, num_classes, in_channels):
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels))
-        self.preds = nn.ModuleList([
-            Conv2d(c, n * (num_classes + 4))
-            for c, n in zip(in_channels, num_anchors)
-        ])
+        if norm_layer:
+            self.preds = nn.ModuleList([
+                nn.Sequential(
+                    get_norm_layer(norm_layer, c),
+                    Conv2d(c, n * (num_classes + 4))
+                )
+                for c, n in zip(in_channels, num_anchors)
+            ])
+        else:
+            self.preds = nn.ModuleList([
+                Conv2d(c, n * (num_classes + 4))
+                for c, n in zip(in_channels, num_anchors)
+            ])
 
     def forward(self, *ps):
         ps = [pred(p) for p, pred in zip(ps, self.preds)]
@@ -175,12 +185,14 @@ class SSDLightHead(nn.Module):
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels))
         self.convs = nn.ModuleList([
-            depthwise_seperable_conv3x3(c, n * (num_classes + 4), norm_layer=norm_layer)
+            nn.Sequential(
+                get_norm_layer(norm_layer, c),
+                DWConv2d(c, n * (num_classes + 4), mid_norm_layer=None),
+            )
             for c, n in zip(in_channels, num_anchors)
         ])
 
     def forward(self, *ps):
-        preds = []
         preds = [conv(p) for p, conv in zip(ps, self.convs)]
         loc_p, cls_p = get_loc_cls_preds(preds, self.num_classes)
         return loc_p, cls_p
