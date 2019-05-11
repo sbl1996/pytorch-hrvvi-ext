@@ -170,14 +170,15 @@ class LossG(Average):
 
 class COCOEval(Metric):
 
-    def __init__(self, annotations, iou_type='bbox'):
+    def __init__(self, annotations, iou_type='bbox', percent_area_ranges=None):
         self.annotations = annotations
         self.iou_type = iou_type
+        self.percent_area_ranges = percent_area_ranges
         super().__init__()
 
     def reset(self):
         from hpycocotools.coco import COCO
-        self.coco_gt = COCO(self.annotations, verbose=False)
+        self.coco_gt = COCO(self.annotations, verbose=False, use_percent=bool(self.percent_area_ranges))
         self.res = []
 
     def update(self, output):
@@ -225,7 +226,7 @@ class COCOEval(Metric):
 
         coco_dt = self.coco_gt.loadRes(self.res)
         ev = COCOeval(self.coco_gt, coco_dt,
-                      iouType=self.iou_type, verbose=False)
+                      iouType=self.iou_type, pAreaRng=self.percent_area_ranges, verbose=False)
         ev.evaluate()
         ev.accumulate()
         ev.summarize()

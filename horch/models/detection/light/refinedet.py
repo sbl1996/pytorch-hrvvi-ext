@@ -99,6 +99,7 @@ class RefineDet(nn.Module):
                 get_norm_layer(norm_layer, c),
                 DWConv2d(c, num_anchors * (4 + 1), kernel_size=3, mid_norm_layer=None),
             )
+            # DWConv2d(c, num_anchors * (4 + 1), kernel_size=3, mid_norm_layer=None)
             for c in stages
         ])
 

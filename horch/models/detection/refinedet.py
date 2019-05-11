@@ -29,10 +29,16 @@ class RefineLoss:
 
         r_loss = self.r_loss(r_loc_p, r_cls_p, loc_t, pos.long())
 
-        r_loc_p = r_loc_p.clone().detach()
+        # r_loc_p = r_loc_p.clone().detach()
+        # r_cls_p = r_cls_p.detach()
+        # d_loc_t = loc_t - r_loc_p
+        # d_loc_t[..., :2].div_(r_loc_p[..., 2:].exp_())
+
         r_cls_p = r_cls_p.detach()
         d_loc_t = loc_t - r_loc_p
-        d_loc_t[..., :2].div_(r_loc_p[..., 2:].exp_())
+        d_loc_t_xy = d_loc_t[..., :2] / (r_loc_p[..., 2:].exp())
+        d_loc_t_wh = d_loc_t[..., 2:]
+        d_loc_t = torch.cat([d_loc_t_xy, d_loc_t_wh], dim=-1)
 
         d_loss = self.d_loss(d_loc_p, d_cls_p, d_loc_t, cls_t, r_cls_p <= self.neg_threshold)
 
