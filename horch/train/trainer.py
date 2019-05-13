@@ -100,7 +100,7 @@ class Trainer:
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
         log_dir = os.path.join(save_path, 'runs', self.name, current_time)
-        # self._writer = SummaryWriter(log_dir)
+        self._writer = SummaryWriter(log_dir)
 
         self.metric_history = defaultdict(list)
         self._device = 'cuda' if CUDA else 'cpu'
@@ -125,12 +125,12 @@ class Trainer:
         for name, val in engine.state.metrics.items():
             if isinstance(val, float):
                 msg += "%s: %.4f\t" % (name, val)
-                # self._writer.add_scalar(name, val, self.epochs())
+                self._writer.add_scalar(name, val, self.epochs())
             else:
                 msg += "%s: %s\t" % (name, val)
                 for i, v in enumerate(val):
                     pass
-                    # self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
+                    self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history[name].append(val)
         print(msg)
 
@@ -141,12 +141,12 @@ class Trainer:
         for name, val in evaluator.state.metrics.items():
             if isinstance(val, float):
                 msg += "%s: %.4f\t" % (name, val)
-                # self._writer.add_scalar(name, val, self.epochs())
+                self._writer.add_scalar(name, val, self.epochs())
             else:
                 msg += "%s: %s\t" % (name, val)
                 for i, v in enumerate(val):
                     pass
-                    # self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
+                    self._writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history["val_" + name].append(val)
         print(msg)
 
