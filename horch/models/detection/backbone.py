@@ -22,16 +22,18 @@ class ShuffleNetV2(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, mult=0.5, feature_levels=(3, 4, 5), pretrained=False, re=False, **kwargs):
+    def __init__(self, mult=1.0, feature_levels=(3, 4, 5), pretrained=False, **kwargs):
         super().__init__()
-        if re:
-            from horch.models.re.shufflenet import shufflenet_v2 as BShuffleNetV2
-            net = BShuffleNetV2(mult=mult, **kwargs)
-            channels = net.out_channels
-        else:
+        if pretrained:
+            norm_layer = kwargs.get("norm_layer")
+            assert norm_layer is None or norm_layer == 'bn', "`gn` can be only set when `pretrained` is False"
             from horch.models.shufflenet import shufflenetv2 as BShuffleNetV2
             net = BShuffleNetV2(mult=mult, pretrained=pretrained, **kwargs)
             channels = net._stage_out_channels
+        else:
+            from horch.models.re.shufflenet import shufflenet_v2 as BShuffleNetV2
+            net = BShuffleNetV2(mult=mult, **kwargs)
+            channels = net.out_channels
         del net.fc
         self.layer1 = net.conv1
         self.layer2 = net.maxpool

@@ -36,11 +36,12 @@ REQUIRED = [
     "nltk",
     "toolz",
     "pytorch-ignite",
-    "Pillow>5.0.0",
+    "pillow-simd>5.0.0",
     "xmltodict",
     "googledrivedownloader",
     "tensorboardX",
     "pybind11",
+    "opencv-python",
 ]
 
 DEPENDENCY_LINKS = [

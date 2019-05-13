@@ -54,6 +54,13 @@ class Subset(Dataset):
     def __len__(self):
         return len(self.indices)
 
+    def to_coco(self, indices=None):
+        if indices is None:
+            indices = self.indices
+        else:
+            indices = [self.indices[i] for i in indices]
+        return self.dataset.to_coco(indices)
+
     # def __getattr__(self, attr):
     #     return getattr(self.dataset, attr)
 

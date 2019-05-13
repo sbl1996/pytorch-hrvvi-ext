@@ -43,9 +43,8 @@ def find_centers_kmeans(bboxes, k, max_iter=100, verbose=True):
         Whether to print info.
     """
     centers = kmeans(bboxes, k, max_iter, verbose=verbose)[1]
-    if verbose:
-        mean_iou = iou_mn(bboxes, centers).max(axis=1).mean()
-        print("Mean IoU: %.4f" % mean_iou)
+    mean_iou = iou_mn(bboxes, centers).max(axis=1).mean()
+    print("Mean IoU: %.4f" % mean_iou)
     return centers
 
 

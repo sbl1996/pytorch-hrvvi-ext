@@ -10,17 +10,18 @@ from horch.common import _tuple
 
 
 class OneStageDetector(nn.Module):
-    def __init__(self, backbone, fpn, head, inference):
+    def __init__(self, backbone, head, inference, fpn=None):
         super().__init__()
         self.backbone = backbone
-        self.fpn = fpn
         self.head = head
         self._inference = inference
+        self.fpn = fpn
 
     def forward(self, x):
         cs = self.backbone(x)
-        ps = self.fpn(*cs)
-        return self.head(*_tuple(ps))
+        if self.fpn is not None:
+            cs = self.fpn(*cs)
+        return self.head(*_tuple(cs))
 
     def inference(self, x):
         self.eval()

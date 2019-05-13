@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from horch.common import _tuple
 from horch.models.utils import get_loc_cls_preds
+from horch.models.detection.head import SSDHead
 from horch.models.modules import Conv2d, get_norm_layer, get_activation
 
 from horch.detection.one import MultiBoxLoss, anchor_based_inference, flatten
@@ -159,7 +160,7 @@ class TransferConnection(nn.Module):
 
 
 class RefineDet(nn.Module):
-    def __init__(self, backbone, num_anchors, num_classes, f_channels, inference, norm_layer='bn', extra_levels=(6,)):
+    def __init__(self, backbone, num_anchors, num_classes, f_channels, inference, norm_layer='bn', extra_levels=(6,), sep_head=False):
         super().__init__()
         self.num_classes = num_classes
         self.backbone = backbone
@@ -175,14 +176,8 @@ class RefineDet(nn.Module):
             )
             stages.append(f_channels)
 
-        self.rps = nn.ModuleList([
-            # nn.Sequential(
-            #     get_norm_layer(norm_layer, c),
-            #     Conv2d(c, num_anchors * (4 + 1), kernel_size=3)
-            # )
-            Conv2d(c, num_anchors * (4 + 1), kernel_size=3)
-            for c in stages
-        ])
+        self.r_head = SSDHead(num_anchors, 1, stages,
+                              norm_layer=norm_layer, seperate=sep_head)
 
         self.tcbs = nn.ModuleList([
             TransferConnection(stages[-1], f_channels, norm_layer=norm_layer, last=True)])
@@ -191,14 +186,8 @@ class RefineDet(nn.Module):
                 TransferConnection(c, f_channels, norm_layer=norm_layer)
             )
 
-        self.dps = nn.ModuleList([
-            # nn.Sequential(
-            #     get_norm_layer(norm_layer, f_channels),
-            #     Conv2d(f_channels, num_anchors * (4 + num_classes), kernel_size=3)
-            # )
-            Conv2d(f_channels, num_anchors * (4 + num_classes), kernel_size=3)
-            for _ in stages
-        ])
+        self.d_head = SSDHead(num_anchors, num_classes, [f_channels for _ in stages],
+                              norm_layer=norm_layer, seperate=sep_head)
 
     def forward(self, x):
         cs = self.backbone(x)
@@ -206,20 +195,14 @@ class RefineDet(nn.Module):
         for l in self.extra_layers:
             cs.append(l(cs[-1]))
 
-        rfs = [
-            rp(c) for c, rp in zip(cs, self.rps)
-        ]
+        r_loc_p, r_cls_p = self.r_head(*cs)
 
         dcs = [self.tcbs[0](cs[-1])]
         for c, tcb in zip(reversed(cs[:-1]), self.tcbs[1:]):
             dcs.append(tcb(c, dcs[-1]))
+        dcs.reverse()
 
-        dfs = [
-            dp(dc) for dp, dc in zip(self.dps, reversed(dcs))
-        ]
-
-        r_loc_p, r_cls_p = get_loc_cls_preds(rfs, 1)
-        d_loc_p, d_cls_p = get_loc_cls_preds(dfs, self.num_classes)
+        d_loc_p, d_cls_p = self.d_head(*dcs)
 
         return r_loc_p, r_cls_p, d_loc_p, d_cls_p
 

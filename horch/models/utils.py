@@ -3,7 +3,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from toolz import curry
-from torch.hub import _get_torch_home
 from horch.datasets.utils import download_google_drive
 from horch.ext.summary import summary
 
@@ -108,6 +107,7 @@ def load_state_dict_from_google_drive(file_id, filename, md5, model_dir=None, ma
     """
 
     if model_dir is None:
+        from torch.hub import _get_torch_home
         torch_home = _get_torch_home()
         torch_home = Path(torch_home)
         model_dir = torch_home / 'checkpoints'
