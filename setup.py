@@ -36,7 +36,7 @@ REQUIRED = [
     "nltk",
     "toolz",
     "pytorch-ignite",
-    "pillow-simd>5.0.0",
+    "Pillow>5.0.0",
     "xmltodict",
     "googledrivedownloader",
     "tensorboardX",
