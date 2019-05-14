@@ -105,13 +105,14 @@ class FCOSLoss(nn.Module):
 
 def center_based_inference(
         size, loc_p, cls_p, ctn_p, centers, conf_threshold=0.01,
-        iou_threshold=0.5, topk=100, nms='soft_nms', soft_nms_threshold=None):
+        iou_threshold=0.5, topk=100, nms='soft_nms', soft_nms_threshold=None, use_centerness=True):
     dets = []
     bboxes = loc_p.exp_()
-    centerness = ctn_p.sigmoid_()
     scores, labels = cls_p[:, 1:].max(dim=-1)
-    # scores = scores.sigmoid_()
-    scores = scores.sigmoid_().mul_(centerness)
+    scores = scores.sigmoid_()
+    if use_centerness:
+        centerness = ctn_p.sigmoid_()
+        scores = scores.mul_(centerness)
 
     if conf_threshold > 0:
         mask = scores > conf_threshold
@@ -170,7 +171,7 @@ def flatten(xs):
 class FCOSInference:
 
     def __init__(self, size, mlvl_centers, conf_threshold=0.05, iou_threshold=0.5, topk=100, nms='nms',
-                 soft_nms_threshold=None):
+                 soft_nms_threshold=None, use_centerness=True):
         self.size = size
         self.centers = flatten(mlvl_centers)
         self.conf_threshold = conf_threshold
@@ -178,6 +179,7 @@ class FCOSInference:
         self.topk = topk
         self.nms = nms
         self.soft_nms_threshold = soft_nms_threshold
+        self.use_centerness = use_centerness
 
     def __call__(self, loc_p, cls_p, ctn_p):
         image_dets = []
@@ -186,7 +188,7 @@ class FCOSInference:
             dets = center_based_inference(
                 self.size, loc_p[i], cls_p[i], ctn_p[i], self.centers,
                 self.conf_threshold, self.iou_threshold,
-                self.topk, self.nms, self.soft_nms_threshold
+                self.topk, self.nms, self.soft_nms_threshold, self.use_centerness
             )
             image_dets.append(dets)
         return image_dets

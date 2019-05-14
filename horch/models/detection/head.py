@@ -87,24 +87,24 @@ class SharedConvHead(nn.Module):
         return loc_p, cls_p
 
 
-def _make_head(f_channels, num_layers, out_channels, norm_layer, lite, **kwargs):
+def _make_head(f_channels, num_layers, out_channels, norm_layer, lite):
     layers = []
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite, **kwargs))
+                             norm_layer=norm_layer, activation='default', depthwise_separable=lite))
     layers.append(Conv2d(f_channels, out_channels, kernel_size=3,
                          depthwise_separable=lite, mid_norm_layer=norm_layer))
     return nn.Sequential(*layers)
 
 
 class ConvHead(nn.Module):
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False, **kwargs):
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
         super().__init__()
         self.num_classes = num_classes
         self.loc_head = _make_head(
-            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite, **kwargs)
+            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite)
         self.cls_head = _make_head(
-            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, lite=lite, **kwargs)
+            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, lite=lite)
 
         self.cls_head[-1].apply(self._init_final_cls_layer)
 
@@ -126,6 +126,27 @@ class ConvHead(nn.Module):
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
+
+
+class MultiBranchConvHead(nn.Module):
+    def __init__(self, num_anchors, branch_channels, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
+        super().__init__()
+        self.branch_channels = branch_channels
+        self.heads = nn.ModuleList([
+            _make_head(f_channels, num_layers, num_anchors * c, norm_layer=norm_layer, lite=lite)
+            for c in branch_channels
+        ])
+
+    def forward(self, *ps):
+        mb_preds = []
+        for p in ps:
+            preds = [
+                to_pred(head(p), c)
+                for head, c in zip(self.heads, self.branch_channels)
+            ]
+            mb_preds.append(preds)
+        mb_preds = (_concat(preds) for preds in zip(*mb_preds))
+        return mb_preds
 
 
 class SSDHead(nn.Module):
@@ -158,51 +179,4 @@ class SSDHead(nn.Module):
     def forward(self, *ps):
         ps = [pred(p) for p, pred in zip(ps, self.preds)]
         loc_p, cls_p = get_loc_cls_preds(ps, self.num_classes)
-        return loc_p, cls_p
-
-
-class SepSSDHead(nn.Module):
-    r"""
-    Head of SSD.
-
-    Parameters
-    ----------
-    num_anchors : int or tuple of ints
-        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
-    num_classes : int
-        Number of classes.
-    in_channels : tuple of ints
-        Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-
-    """
-
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False):
-        super().__init__()
-        self.num_classes = num_classes
-        num_anchors = _tuple(num_anchors, len(in_channels))
-        self.loc_convs = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer(norm_layer, c),
-                Conv2d(c, n * 4, kernel_size=3,
-                       depthwise_separable=lite, mid_norm_layer=norm_layer)
-            )
-            for c, n in zip(in_channels, num_anchors)
-        ])
-        self.cls_convs = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer(norm_layer, c),
-                Conv2d(c, n * num_classes, kernel_size=3,
-                       depthwise_separable=lite, mid_norm_layer=norm_layer)
-            )
-            for c, n in zip(in_channels, num_anchors)
-        ])
-
-    def forward(self, *ps):
-        loc_preds = []
-        cls_preds = []
-        for p, loc_conv, cls_conv in zip(ps, self.loc_convs, self.cls_convs):
-            loc_preds.append(to_pred(loc_conv(p), 4))
-            cls_preds.append(to_pred(cls_conv(p), self.num_classes))
-        loc_p = _concat(loc_preds, dim=1)
-        cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
