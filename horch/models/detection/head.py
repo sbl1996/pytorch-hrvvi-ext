@@ -150,7 +150,7 @@ class SSDHead(nn.Module):
         self.preds = nn.ModuleList([
             nn.Sequential(
                 get_norm_layer(norm_layer, c),
-                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite)
+                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer=norm_layer)
             )
             for c, n in zip(in_channels, num_anchors)
         ])

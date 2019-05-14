@@ -109,7 +109,7 @@ def Conv2d(in_channels, out_channels,
     if depthwise_separable:
         assert kernel_size != 1, "No need to use depthwise separable convolution in 1x1"
         if norm_layer is None:
-            assert mid_norm_layer, "`mid_norm_layer` must be provided when `norm_layer` is None"
+            assert mid_norm_layer is not None, "`mid_norm_layer` must be provided when `norm_layer` is None"
         else:
             if mid_norm_layer is None:
                 mid_norm_layer = norm_layer
