@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from horch.models.modules import Sequential
 from horch.models.detection.ssd import SSD
 from horch.models.detection.retinanet import RetinaNet
 
@@ -8,7 +9,7 @@ from horch.models.detection.retinanet import RetinaNet
 from horch.common import _tuple
 
 
-class OneStageDetector(nn.Module):
+class OneStageDetector(Sequential):
     r"""
     A simple composation of backbone, head, inference and optional fpn.
 
@@ -24,26 +25,11 @@ class OneStageDetector(nn.Module):
     fpn : nn.Module
         Optional feature enhance module from `horch.models.detection.enhance`.
     """
-    def __init__(self, backbone, head, inference, fpn=None):
-        super().__init__()
+    def __init__(self, backbone, fpn, head, inference=None):
+        super().__init__(inference=inference)
         self.backbone = backbone
-        self.head = head
-        self._inference = inference
         self.fpn = fpn
-
-    def forward(self, x):
-        cs = self.backbone(x)
-        if self.fpn is not None:
-            cs = self.fpn(*cs)
-        return self.head(*_tuple(cs))
-
-    def inference(self, x):
-        self.eval()
-        with torch.no_grad():
-            preds = self.forward(x)
-        dets = self._inference(*_tuple(preds))
-        self.train()
-        return dets
+        self.head = head
 
 
 def split_levels(levels, split_at=5):

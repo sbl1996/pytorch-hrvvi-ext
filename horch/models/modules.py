@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from horch.common import _tuple
 from horch.models.defaults import get_default_activation, get_default_norm_layer
 
 
@@ -219,3 +220,23 @@ def DWConv2d(in_channels, out_channels,
                norm_layer=norm_layer, activation=activation),
 
     )
+
+
+class Sequential(nn.Sequential):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        if 'inference' in kwargs:
+            self._inference = kwargs['inference']
+
+    def forward(self, *xs):
+        for module in self._modules.values():
+            xs = module(*_tuple(xs))
+        return xs
+
+    def inference(self, *xs):
+        self.eval()
+        with torch.no_grad():
+            xs = self.forward(*xs)
+        preds = self._inference(*_tuple(xs))
+        self.train()
+        return preds

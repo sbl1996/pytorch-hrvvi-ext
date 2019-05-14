@@ -15,11 +15,14 @@ from horch.models.darknet import Darknet as BDarknet
 class ShuffleNetV2(nn.Module):
     r"""ShuffleNet V2: Practical Guidelines for Efficient CNN Architecture Design
 
-    Args:
-        mult (number): 0.5, 1, 1.5, 2
-            Default: 0.5
-        feature_levels (list of int): features of which layers to output
-            Default: (3, 4, 5)
+    Parameters
+    ----------
+    mult: float
+        Width multiplier which could one of [ 0.5, 1.0, 1.5, 2.0 ]
+        Default: 0.5
+    feature_levels : sequence of int
+        Feature levels to output.
+        Default: (3, 4, 5)
     """
 
     def __init__(self, mult=1.0, feature_levels=(3, 4, 5), pretrained=False, **kwargs):

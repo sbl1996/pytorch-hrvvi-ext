@@ -195,10 +195,7 @@ class FCOSInference:
 class FCOS(OneStageDetector):
 
     def forward(self, x):
-        cs = self.backbone(x)
-        if self.fpn is not None:
-            cs = self.fpn(*cs)
-        loc_p, cls_p = self.head(*_tuple(cs))
+        loc_p, cls_p = super().forward(x)
         ctn_p = cls_p[..., -1]
         cls_p = cls_p[..., :-1]
         return loc_p, cls_p, ctn_p
