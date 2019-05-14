@@ -160,7 +160,7 @@ class TransferConnection(nn.Module):
 
 
 class RefineDet(nn.Module):
-    def __init__(self, backbone, num_anchors, num_classes, f_channels, inference, norm_layer='bn', extra_levels=(6,), sep_head=False):
+    def __init__(self, backbone, num_anchors, num_classes, f_channels, inference, norm_layer='bn', extra_levels=(6,)):
         super().__init__()
         self.num_classes = num_classes
         self.backbone = backbone
@@ -177,7 +177,7 @@ class RefineDet(nn.Module):
             stages.append(f_channels)
 
         self.r_head = SSDHead(num_anchors, 1, stages,
-                              norm_layer=norm_layer, seperate=sep_head)
+                              norm_layer=norm_layer)
 
         self.tcbs = nn.ModuleList([
             TransferConnection(stages[-1], f_channels, norm_layer=norm_layer, last=True)])
@@ -186,8 +186,8 @@ class RefineDet(nn.Module):
                 TransferConnection(c, f_channels, norm_layer=norm_layer)
             )
 
-        self.d_head = SSDHead(num_anchors, num_classes, [f_channels for _ in stages],
-                              norm_layer=norm_layer, seperate=sep_head)
+        self.d_head = SSDHead(num_anchors, num_classes, _tuple(f_channels, 3),
+                              norm_layer=norm_layer)
 
     def forward(self, x):
         cs = self.backbone(x)

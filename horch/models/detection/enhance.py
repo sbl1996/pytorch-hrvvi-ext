@@ -6,14 +6,14 @@ from horch.models.modules import upsample_add, Conv2d
 
 
 class TopDown(nn.Module):
-    def __init__(self, in_channels, f_channels, norm_layer='gn'):
+    def __init__(self, in_channels, f_channels, norm_layer='gn', lite=False):
         super().__init__()
         self.lat = Conv2d(
             in_channels, f_channels, kernel_size=1,
             norm_layer=norm_layer)
         self.conv = Conv2d(
             f_channels, f_channels, kernel_size=3,
-            norm_layer=norm_layer)
+            norm_layer=norm_layer, depthwise_separable=lite)
 
     def forward(self, c, p):
         p = upsample_add(p, self.lat(c))
@@ -35,11 +35,11 @@ class FPN(nn.Module):
         `bn` for Batch Normalization and `gn` for Group Normalization.
         Default: `bn`
     """
-    def __init__(self, in_channels, out_channels=256, norm_layer='gn'):
+    def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False):
         super().__init__()
         self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer=norm_layer)
         self.topdowns = nn.ModuleList([
-            TopDown(c, out_channels, norm_layer=norm_layer)
+            TopDown(c, out_channels, norm_layer=norm_layer, lite=lite)
             for c in in_channels[:-1]
         ])
 
@@ -49,7 +49,6 @@ class FPN(nn.Module):
             p = topdown(c, ps[0])
             ps = (p,) + ps
         return ps
-
 
 
 class ContextEnhance(nn.Module):

@@ -1,3 +1,5 @@
+from toolz import curry
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -100,9 +102,17 @@ def get_activation(name):
 
 
 def Conv2d(in_channels, out_channels,
-           kernel_size=3, stride=1,
+           kernel_size, stride=1,
            padding='same', dilation=1, groups=1,
-           norm_layer=None, activation=None, preact=False):
+           norm_layer=None, activation=None, depthwise_separable=False, mid_norm_layer=None):
+    if depthwise_separable:
+        assert kernel_size != 1, "No need to use depthwise separable convolution in 1x1"
+        if norm_layer is None:
+            assert mid_norm_layer, "`mid_norm_layer` must be provided when `norm_layer` is None"
+        else:
+            if mid_norm_layer is None:
+                mid_norm_layer = norm_layer
+        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, mid_norm_layer, norm_layer, activation)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
             kh, kw = kernel_size
@@ -137,11 +147,7 @@ def Conv2d(in_channels, out_channels,
         layers.append(get_norm_layer(norm_layer, out_channels))
     if activation is not None:
         layers.append(get_activation(activation))
-    if preact:
-        assert len(layers) == 2, "Preact can only be used when normalization and activation is not None"
-        layers.append(conv)
-    else:
-        layers = [conv] + layers
+    layers = [conv] + layers
     return nn.Sequential(*layers)
 
 
@@ -201,6 +207,7 @@ class SELayerM(nn.Module):
         return x * s
 
 
+@curry
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
              padding='same', mid_norm_layer='bn',

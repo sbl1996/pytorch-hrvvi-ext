@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 from horch.models.detection.ssd import SSD
-from horch.models.detection.light.ssdlite import SSDLite
 from horch.models.detection.retinanet import RetinaNet
 
 

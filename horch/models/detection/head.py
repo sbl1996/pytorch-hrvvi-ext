@@ -44,7 +44,7 @@ class ThunderRCNNHead(nn.Module):
         return loc_p, cls_p
 
 
-class SharedDWConvHead(nn.Module):
+class SharedConvHead(nn.Module):
     r"""
     Light head for RPN, not for R-CNN.
     """
@@ -87,30 +87,32 @@ class SharedDWConvHead(nn.Module):
         return loc_p, cls_p
 
 
-def _make_head(f_channels, num_layers, out_channels, norm_layer, **kwargs):
+def _make_head(f_channels, num_layers, out_channels, norm_layer, lite, **kwargs):
     layers = []
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
-                             norm_layer=norm_layer, activation='default', **kwargs))
-    layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
+                             norm_layer=norm_layer, activation='default', depthwise_separable=lite, **kwargs))
+    layers.append(Conv2d(f_channels, out_channels, kernel_size=3,
+                         depthwise_separable=lite, mid_norm_layer=norm_layer))
     return nn.Sequential(*layers)
 
 
 class ConvHead(nn.Module):
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', **kwargs):
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False, **kwargs):
         super().__init__()
         self.num_classes = num_classes
         self.loc_head = _make_head(
-            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, **kwargs)
+            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite, **kwargs)
         self.cls_head = _make_head(
-            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, **kwargs)
+            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, lite=lite, **kwargs)
 
         self.cls_head[-1].apply(self._init_final_cls_layer)
 
     def _init_final_cls_layer(self, m, p=0.01):
         name = type(m).__name__
         if "Linear" in name or "Conv" in name:
-            nn.init.constant_(m.bias, -log((1 - p) / p))
+            if m.bias is not None:
+                nn.init.constant_(m.bias, -log((1 - p) / p))
 
     def forward(self, *ps):
         loc_preds = []
@@ -141,23 +143,17 @@ class SSDHead(nn.Module):
 
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels))
-        if norm_layer:
-            self.preds = nn.ModuleList([
-                nn.Sequential(
-                    get_norm_layer(norm_layer, c),
-                    Conv2d(c, n * (num_classes + 4))
-                )
-                for c, n in zip(in_channels, num_anchors)
-            ])
-        else:
-            self.preds = nn.ModuleList([
-                Conv2d(c, n * (num_classes + 4))
-                for c, n in zip(in_channels, num_anchors)
-            ])
+        self.preds = nn.ModuleList([
+            nn.Sequential(
+                get_norm_layer(norm_layer, c),
+                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite)
+            )
+            for c, n in zip(in_channels, num_anchors)
+        ])
 
     def forward(self, *ps):
         ps = [pred(p) for p, pred in zip(ps, self.preds)]
@@ -180,113 +176,23 @@ class SepSSDHead(nn.Module):
 
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
-        super().__init__()
-        self.num_classes = num_classes
-        num_anchors = _tuple(num_anchors, len(in_channels))
-        if norm_layer:
-            self.loc_convs = nn.ModuleList([
-                nn.Sequential(
-                    get_norm_layer(norm_layer, c),
-                    Conv2d(c, n * 4)
-                )
-                for c, n in zip(in_channels, num_anchors)
-            ])
-            self.cls_convs = nn.ModuleList([
-                nn.Sequential(
-                    get_norm_layer(norm_layer, c),
-                    Conv2d(c, n * num_classes)
-                )
-                for c, n in zip(in_channels, num_anchors)
-            ])
-        else:
-            self.loc_convs = nn.ModuleList([
-                Conv2d(c, n * 4)
-                for c, n in zip(in_channels, num_anchors)
-            ])
-            self.cls_convs = nn.ModuleList([
-                Conv2d(c, n * num_classes)
-                for c, n in zip(in_channels, num_anchors)
-            ])
-
-    def forward(self, *ps):
-        loc_preds = []
-        cls_preds = []
-        for p, loc_conv, cls_conv in zip(ps, self.loc_convs, self.cls_convs):
-            loc_preds.append(to_pred(loc_conv(p), 4))
-            cls_preds.append(to_pred(cls_conv(p), self.num_classes))
-        loc_p = _concat(loc_preds, dim=1)
-        cls_p = _concat(cls_preds, dim=1)
-        return loc_p, cls_p
-
-
-class SSDLiteHead(nn.Module):
-    r"""
-    Head of SSDLite.
-
-    Parameters
-    ----------
-    num_anchors : int or tuple of ints
-        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
-    num_classes : int
-        Number of classes.
-    in_channels : tuple of ints
-        Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-    norm_layer : str
-        Type of normalization layer in the middle of depthwise seperable convolution.
-
-    """
-
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
-        super().__init__()
-        self.num_classes = num_classes
-        num_anchors = _tuple(num_anchors, len(in_channels))
-        self.convs = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer(norm_layer, c),
-                DWConv2d(c, n * (num_classes + 4), mid_norm_layer=None),
-            )
-            for c, n in zip(in_channels, num_anchors)
-        ])
-
-    def forward(self, *ps):
-        preds = [conv(p) for p, conv in zip(ps, self.convs)]
-        loc_p, cls_p = get_loc_cls_preds(preds, self.num_classes)
-        return loc_p, cls_p
-
-
-class SepSSDLiteHead(nn.Module):
-    r"""
-    Head of SSDLite.
-
-    Parameters
-    ----------
-    num_anchors : int or tuple of ints
-        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
-    num_classes : int
-        Number of classes.
-    in_channels : tuple of ints
-        Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-    norm_layer : str
-        Type of normalization layer in the middle of depthwise seperable convolution.
-
-    """
-
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels))
         self.loc_convs = nn.ModuleList([
             nn.Sequential(
                 get_norm_layer(norm_layer, c),
-                DWConv2d(c, n * 4, mid_norm_layer=None),
+                Conv2d(c, n * 4, kernel_size=3,
+                       depthwise_separable=lite, mid_norm_layer=norm_layer)
             )
             for c, n in zip(in_channels, num_anchors)
         ])
         self.cls_convs = nn.ModuleList([
             nn.Sequential(
                 get_norm_layer(norm_layer, c),
-                DWConv2d(c, n * num_classes, mid_norm_layer=None),
+                Conv2d(c, n * num_classes, kernel_size=3,
+                       depthwise_separable=lite, mid_norm_layer=norm_layer)
             )
             for c, n in zip(in_channels, num_anchors)
         ])
