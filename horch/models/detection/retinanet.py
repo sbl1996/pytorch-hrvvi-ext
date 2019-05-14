@@ -6,7 +6,7 @@ from horch.common import _tuple
 
 from horch.models.modules import Conv2d, get_activation
 from horch.models.detection.head import ConvHead
-from horch.models.detection.fpn import FPN
+from horch.models.detection.enhance import FPN
 
 
 class RetinaNet(nn.Module):

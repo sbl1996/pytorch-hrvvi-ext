@@ -10,6 +10,21 @@ from horch.common import _tuple
 
 
 class OneStageDetector(nn.Module):
+    r"""
+    A simple composation of backbone, head, inference and optional fpn.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        Backbone network from `horch.models.detection.backbone`.
+    head : nn.Module
+        Head of the detector from `horch.models.detection.head`.
+    inference
+        A function or callable to inference on the outputs of the `head`.
+        For most cases, use `horch.detection.one.AnchorBasedInference`.
+    fpn : nn.Module
+        Optional feature enhance module from `horch.models.detection.enhance`.
+    """
     def __init__(self, backbone, head, inference, fpn=None):
         super().__init__()
         self.backbone = backbone

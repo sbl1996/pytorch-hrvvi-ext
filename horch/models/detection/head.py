@@ -141,7 +141,7 @@ class SSDHead(nn.Module):
 
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', seperate=False):
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn'):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels))
