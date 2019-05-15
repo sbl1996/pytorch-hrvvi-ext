@@ -95,7 +95,7 @@ class Trainer:
             self.evaluate_metrics = metrics.copy()
             if 'loss' in metrics and isinstance(metrics['loss'], TrainLoss):
                 self.evaluate_metrics['loss'] = Loss(criterion=criterion)
-        self.save_path = save_path
+        self.save_path = os.path.join(save_path, 'trainer')
         self.name = name
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')

@@ -44,7 +44,7 @@ class ThunderRCNNHead(nn.Module):
         return loc_p, cls_p
 
 
-class SharedConvHead(nn.Module):
+class SharedDWConvHead(nn.Module):
     r"""
     Light head for RPN, not for R-CNN.
     """
@@ -92,12 +92,31 @@ def _make_head(f_channels, num_layers, out_channels, norm_layer, lite):
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
                              norm_layer=norm_layer, activation='default', depthwise_separable=lite))
-    layers.append(Conv2d(f_channels, out_channels, kernel_size=3,
-                         depthwise_separable=lite, mid_norm_layer=norm_layer))
+    layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
     return nn.Sequential(*layers)
 
 
-class ConvHead(nn.Module):
+class RetinaHead(nn.Module):
+    r"""
+    Head of RetinaNet.
+
+    Parameters
+    ----------
+    num_anchors : int or tuple of ints
+        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
+    num_classes : int
+        Number of classes.
+    f_channels : int
+        Number of feature channels.
+    num_layers : int
+        Number of conv layers in each subnet.
+    norm_layer : str
+        `bn` for Batch Normalization and `gn` for Group Normalization.
+        Default: "bn"
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    """
     def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
         super().__init__()
         self.num_classes = num_classes
@@ -128,27 +147,6 @@ class ConvHead(nn.Module):
         return loc_p, cls_p
 
 
-class MultiBranchConvHead(nn.Module):
-    def __init__(self, num_anchors, branch_channels, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
-        super().__init__()
-        self.branch_channels = branch_channels
-        self.heads = nn.ModuleList([
-            _make_head(f_channels, num_layers, num_anchors * c, norm_layer=norm_layer, lite=lite)
-            for c in branch_channels
-        ])
-
-    def forward(self, *ps):
-        mb_preds = []
-        for p in ps:
-            preds = [
-                to_pred(head(p), c)
-                for head, c in zip(self.heads, self.branch_channels)
-            ]
-            mb_preds.append(preds)
-        mb_preds = (_concat(preds) for preds in zip(*mb_preds))
-        return mb_preds
-
-
 class SSDHead(nn.Module):
     r"""
     Head of SSD.
@@ -161,7 +159,12 @@ class SSDHead(nn.Module):
         Number of classes.
     in_channels : tuple of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-
+    norm_layer : str
+        `bn` for Batch Normalization and `gn` for Group Normalization.
+        Default: "bn"
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
     """
 
     def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False):
