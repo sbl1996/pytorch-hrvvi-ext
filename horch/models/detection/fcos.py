@@ -9,7 +9,12 @@ from horch.common import one_hot, _tuple
 from horch.detection import soft_nms_cpu, BBox, nms_cpu
 from horch.transforms.detection.functional import to_percent_coords
 from horch.nn.loss import focal_loss2, iou_loss
+from horch.models.detection.head import FCOSHead
 from horch.models.detection import OneStageDetector
+
+__all__ = [
+    "get_mlvl_centers", "FCOSTransform", "FCOSHead", "FCOSInference", "FCOS", "FCOSLoss"
+]
 
 
 def get_mlvl_centers(locations, strides):
