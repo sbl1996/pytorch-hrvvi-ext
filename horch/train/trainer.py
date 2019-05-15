@@ -49,7 +49,7 @@ def create_supervised_evaluator(model, metrics=None,
 
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch):
+        device=None, prepare_batch=_prepare_batch, fp16=False):
     if metrics is None:
         metrics = {}
     if device:
@@ -63,7 +63,12 @@ def create_supervised_trainer(
         if torch.is_tensor(preds):
             preds = (preds,)
         loss = criterion(*preds, *target)
-        loss.backward()
+        if fp16:
+            from apex import amp
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
         optimizer.step()
         output = {
             "preds": detach(preds),
@@ -158,7 +163,7 @@ class Trainer:
         if engine.state.iteration == iterations:
             engine.terminate()
 
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=None):
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=None, fp16=False):
         if val_loader is not None:
             validate = True
             if isinstance(val_loader, tuple):
@@ -171,7 +176,7 @@ class Trainer:
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self._device)
+            self.metrics, self._device, fp16=fp16)
         if self.lr_scheduler:
             if isinstance(self.lr_scheduler, StepOnIteration):
                 engine.add_event_handler(
