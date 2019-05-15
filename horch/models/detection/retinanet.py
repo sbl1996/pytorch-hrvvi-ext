@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from horch.common import _tuple
 
 from horch.models.modules import Conv2d, get_activation
-from horch.models.detection.head import ConvHead
+from horch.models.detection.head import RetinaHead
 from horch.models.detection.enhance import FPN
 
 
@@ -32,7 +32,7 @@ class RetinaNet(nn.Module):
 
         self.fpn = FPN(backbone, f_channels, norm_layer=norm_layer)
 
-        self.head = ConvHead(
+        self.head = RetinaHead(
             f_channels, num_anchors, num_classes, norm_layer=norm_layer, num_layers=num_head_layers)
 
     def forward(self, x):

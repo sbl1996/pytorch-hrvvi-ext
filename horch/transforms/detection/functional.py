@@ -6,6 +6,8 @@ import numpy as np
 from toolz import curry
 from toolz.curried import get
 
+from horch.common import _tuple
+
 __all__ = [
     "resize", "resized_crop", "center_crop", "drop_boundary_bboxes",
     "to_absolute_coords", "to_percent_coords", "hflip", "hflip2",
@@ -150,8 +152,8 @@ def center_crop(anns, size, output_size):
         Desired output size of the crop. If size is an int instead of sequence like (w, h),
         a square crop (size, size) is made.
     """
-    if isinstance(output_size, Number):
-        output_size = (int(output_size), int(output_size))
+    output_size = _tuple(output_size, 2)
+    output_size = tuple(int(x) for x in output_size)
     w, h = size
     th, tw = output_size
     upper = int(round((h - th) / 2.))
@@ -176,6 +178,8 @@ def crop(anns, left, upper, width, height, minimal_area_fraction=0.25):
         Width of the cropped image.
     height: ``int``
         Height of the cropped image.
+    minimal_area_fraction : ``int``
+        Minimal area fraction requirement.
     """
     new_anns = []
     for ann in anns:
@@ -203,14 +207,13 @@ def resize(anns, size, output_size):
     """
     Parameters
     ----------
-    anns : ``List[Dict]``
+    anns : List[Dict]
         Sequences of annotation of objects, containing `bbox` of [l, t, w, h].
-    size : ``Sequence[int]``
+    size : Sequence[int]
         Size of the original image.
-    output_size : ``Union[Number, Sequence[int]]``
-        Desired output size. If size is a sequence like (w, h),
-        the output size will be matched to this. If size is an int,
-        the smaller edge of the image will be matched to this number maintaing
+    output_size : Union[Number, Sequence[int]]
+        Desired output size. If size is a sequence like (w, h), the output size will be matched to this.
+        If size is an int, the smaller edge of the image will be matched to this number maintaing
         the aspect ratio. i.e, if width > height, then image will be rescaled to
         (output_size * width / height, output_size)
     """

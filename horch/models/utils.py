@@ -24,11 +24,43 @@ def get_last_conv(m):
     return list(convs)[-1]
 
 
-def get_out_channels(m):
+def get_in_channels(mod):
     r"""
     Get the output channels of the last conv layer of a block.
     """
-    return get_last_conv(m).out_channels
+    for m in list(mod.modules()):
+        if isinstance(m, nn.BatchNorm2d):
+            return m.num_features
+        elif isinstance(m, nn.Conv2d):
+            return m.in_channels
+        else:
+            continue
+    raise ValueError("Cannot get output channels.")
+
+
+def calc_out_channels(mod):
+    r"""
+    Get the output channels of the last conv layer of a block.
+    """
+    in_channels = get_in_channels(mod)
+    x = torch.randn(1, in_channels, 32, 32)
+    with torch.no_grad():
+        x = mod(x)
+    return x.size(1)
+
+
+def get_out_channels(mod):
+    r"""
+    Get the output channels of the last conv layer of a block.
+    """
+    for m in reversed(list(mod.modules())):
+        if isinstance(m, nn.BatchNorm2d):
+            return m.num_features
+        elif isinstance(m, nn.Conv2d):
+            return m.out_channels
+        else:
+            continue
+    raise ValueError("Cannot get output channels.")
 
 
 @curry

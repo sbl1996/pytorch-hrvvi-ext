@@ -76,21 +76,17 @@ def match_anchors_flat(anns, anchors_xywh, anchors_ltrb, pos_thresh=0.5, neg_thr
 class MatchAnchors:
     r"""
 
-    Args:
-        anchors: List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
-        pos_thresh: IOU threshold of positive anchors.
-        neg_thresh: If provided, only non-positive anchors whose ious with all ground truth boxes are
-            lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
-        get_label: Function to extract label from annotations.
-    Inputs:
-        img: Input image.
-        anns: Sequences of annotations containing label and bounding box.
-    Outputs:
-        img: Input image.
-        targets:
-            loc_targets:
-            cls_targets:
-            negs (optional): Returned when neg_thresh is provided.
+    Parameters
+    ----------
+    anchors : torch.Tensor or List[torch.Tensor]
+        List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
+    pos_thresh : float
+        IOU threshold of positive anchors.
+    neg_thresh : float
+        If provided, only non-positive anchors whose ious with all ground truth boxes are
+        lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
+    get_label : function
+        Function to extract label from annotations.
     """
 
     def __init__(self, anchors, pos_thresh=0.5, neg_thresh=None,

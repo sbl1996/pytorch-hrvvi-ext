@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from horch.models.modules import Conv2d, get_activation, SELayer
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
+__all__ = ['RootResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
 
 

@@ -42,6 +42,7 @@ REQUIRED = [
     "tensorboardX",
     "pybind11",
     "opencv-python",
+    "pytorchcv",
 ]
 
 DEPENDENCY_LINKS = [

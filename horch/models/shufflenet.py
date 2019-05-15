@@ -2,7 +2,6 @@ import functools
 
 import torch
 import torch.nn as nn
-from torch.hub import load_state_dict_from_url
 
 __all__ = ['ShuffleNetV2', 'shufflenetv2_x0_5', 'shufflenetv2_x1_0', 'shufflenetv2_x1_5', 'shufflenetv2_x2_0']
 
@@ -142,6 +141,7 @@ def _shufflenetv2(arch, pretrained, progress, *args, **kwargs):
         if model_url is None:
             raise NotImplementedError('pretrained {} is not supported as of now'.format(arch))
         else:
+            from torch.hub import load_state_dict_from_url
             state_dict = load_state_dict_from_url(model_url, progress=progress)
             model.load_state_dict(state_dict)
 

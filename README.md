@@ -11,6 +11,7 @@ pip install pybind11
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
 
 # Install with extras if you want to use these provided datasets
+pip install -U git+https://github.com/sbl1996/hpycocotools.git
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git#egg=pytorch-hrvvi-ext[coco]
 ```
 
@@ -54,6 +55,38 @@ Transoforms in `horch` transform inputs and targets of datasets simultaneously, 
 - non_max_suppression
 
 ### Models
+
+#### Backbone
+- MobileNetV2 (pretrained)
+- ShuffleNetV2 (pretrained)
+- SqueezeNet (pretrained)
+- SNet
+- Darknet53
+- ResNet
+
+#### FPN
+- FPN (standard)
+- FPN2 (bottom up)
+- stacked_fpn (alternant top down and bottom up)
+- ContextEnhance (N->1)
+
+#### Head
+- SSDHead
+- RetinaHead
+- SharedDWConvHead
+
+#### Model
+- SSD (SSDHead + extra layers)
+- RefineDet (AnchorRefineInference, RefineLoss)
+- FCOS (FCOSTransform, FCOSInference, FCOSLoss)
+
+#### Combination 
+
+- Standard: MatchAnchors + Backbone + (FPN) + Head + AnchorBasedInference + MultiBoxLoss
+- SSD: Backbone + SSD
+- RetinaNet: Backbone + FPN + RetinaHead + MultiBoxLoss(criterion='focal')
+- RefineDet: Backbone + AnchorRefineInference + RefineDet + RefineLoss
+- FCOS: FCOSTransform + Backbone + FPN + RetinaHead(num_anchors=1, num_classes=num_classes+1) + FCOSInference + FCOS + FCOSLoss
 
 ### Others
 - train_test_split: Split a dataset to a train set and a test set with different (or same) transforms

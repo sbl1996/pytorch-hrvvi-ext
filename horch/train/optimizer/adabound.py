@@ -4,22 +4,34 @@ from torch.optim import Optimizer
 
 
 class AdaBound(Optimizer):
-    """Implements AdaBound algorithm.
-    It has been proposed in `Adaptive Gradient Methods with Dynamic Bound of Learning Rate`_.
-    Arguments:
-        params (iterable): iterable of parameters to optimize or dicts defining
-            parameter groups
-        lr (float, optional): Adam learning rate (default: 1e-3)
-        betas (Tuple[float, float], optional): coefficients used for computing
-            running averages of gradient and its square (default: (0.9, 0.999))
-        final_lr (float, optional): final (SGD) learning rate (default: 0.1)
-        gamma (float, optional): convergence speed of the bound functions (default: 1e-3)
-        eps (float, optional): term added to the denominator to improve
-            numerical stability (default: 1e-8)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        amsbound (boolean, optional): whether to use the AMSBound variant of this algorithm
-    .. Adaptive Gradient Methods with Dynamic Bound of Learning Rate:
-        https://openreview.net/forum?id=Bkg3g2R9FX
+    """
+    Implements AdaBound algorithm.
+    It has been proposed in `Adaptive Gradient Methods with Dynamic Bound of Learning Rate`.
+
+    Parameters
+    ----------
+    params : Iterable
+        iterable of parameters to optimize or dicts defining parameter groups
+    lr : float, optional
+        Adam learning rate
+        Default: 1e-3
+    betas : Tuple[float, float]
+        coefficients used for computing running averages of gradient and its square
+        Default: (0.9, 0.999)
+    final_lr : float, optional
+        final (SGD) learning rate
+        Default: 0.1
+    gamma : float, optional
+        convergence speed of the bound functions
+        Default: 1e-3
+    eps : float, optional
+        term added to the denominator to improve numerical stability
+        Default: 1e-8
+    weight_decay : float, optional
+        weight decay (L2 penalty)
+        Default: 0
+    amsbound : boolean, optional
+        whether to use the AMSBound variant of this algorithm
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), final_lr=0.1, gamma=1e-3,
@@ -48,10 +60,13 @@ class AdaBound(Optimizer):
             group.setdefault('amsbound', False)
 
     def step(self, closure=None):
-        """Performs a single optimization step.
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the models
-                and returns the loss.
+        """
+        Performs a single optimization step.
+
+        Parameters
+        ----------
+        closure : callable, optional
+            A closure that reevaluates the models and returns the loss.
         """
         loss = None
         if closure is not None:
@@ -117,23 +132,33 @@ class AdaBound(Optimizer):
 
         return loss
 
+
 class AdaBoundW(Optimizer):
-    """Implements AdaBound algorithm with Decoupled Weight Decay (arxiv.org/abs/1711.05101)
-    It has been proposed in `Adaptive Gradient Methods with Dynamic Bound of Learning Rate`_.
-    Arguments:
-        params (iterable): iterable of parameters to optimize or dicts defining
-            parameter groups
-        lr (float, optional): Adam learning rate (default: 1e-3)
-        betas (Tuple[float, float], optional): coefficients used for computing
-            running averages of gradient and its square (default: (0.9, 0.999))
-        final_lr (float, optional): final (SGD) learning rate (default: 0.1)
-        gamma (float, optional): convergence speed of the bound functions (default: 1e-3)
-        eps (float, optional): term added to the denominator to improve
-            numerical stability (default: 1e-8)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        amsbound (boolean, optional): whether to use the AMSBound variant of this algorithm
-    .. Adaptive Gradient Methods with Dynamic Bound of Learning Rate:
-        https://openreview.net/forum?id=Bkg3g2R9FX
+    """
+    Parameters
+    ----------
+    params : Iterable
+        iterable of parameters to optimize or dicts defining parameter groups
+    lr : float, optional
+        Adam learning rate
+        Default: 1e-3
+    betas : Tuple[float, float]
+        coefficients used for computing running averages of gradient and its square
+        Default: (0.9, 0.999)
+    final_lr : float, optional
+        final (SGD) learning rate
+        Default: 0.1
+    gamma : float, optional
+        convergence speed of the bound functions
+        Default: 1e-3
+    eps : float, optional
+        term added to the denominator to improve numerical stability
+        Default: 1e-8
+    weight_decay : float, optional
+        weight decay (L2 penalty)
+        Default: 0
+    amsbound : boolean, optional
+        whether to use the AMSBound variant of this algorithm
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), final_lr=0.1, gamma=1e-3,
@@ -162,10 +187,13 @@ class AdaBoundW(Optimizer):
             group.setdefault('amsbound', False)
 
     def step(self, closure=None):
-        """Performs a single optimization step.
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the models
-                and returns the loss.
+        """
+        Performs a single optimization step.
+
+        Parameters
+        ----------
+        closure : callable, optional
+            A closure that reevaluates the models and returns the loss.
         """
         loss = None
         if closure is not None:

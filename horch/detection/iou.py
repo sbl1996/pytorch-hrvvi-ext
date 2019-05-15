@@ -7,12 +7,17 @@ def iou_1m(box, boxes, format=BBox.LTRB):
     r"""
     Calculates one-to-many ious by corners([xmin, ymin, xmax, ymax]).
 
-    Args:
-        box: (4,)
-        boxes: (*, 4)
+    Parameters
+    ----------
+    box: torch.Tensor
+        Tensor of shape (4,)
+    boxes: torch.Tensor
+        Tensor of shape (..., 4)
 
-    Returns:
-        ious: (*,)
+    Returns
+    -------
+    ious : torch.Tensor
+        Tensor of same shape as `boxes` eliminating the last dim.
     """
     box = transform_bboxes(box, format=format, to=BBox.LTRB)
     boxes = transform_bboxes(boxes, format=format, to=BBox.LTRB)
@@ -35,12 +40,17 @@ def iou_b11(boxes1, boxes2):
     r"""
     Calculates batch one-to-one ious by corners([xmin, ymin, xmax, ymax]).
 
-    Args:
-        boxes1: (*, 4)
-        boxes2: (*, 4)
+    Parameters
+    ----------
+    boxes1: torch.Tensor
+        Tensor of shape (..., 4)
+    boxes2: torch.Tensor
+        Tensor of shape (..., 4)
 
-    Returns:
-        ious: (*,)
+    Returns
+    -------
+    ious : torch.Tensor
+        Tensor of same shape as `boxes` eliminating the last dim.
     """
 
     xi1 = torch.max(boxes1[..., 0], boxes2[..., 0])
@@ -60,9 +70,18 @@ def iou_b11(boxes1, boxes2):
 
 def iou_11(box1, box2):
     r"""
-    Args:
-        box1: [left, top, right, bottom]
-        box2: [left, top, right, bottom]
+
+    Parameters
+    ----------
+    box1 : array like
+        array like of [left, top, right, bottom].
+    box2 : array like
+        array like of [left, top, right, bottom].
+
+    Returns
+    -------
+    iou : float
+        IoU between box1 and box2.
     """
     xi1 = max(box1[0], box2[0])
     yi1 = max(box1[1], box2[1])

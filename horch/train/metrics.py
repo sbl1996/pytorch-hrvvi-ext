@@ -1,6 +1,5 @@
-import time
 from toolz import curry
-from toolz.curried import get, groupby
+from toolz.curried import get
 
 import cv2
 import torch
@@ -40,12 +39,16 @@ class Average(Metric):
         return self._sum / self._num_examples
 
 
-def topk_accuracy(input, target, k):
+def topk_accuracy(input, target, k=5):
     r"""
-    Args:
-        input:  (batch, C, *)
-        target: (batch, *)
-        k:
+    Parameters
+    ----------
+    input : torch.Tensor
+        Tensor of shape (batch_size, num_classes, ...)
+    target : torch.Tensor
+        Tensor of shape (batch_size, ...)
+    k : int
+        Default: 5
     """
     num_examples = np.prod(target.size())
     topk_pred = torch.topk(input, k=k, dim=1)[1]
@@ -100,7 +103,8 @@ class TrainLoss(Average):
     def __init__(self):
         super().__init__(output_transform=self.output_transform)
 
-    def output_transform(self, output):
+    @staticmethod
+    def output_transform(output):
         loss, batch_size = get(["loss", "batch_size"], output)
         return loss, batch_size
 
@@ -130,7 +134,8 @@ class Accuracy(IgniteAccuracy):
     def __init__(self):
         super().__init__(output_transform=self.output_transform)
 
-    def output_transform(self, output):
+    @staticmethod
+    def output_transform(output):
         preds, target = get(["preds", "target"], output)
         return preds[0], target[0]
 
@@ -153,7 +158,8 @@ class LossD(Average):
     def __init__(self):
         super().__init__(self.output_transform)
 
-    def output_transform(self, output):
+    @staticmethod
+    def output_transform(output):
         lossD, batch_size = get(["lossD", "batch_size"], output)
         return lossD, batch_size
 
@@ -163,7 +169,8 @@ class LossG(Average):
     def __init__(self):
         super().__init__(self.output_transform)
 
-    def output_transform(self, output):
+    @staticmethod
+    def output_transform(output):
         lossG, batch_size = get(["lossG", "batch_size"], output)
         return lossG, batch_size
 
