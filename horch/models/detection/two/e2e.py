@@ -48,17 +48,21 @@ def dets_to_rois(image_dets, ref):
 
 
 class RCNN(nn.Module):
-    def __init__(self, rpn, roi_pool, head, inference):
+    def __init__(self, rpn, roi_match, roi_pool, head, inference):
         super().__init__()
         self.rpn = rpn
+        self.roi_match = roi_match
         self.roi_pool = roi_pool
         self.ps = 'PS' in type(roi_pool).__name__
         self.head = head
         self._inference = inference
 
-    def forward(self, x):
+    def forward(self, x, image_gts=None):
         ps, rpn_loc_p, rpn_cls_p, image_dets = self.rpn.region_proposal(x)
         rois = dets_to_rois(image_dets, x)
+
+        if self.training:
+            loc_t, cls_t, rois = self.roi_match(rois, image_gts)
 
         ps = [self.roi_pool(p, rois) for p in ps]
         if self.ps:
@@ -66,7 +70,7 @@ class RCNN(nn.Module):
         loc_p, cls_p = self.head(*ps)
 
         if self.training:
-            return rpn_loc_p, rpn_cls_p, rois[..., 1:], loc_p, cls_p
+            return loc_p, cls_p, loc_t, cls_t, rpn_loc_p, rpn_cls_p
         else:
             return rois[..., 1:], loc_p, cls_p
 

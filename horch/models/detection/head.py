@@ -155,7 +155,7 @@ class SSDHead(nn.Module):
         Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
     num_classes : int
         Number of classes.
-    in_channels : tuple of ints
+    in_channels : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
     norm_layer : str
         `bn` for Batch Normalization and `gn` for Group Normalization.

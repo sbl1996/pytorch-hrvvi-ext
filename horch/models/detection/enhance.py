@@ -56,8 +56,7 @@ class BottomUp(nn.Module):
         super().__init__()
         self.down = Conv2d(
             f_channels, f_channels, kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='default', depthwise_separable=lite,
-        )
+            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.conv = Conv2d(
             f_channels, f_channels, kernel_size=3,
             norm_layer=norm_layer, activation='default', depthwise_separable=lite)

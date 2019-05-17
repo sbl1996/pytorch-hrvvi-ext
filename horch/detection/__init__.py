@@ -108,9 +108,18 @@ def generate_anchors_with_priors(input_size, stride, priors):
 @curry
 def misc_target_collate(batch):
     input, target = zip(*batch)
+    target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in target]
+    return default_collate(input), Args(target)
+
+
+@curry
+def misc_collate(batch):
+    input, target = zip(*batch)
+    if any([torch.is_tensor(t) for t in input[0]]):
+        input = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*input)]
     if any([torch.is_tensor(t) for t in target[0]]):
         target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
-    return default_collate(input), Args(target)
+    return Args(input), Args(target)
 
 
 def draw_bboxes(img, anns, categories=None):

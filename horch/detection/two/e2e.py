@@ -1,5 +1,7 @@
 from toolz import curry
 
+from torch.utils.data.dataloader import default_collate
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,9 +12,9 @@ from horch.detection.iou import iou_mn
 from horch.detection.nms import nms_cpu, soft_nms_cpu
 
 
-def match_rois(anns, rois, rois_xywh, pos_thresh=0.5):
-    num_rois = len(rois)
-    loc_t = rois.new_zeros(num_rois, 4)
+def match_rois(anns, rois_ltrb, rois_xywh, pos_thresh=0.5, n_samples=64, pos_neg_ratio=1/3):
+    num_rois = len(rois_ltrb)
+    loc_t = rois_ltrb.new_zeros(num_rois, 4)
     cls_t = loc_t.new_zeros(num_rois, dtype=torch.long)
 
     if len(anns) == 0:
@@ -23,7 +25,7 @@ def match_rois(anns, rois, rois_xywh, pos_thresh=0.5):
     labels = loc_t.new_tensor([ann['category_id'] for ann in anns], dtype=torch.long)
 
     bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
-    ious = iou_mn(bboxes_ltrb, rois)
+    ious = iou_mn(bboxes_ltrb, rois_ltrb)
 
     max_ious, indices = ious.max(dim=1)
     loc_t[indices] = coords_to_target(bboxes, rois_xywh[indices])
@@ -34,27 +36,49 @@ def match_rois(anns, rois, rois_xywh, pos_thresh=0.5):
         loc_t[ipos] = coords_to_target(bbox, rois_xywh[ipos])
         cls_t[ipos] = label
 
-    target = [loc_t, cls_t]
-    return target
+    pos = cls_t != 0
+    n_pos = int(n_samples * pos_neg_ratio / (pos_neg_ratio + 1))
+    n_neg = n_samples - n_pos
+    pos_indices = sample(torch.nonzero(pos).squeeze(1), n_pos)
+    neg_indices = sample(torch.nonzero(~pos).squeeze(1), n_neg)
+    loc_t = loc_t[pos_indices]
+    indices = torch.cat([pos_indices, neg_indices], dim=0)
+    cls_t = cls_t[indices]
+    return loc_t, cls_t, indices
+
+
+def sample(t, n):
+    if len(t) >= n:
+        indices = torch.randperm(len(t), device=t.device)[:n]
+    else:
+        indices = torch.randint(len(t), size=(n,), device=t.device)
+    return t[indices]
 
 
 class MatchRoIs:
-    def __init__(self, pos_thresh=0.5):
+    def __init__(self, pos_thresh=0.5, n_samples=None, pos_neg_ratio=1/3):
         super().__init__()
         self.pos_thresh = pos_thresh
+        self.n_samples = n_samples
+        self.pos_neg_ratio = pos_neg_ratio
 
     def __call__(self, rois, image_gts):
         batch_size, num_rois = rois.size()[:2]
-        rois_xywh = BBox.convert(rois, format=BBox.LTRB, to=BBox.XYWH)
+        rois_ltrb = rois[..., 1:]
+        rois_xywh = BBox.convert(rois_ltrb, format=BBox.LTRB, to=BBox.XYWH)
         loc_targets = []
         cls_targets = []
+        sampled_rois = []
         for i in range(batch_size):
-            loc_t, cls_t = match_rois(image_gts[i], rois[i], rois_xywh[i], self.pos_thresh)
+            loc_t, cls_t, indices = match_rois(image_gts[i], rois_ltrb[i], rois_xywh[i], self.pos_thresh, self.n_samples, self.pos_neg_ratio)
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
+            sampled_rois.append(rois[i][indices])
         loc_t = torch.cat(loc_targets, dim=0)
         cls_t = torch.cat(cls_targets, dim=0)
-        return loc_t, cls_t
+        rois = torch.cat(sampled_rois, dim=0)
+
+        return loc_t, cls_t, rois
 
 
 def flatten(xs):
@@ -92,7 +116,6 @@ class MatchAnchors:
         target = match_anchors_flat(
             anns, self.anchors_xywh, self.anchors_ltrb,
             self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
-        target.append(anns)
         return img, target
 
 
@@ -100,9 +123,8 @@ class RCNNLoss(nn.Module):
 
     def __init__(self, p=0.01):
         super().__init__()
-        self.roi_match = MatchRoIs(pos_thresh=0.5)
-        self.rpn_loss = MultiBoxLoss(p=p, criterion='focal')
-        self.rcnn_loss = MultiBoxLoss(p=p)
+        self.rpn_loss = MultiBoxLoss(p=p, criterion='focal', prefix='RPN')
+        self.rcnn_loss = MultiBoxLoss(p=p, prefix='RCNN')
 
     @property
     def p(self):
@@ -113,8 +135,7 @@ class RCNNLoss(nn.Module):
         self.rpn_loss.p = new_p
         self.rcnn_loss.p = new_p
 
-    def forward(self, rpn_loc_p, rpn_cls_p, rois, loc_p, cls_p, rpn_loc_t, rpn_cls_t, ignore, image_gts):
-        loc_t, cls_t = self.roi_match(rois, image_gts)
+    def forward(self, loc_p, cls_p, loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore):
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
         rcnn_loss = self.rcnn_loss(loc_p, cls_p, loc_t, cls_t)
         loss = rpn_loss + rcnn_loss
@@ -132,11 +153,11 @@ def roi_based_inference(
     scores, labels = torch.max(scores, dim=1)
 
     if conf_threshold > 0:
-        mask = scores > conf_threshold
-        scores = scores[mask]
-        labels = labels[mask]
-        bboxes = bboxes[mask]
-        rois = rois[mask]
+        pos = scores > conf_threshold
+        scores = scores[pos]
+        labels = labels[pos]
+        bboxes = bboxes[pos]
+        rois = rois[pos]
 
     bboxes = target_to_coords(bboxes, rois)
 
@@ -191,3 +212,9 @@ class RoIBasedInference:
         return image_dets
 
 
+@curry
+def input_only_collate(batch):
+    input, target = zip(*batch)
+    if any([torch.is_tensor(t) for t in target[0]]):
+        target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
+    return [default_collate(input), target], []

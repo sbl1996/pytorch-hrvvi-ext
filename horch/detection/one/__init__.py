@@ -123,7 +123,8 @@ class MultiBoxLoss(nn.Module):
             return loc_p.new_tensor(0, requires_grad=True)
         if loc_p.size()[:-1] == pos.size():
             loc_p = loc_p[pos]
-        loc_t = loc_t[pos]
+        if loc_t.size()[:-1] == pos.size():
+            loc_t = loc_t[pos]
         loc_loss = F.smooth_l1_loss(
             loc_p, loc_t, reduction='sum') / num_pos
 
@@ -147,7 +148,15 @@ class MultiBoxLoss(nn.Module):
             else:
                 cls_p = cls_p.view(-1, cls_p.size(-1))
                 cls_t = cls_t.view(-1)
-                cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
+                if len(cls_p) != len(cls_t):
+                    cls_loss_pos = F.cross_entropy(
+                        cls_p[pos], cls_t[pos], reduction='sum')
+                    cls_p_neg = cls_p[neg]
+                    cls_loss_neg = F.cross_entropy(
+                        cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+                else:
+                    cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
         loss = cls_loss + loc_loss
         if random.random() < self.p:
             if self.prefix:
@@ -157,6 +166,7 @@ class MultiBoxLoss(nn.Module):
                 print("loc: %.4f | cls: %.4f" %
                       (loc_loss.item(), cls_loss.item()))
         return loss
+
 
 
 @curry

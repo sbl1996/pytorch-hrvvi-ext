@@ -520,6 +520,42 @@ class ResNet(nn.Module):
         return outs
 
 
+class DLA(nn.Module):
+
+    def __init__(self, name, feature_levels=(3, 4, 5), pretrained=True):
+        super().__init__()
+        self.feature_levels = feature_levels
+        net = ptcv_get_model(name, pretrained=pretrained)
+        del net.output
+        net = net.features
+        self.layer1 = net.init_block
+        self.layer2 = net.stage1
+        self.layer3 = net.stage2
+        self.layer4 = net.stage3
+        self.layer5 = net.stage4
+        self.out_channels = [
+            calc_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        outs = []
+        x = self.layer1(x)
+        x = self.layer2(x)
+        if 2 in self.feature_levels:
+            outs.append(x)
+        x = self.layer3(x)
+        if 3 in self.feature_levels:
+            outs.append(x)
+        x = self.layer4(x)
+        if 4 in self.feature_levels:
+            outs.append(x)
+        x = self.layer5(x)
+        if 5 in self.feature_levels:
+            outs.append(x)
+        return outs
+
+
 class Backbone(nn.Module):
     def __init__(self, name, feature_levels=(3, 4, 5), pretrained=True):
         super().__init__()
@@ -569,4 +605,4 @@ class Backbone(nn.Module):
 def search(name, n=10):
     from pytorchcv.models.model_store import _model_sha1
     models = _model_sha1.keys()
-    return get_close_matches(models, name, n=n)
+    return get_close_matches(name, models, n=n)
