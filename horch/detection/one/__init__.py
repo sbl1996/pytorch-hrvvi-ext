@@ -26,14 +26,6 @@ def target_to_coords(loc_t, anchors):
     loc_t[:, 2:].exp_().mul_(anchors[:, 2:])
     return loc_t
 
-
-def flatten(xs):
-    if torch.is_tensor(xs):
-        return xs.view(-1, xs.size(-1))
-    xs = [x.view(-1, x.size(-1)) for x in xs]
-    return torch.cat(xs, dim=0)
-
-
 @curry
 def match_anchors_flat(anns, anchors_xywh, anchors_ltrb, pos_thresh=0.5, neg_thresh=None,
                        get_label=get('category_id'), debug=False):
@@ -73,6 +65,13 @@ def match_anchors_flat(anns, anchors_xywh, anchors_ltrb, pos_thresh=0.5, neg_thr
     return target
 
 
+def flatten(xs):
+    if torch.is_tensor(xs):
+        return xs.view(-1, xs.size(-1))
+    xs = [x.view(-1, x.size(-1)) for x in xs]
+    return torch.cat(xs, dim=0)
+
+
 class MatchAnchors:
     r"""
 
@@ -107,7 +106,7 @@ class MatchAnchors:
 
 class MultiBoxLoss(nn.Module):
 
-    def __init__(self, pos_neg_ratio=None, p=0.1, criterion='softmax', prefix=""):
+    def __init__(self, pos_neg_ratio=None, p=0.01, criterion='softmax', prefix=""):
         super().__init__()
         self.pos_neg_ratio = pos_neg_ratio
         self.p = p
@@ -230,7 +229,7 @@ class AnchorBasedInference:
         self.nms = nms
         self.soft_nms_threshold = soft_nms_threshold
 
-    def __call__(self, loc_p, cls_p, *args):
+    def __call__(self, loc_p, cls_p):
         image_dets = []
         batch_size = loc_p.size(0)
         for i in range(batch_size):

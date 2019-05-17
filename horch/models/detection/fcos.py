@@ -87,8 +87,9 @@ class FCOSTransform:
 
 
 class FCOSLoss(nn.Module):
-    def __init__(self, p=0.1):
+    def __init__(self, use_ctn=True, p=0.1):
         super().__init__()
+        self.use_ctn = use_ctn
         self.p = p
 
     def forward(self, loc_p, cls_p, ctn_p, loc_t, cls_t, ctn_t):
@@ -100,22 +101,28 @@ class FCOSLoss(nn.Module):
         loc_loss = iou_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
         cls_t = one_hot(cls_t, C=cls_p.size(-1))
         cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
-        ctn_loss = F.binary_cross_entropy_with_logits(ctn_p[pos], ctn_t[pos], reduction='sum') / num_pos
-        loss = loc_loss + cls_loss + ctn_loss
-        if random.random() < self.p:
-            print("loc: %.4f | cls: %.4f | ctn: %.4f" %
-                  (loc_loss.item(), cls_loss.item(), ctn_loss.item()))
+        if self.use_ctn:
+            ctn_loss = F.binary_cross_entropy_with_logits(ctn_p[pos], ctn_t[pos], reduction='sum') / num_pos
+            loss = loc_loss + cls_loss + ctn_loss
+            if random.random() < self.p:
+                print("loc: %.4f | cls: %.4f | ctn: %.4f" %
+                      (loc_loss.item(), cls_loss.item(), ctn_loss.item()))
+        else:
+            loss = loc_loss + cls_loss
+            if random.random() < self.p:
+                print("loc: %.4f | cls: %.4f" %
+                      (loc_loss.item(), cls_loss.item()))
         return loss
 
 
 def center_based_inference(
         size, loc_p, cls_p, ctn_p, centers, conf_threshold=0.01,
-        iou_threshold=0.5, topk=100, nms='soft_nms', soft_nms_threshold=None, use_centerness=True):
+        iou_threshold=0.5, topk=100, nms='soft_nms', soft_nms_threshold=None, use_ctn=True):
     dets = []
     bboxes = loc_p.exp_()
     scores, labels = cls_p[:, 1:].max(dim=-1)
     scores = scores.sigmoid_()
-    if use_centerness:
+    if use_ctn:
         centerness = ctn_p.sigmoid_()
         scores = scores.mul_(centerness)
 
@@ -176,7 +183,7 @@ def flatten(xs):
 class FCOSInference:
 
     def __init__(self, size, mlvl_centers, conf_threshold=0.05, iou_threshold=0.5, topk=100, nms='nms',
-                 soft_nms_threshold=None, use_centerness=True):
+                 soft_nms_threshold=None, use_ctn=True):
         self.size = size
         self.centers = flatten(mlvl_centers)
         self.conf_threshold = conf_threshold
@@ -184,7 +191,7 @@ class FCOSInference:
         self.topk = topk
         self.nms = nms
         self.soft_nms_threshold = soft_nms_threshold
-        self.use_centerness = use_centerness
+        self.use_ctn = use_ctn
 
     def __call__(self, loc_p, cls_p, ctn_p):
         image_dets = []
@@ -193,7 +200,7 @@ class FCOSInference:
             dets = center_based_inference(
                 self.size, loc_p[i], cls_p[i], ctn_p[i], self.centers,
                 self.conf_threshold, self.iou_threshold,
-                self.topk, self.nms, self.soft_nms_threshold, self.use_centerness
+                self.topk, self.nms, self.soft_nms_threshold, self.use_ctn
             )
             image_dets.append(dets)
         return image_dets

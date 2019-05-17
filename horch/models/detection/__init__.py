@@ -5,7 +5,6 @@ from horch.models.modules import Sequential
 from horch.models.detection.ssd import SSD
 from horch.models.detection.retinanet import RetinaNet
 
-
 from horch.common import _tuple
 
 
@@ -25,6 +24,7 @@ class OneStageDetector(Sequential):
     fpn : nn.Module
         Optional feature enhance module from `horch.models.detection.enhance`.
     """
+
     def __init__(self, backbone, fpn, head, inference=None):
         super().__init__(inference=inference)
         self.backbone = backbone

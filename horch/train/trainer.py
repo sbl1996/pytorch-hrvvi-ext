@@ -85,6 +85,16 @@ def create_supervised_trainer(
     return engine
 
 
+def _terminate_on_iterations(engine, iterations):
+    if engine.state.iteration == iterations:
+        engine.terminate()
+
+
+def _evaluate(engine, evaluator, val_loader, per_epochs=1):
+    if engine.state.epoch % per_epochs == 0:
+        evaluator.run(val_loader)
+
+
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
@@ -119,12 +129,13 @@ class Trainer:
               (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine):
-        self.lr_scheduler.step(self.epochs())
+        if self.lr_scheduler:
+            self.lr_scheduler.step(self.epochs())
 
     def _increment_epoch(self, engine):
         self._epochs += 1
 
-    def _log_results(self, engine, evaluator=None):
+    def _log_results(self, engine):
         elapsed = int(self._timer.value())
         msg = "elapsed: %ds\t" % elapsed
         for name, val in engine.state.metrics.items():
@@ -155,54 +166,33 @@ class Trainer:
             self.metric_history["val_" + name].append(val)
         print(msg)
 
-    def _evaluate(self, engine, evaluator, val_loader, per_epochs=1):
-        if engine.state.epoch % per_epochs == 0:
-            evaluator.run(val_loader)
-
-    def _terminate_on_iterations(self, engine, iterations):
-        if engine.state.iteration == iterations:
-            engine.terminate()
-
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=None, fp16=False):
-        if val_loader is not None:
-            validate = True
-            if isinstance(val_loader, tuple):
-                val_loader, eval_per_epochs = val_loader
-            else:
-                eval_per_epochs = 1
-        else:
-            validate = False
-        callbacks = callbacks or []
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), fp16=False):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
             self.metrics, self._device, fp16=fp16)
-        if self.lr_scheduler:
-            if isinstance(self.lr_scheduler, StepOnIteration):
-                engine.add_event_handler(
-                    Events.ITERATION_STARTED, self._lr_scheduler_step)
+
+        # lr_scheduler
+        engine.add_event_handler(
+            Events.EPOCH_STARTED, self._lr_scheduler_step)
+
+        # timer and epoch logger
+        self._timer.attach(engine, start=Events.EPOCH_STARTED)
+        engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
+
+        if val_loader is not None:
+            if isinstance(val_loader, tuple):
+                val_loader, eval_per_epochs = val_loader
             else:
-                engine.add_event_handler(
-                    Events.EPOCH_STARTED, self._lr_scheduler_step)
-
-        self._timer.attach(engine,
-                           start=Events.EPOCH_STARTED)
-        engine.add_event_handler(Events.EPOCH_STARTED,
-                                 self._log_epochs, epochs)
-
-        if validate:
+                eval_per_epochs = 1
             evaluator = create_supervised_evaluator(
                 self.model, self.evaluate_metrics, self._device)
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, self._evaluate, evaluator, val_loader, eval_per_epochs)
-        else:
-            evaluator = None
+                Events.EPOCH_COMPLETED, _evaluate, evaluator, val_loader, eval_per_epochs)
 
-        engine.add_event_handler(Events.EPOCH_COMPLETED,
-                                 self._increment_epoch)
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, self._log_results, evaluator)
-        if validate:
+        engine.add_event_handler(Events.EPOCH_COMPLETED, self._increment_epoch)
+        engine.add_event_handler(Events.EPOCH_COMPLETED, self._log_results)
+        if val_loader is not None:
             engine.add_event_handler(
                 Events.EPOCH_COMPLETED, self._log_val_results, evaluator, eval_per_epochs)
 
@@ -218,7 +208,7 @@ class Trainer:
 
         if iterations:
             engine.add_event_handler(
-                Events.ITERATION_COMPLETED, self._terminate_on_iterations, iterations)
+                Events.ITERATION_COMPLETED, _terminate_on_iterations, iterations)
             epochs = 1000
 
         # Run
@@ -227,14 +217,14 @@ class Trainer:
         # Return history
         hist = {metric: hist[-epochs:]
                 for metric, hist in self.metric_history.items()}
-        if not validate:
+        if val_loader is None:
             hist = keyfilter(lambda k: not k.startswith("val_"), hist)
         return hist
 
     def state_dict(self):
         s = {
             "epochs": self.epochs(),
-            "models": self.model.state_dict(),
+            "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": None,
             "metric_history": self.metric_history,
@@ -245,7 +235,7 @@ class Trainer:
 
     def load_state_dict(self, state_dict):
         epochs, model, optimizer, lr_scheduler, metric_history = get(
-            ["epochs", "models", "optimizer", "lr_scheduler", "metric_history"], state_dict)
+            ["epochs", "model", "optimizer", "lr_scheduler", "metric_history"], state_dict)
         self._epochs = epochs
         self.model.load_state_dict(model)
         self.optimizer.load_state_dict(optimizer)
@@ -268,11 +258,4 @@ class Trainer:
 def _callback_wrapper(f):
     def func(engine, *args, **kwargs):
         return f(*args, **kwargs)
-
     return func
-
-
-class StepOnIteration:
-
-    def __init__(self, lr_scheduler):
-        self.lr_scheduler = lr_scheduler

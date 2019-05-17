@@ -101,19 +101,23 @@ class RCNNLoss(nn.Module):
     def __init__(self, p=0.01):
         super().__init__()
         self.roi_match = MatchRoIs(pos_thresh=0.5)
-        self.criterion = MultiBoxLoss(p=p)
+        self.rpn_loss = MultiBoxLoss(p=p, criterion='focal')
+        self.rcnn_loss = MultiBoxLoss(p=p)
 
     @property
     def p(self):
-        return self.criterion.p
+        return self.rcnn_loss.p
 
     @p.setter
     def p(self, new_p):
-        self.criterion.p = new_p
+        self.rpn_loss.p = new_p
+        self.rcnn_loss.p = new_p
 
-    def forward(self, loc_p, cls_p, rois, image_gts):
+    def forward(self, rpn_loc_p, rpn_cls_p, rois, loc_p, cls_p, rpn_loc_t, rpn_cls_t, ignore, image_gts):
         loc_t, cls_t = self.roi_match(rois, image_gts)
-        loss = self.criterion(loc_p, cls_p, loc_t, cls_t)
+        rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
+        rcnn_loss = self.rcnn_loss(loc_p, cls_p, loc_t, cls_t)
+        loss = rpn_loss + rcnn_loss
         return loss
 
 
@@ -173,7 +177,7 @@ class RoIBasedInference:
         self.topk = topk
         self.nms = nms
 
-    def __call__(self, loc_p, cls_p, rois):
+    def __call__(self, rois, loc_p, cls_p):
         image_dets = []
         batch_size, num_rois = rois.size()[:2]
         rois = BBox.convert(rois, BBox.LTRB, BBox.XYWH, inplace=True)

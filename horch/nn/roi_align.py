@@ -51,6 +51,8 @@ class RoIAlign(nn.Module):
         spatial_scale = self.spatial_scale
         if self.adaptive:
             spatial_scale = tuple(input.size()[2:4])
+        assert rois.size(-1) == 5, "Batch indices must be provided."
+        rois = rois.view(-1, 5)
         return roi_align(input, rois, self.output_size, spatial_scale, self.sampling_ratio)
 
     def __repr__(self):

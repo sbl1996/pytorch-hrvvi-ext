@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from toolz import curry
 from toolz.curried import get
 

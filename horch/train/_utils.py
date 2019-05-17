@@ -9,6 +9,9 @@ def to_device(args, device):
     if torch.is_tensor(args):
         return args.to(device=device)
     elif isinstance(args, Args):
+        for arg in args[0]:
+            if torch.is_tensor(arg):
+                return args[0]
         return args
     elif isinstance(args, Sequence):
         return args.__class__(to_device(arg, device)

@@ -24,10 +24,12 @@ class ThunderRCNNHead(nn.Module):
     Light head only for R-CNN, not for one-stage detector.
     """
 
-    def __init__(self, num_classes, in_channels=245, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_classes, f_channels=256, norm_layer='bn'):
         super().__init__()
-        self.fc = Conv2d(in_channels, f_channels, kernel_size=1,
-                         norm_layer=norm_layer, activation='default')
+        self.fc1 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer=norm_layer, activation='default')
+        self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer=norm_layer, activation='default')
         self.loc_fc = nn.Linear(f_channels, 4)
         self.cls_fc = nn.Linear(f_channels, num_classes)
 
@@ -49,11 +51,9 @@ class SharedDWConvHead(nn.Module):
     Light head for RPN, not for R-CNN.
     """
 
-    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256, return_features=False,
-                 norm_layer='bn'):
+    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256, norm_layer='bn'):
         super().__init__()
         self.num_classes = num_classes
-        self.return_features = return_features
         self.conv = DWConv2d(
             in_channels, f_channels, kernel_size=5,
             mid_norm_layer=norm_layer, norm_layer=norm_layer,
@@ -80,8 +80,6 @@ class SharedDWConvHead(nn.Module):
 
             cls_p = to_pred(self.cls_conv(p), self.num_classes)
             cls_preds.append(cls_p)
-            if self.return_features:
-                return loc_p, cls_p, p
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
@@ -203,4 +201,77 @@ class FCOSHead(RetinaHead):
             cls_preds.append(cls_p)
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
+        return loc_p, cls_p
+
+
+class RPNHead(nn.Module):
+    r"""
+    RPN Head of Faster R-CNN.
+
+    Parameters
+    ----------
+    num_anchors : int or tuple of ints
+        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
+    in_channels : int
+        Number of input channels.
+    f_channels : int
+        Number of feature channels.
+    norm_layer : str
+        `bn` for Batch Normalization and `gn` for Group Normalization.
+        Default: "bn"
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    """
+    def __init__(self, num_anchors, in_channels, f_channels=256, norm_layer='bn', lite=False):
+        super().__init__()
+        kernel_size = 5 if lite else 3
+        self.conv = Conv2d(
+            in_channels, f_channels, kernel_size=kernel_size,
+            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+        self.loc_conv = Conv2d(f_channels, num_anchors * 4, kernel_size=1)
+        self.cls_conv = Conv2d(f_channels, num_anchors * 2, kernel_size=1)
+
+        self.cls_conv.apply(self._init_final_cls_layer)
+
+    def _init_final_cls_layer(self, m, p=0.01):
+        name = type(m).__name__
+        if "Linear" in name or "Conv" in name:
+            nn.init.constant_(m.bias, -log((1 - p) / p))
+
+    def forward(self, *ps):
+        loc_preds = []
+        cls_preds = []
+        for p in ps:
+            p = self.conv(p)
+            loc_p = to_pred(self.loc_conv(p), 4)
+            loc_preds.append(loc_p)
+
+            cls_p = to_pred(self.cls_conv(p), 2)
+            cls_preds.append(cls_p)
+        loc_p = _concat(loc_preds, dim=1)
+        cls_p = _concat(cls_preds, dim=1)
+        return loc_p, cls_p
+
+
+class RCNNHead(nn.Module):
+    r"""
+    Light head only for R-CNN, not for one-stage detector.
+    """
+
+    def __init__(self, num_classes, f_channels=256, norm_layer='bn'):
+        super().__init__()
+        self.fc1 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer=norm_layer, activation='default')
+        self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer=norm_layer, activation='default')
+        self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
+        self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
+
+    def forward(self, *ps):
+        ps = [self.fc1(F.adaptive_avg_pool2d(p, 1)) for p in ps]
+        p = torch.stack(ps).max(dim=0)[0]
+        p = self.fc2(p)
+        loc_p = self.loc_fc(p).squeeze()
+        cls_p = self.cls_fc(p).squeeze()
         return loc_p, cls_p
