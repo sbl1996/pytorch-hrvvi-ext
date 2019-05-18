@@ -246,9 +246,11 @@ class Trainer:
     def epochs(self):
         return self._epochs
 
-    def evaluate(self, test_loader):
+    def evaluate(self, test_loader, evaluate_metrics=None):
+        if evaluate_metrics is None:
+            evaluate_metrics = self.evaluate_metrics
         evaluator = create_supervised_evaluator(
-            self.model, self.evaluate_metrics, self._device)
+            self.model, evaluate_metrics, self._device)
         return evaluator.run(test_loader).metrics
 
     def set_lr(self, lr):
