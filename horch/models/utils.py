@@ -7,13 +7,13 @@ from horch.datasets.utils import download_google_drive
 from horch.ext.summary import summary
 
 
-def _concat(preds, dim=1):
-    if torch.is_tensor(preds):
-        return preds
-    elif len(preds) == 1:
-        return preds[0]
+def _concat(xs, dim=1):
+    if torch.is_tensor(xs):
+        return xs
+    elif len(xs) == 1:
+        return xs[0]
     else:
-        return torch.cat(preds, dim=dim)
+        return torch.cat(xs, dim=dim)
 
 
 def get_last_conv(m):

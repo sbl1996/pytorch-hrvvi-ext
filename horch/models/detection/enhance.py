@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import upsample_add, Conv2d, Sequential
+from horch.models.modules import upsample_add, Conv2d, Sequential, get_norm_layer
 
 
 class TopDown(nn.Module):
@@ -21,6 +21,64 @@ class TopDown(nn.Module):
         return p
 
 
+class DeconvTopDown(nn.Module):
+    def __init__(self, in_channels1, in_channels2, f_channels, norm_layer='gn', lite=False):
+        super().__init__()
+        self.lat = Conv2d(
+            in_channels1, f_channels, kernel_size=1,
+            norm_layer=norm_layer)
+        if list:
+            self.deconv = nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels2, in_channels2, kernel_size=4,
+                    stride=2, padding=1, groups=in_channels2, bias=False),
+                get_norm_layer(norm_layer, in_channels2),
+                Conv2d(in_channels2, f_channels, kernel_size=1,
+                       norm_layer=norm_layer),
+            )
+        else:
+            self.deconv = nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels2, f_channels, kernel_size=4,
+                    stride=2, padding=1, bias=False),
+                get_norm_layer(norm_layer, f_channels),
+            )
+        self.conv = Conv2d(
+            f_channels, f_channels, kernel_size=3,
+            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+
+    def forward(self, c, p):
+        p = self.lat(c) + self.deconv(p)
+        p = self.conv(p)
+        return p
+
+#
+# class DeconvFPN(nn.Module):
+#     r"""
+#     Feature Pyramid Network which enhance features of different levels.
+#
+#     Parameters
+#     ----------
+#     in_channels : sequence of ints
+#         Number of input channels of every level, e.g., ``(256,512,1024)``
+#     out_channels : int
+#         Number of output channels.
+#     norm_layer : str
+#         `bn` for Batch Normalization and `gn` for Group Normalization.
+#         Default: `bn`
+#     """
+#     def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False):
+#         super().__init__()
+#         self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer=norm_layer)
+#
+#     def forward(self, *cs):
+#         ps = (self.lat(cs[-1]),)
+#         for c, topdown in zip(reversed(cs[:-1]), reversed(self.topdowns)):
+#             p = topdown(c, ps[0])
+#             ps = (p,) + ps
+#         return ps
+
+
 class FPN(nn.Module):
     r"""
     Feature Pyramid Network which enhance features of different levels.
@@ -34,14 +92,26 @@ class FPN(nn.Module):
     norm_layer : str
         `bn` for Batch Normalization and `gn` for Group Normalization.
         Default: `bn`
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    upsample : str
+        Use bilinear upsampling when `interpolate` and ConvTransposed when `deconv`
+        Default: `interpolate`
     """
-    def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False):
+    def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False, upsample='interpolate'):
         super().__init__()
         self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer=norm_layer)
-        self.topdowns = nn.ModuleList([
-            TopDown(c, out_channels, norm_layer=norm_layer, lite=lite)
-            for c in in_channels[:-1]
-        ])
+        if upsample == 'deconv':
+            self.topdowns = nn.ModuleList([
+                DeconvTopDown(c, out_channels, out_channels, norm_layer=norm_layer, lite=lite)
+                for c in in_channels[:-1]
+            ])
+        else:
+            self.topdowns = nn.ModuleList([
+                TopDown(c, out_channels, norm_layer=norm_layer, lite=lite)
+                for c in in_channels[:-1]
+            ])
 
     def forward(self, *cs):
         ps = (self.lat(cs[-1]),)
@@ -121,7 +191,7 @@ class ContextEnhance(nn.Module):
         return p
 
 
-def stacked_fpn(num_stacked, in_channels, f_channels=256, norm_layer='bn', lite=False):
+def stacked_fpn(num_stacked, in_channels, f_channels=256, norm_layer='bn', lite=False, upsample='interpolate'):
     r"""
     Stacked FPN with alternant top down block and bottom up block.
 
@@ -140,13 +210,58 @@ def stacked_fpn(num_stacked, in_channels, f_channels=256, norm_layer='bn', lite=
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
+    upsample : str
+        Use bilinear upsampling when `interpolate` and ConvTransposed when `deconv`
+        Default: `interpolate`
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
     num_levels = len(in_channels)
     layers = [FPN(in_channels, f_channels, norm_layer=norm_layer, lite=lite)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
-            layers.append(FPN([f_channels] * num_levels, f_channels, norm_layer=norm_layer, lite=lite))
+            layers.append(FPN([f_channels] * num_levels, f_channels, norm_layer=norm_layer, lite=lite, upsample=upsample))
         else:
             layers.append(FPN2([f_channels] * num_levels, f_channels, norm_layer=norm_layer, lite=lite))
     return Sequential(*layers)
+
+
+class IDA(nn.Module):
+    def __init__(self, in_channels, f_channels, lite=False):
+        super().__init__()
+        self.num_levels = len(in_channels)
+        self.topdowns = nn.ModuleList([
+            DeconvTopDown(in_channels[i], in_channels[i+1], f_channels, lite=lite)
+            for i in range(self.num_levels - 1)
+        ])
+        if self.num_levels > 2:
+            self.deep = IDA([f_channels] * (self.num_levels - 1), f_channels)
+
+    def forward(self, *xs):
+        xs = [
+            l(xs[i], xs[i+1]) for i, l in enumerate(self.topdowns)
+        ]
+        if self.num_levels > 2:
+            return self.deep(*xs)
+        else:
+            return xs[0]
+
+
+class IDA2(nn.Module):
+    def __init__(self, in_channels, lite=False):
+        super().__init__()
+        self.num_levels = len(in_channels)
+        self.topdowns = nn.ModuleList([
+            DeconvTopDown(in_channels[i], in_channels[i+1], in_channels[i+1], lite=lite)
+            for i in range(self.num_levels - 1)
+        ])
+        if self.num_levels > 2:
+            self.deep = IDA2(in_channels[1:], lite=lite)
+
+    def forward(self, *xs):
+        xs = [
+            l(xs[i], xs[i+1]) for i, l in enumerate(self.topdowns)
+        ]
+        if self.num_levels > 2:
+            return self.deep(*xs)
+        else:
+            return xs[0]

@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from horch.models.utils import _concat
 from horch.detection.one import MultiBoxLoss, coords_to_target, target_to_coords, match_anchors_flat, AnchorBasedInference
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
@@ -85,7 +86,7 @@ def flatten(xs):
     if torch.is_tensor(xs):
         return xs.view(-1, xs.size(-1))
     xs = [x.view(-1, x.size(-1)) for x in xs]
-    return torch.cat(xs, dim=0)
+    return _concat(xs, dim=0)
 
 
 class MatchAnchors:
