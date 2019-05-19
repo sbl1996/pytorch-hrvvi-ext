@@ -73,3 +73,22 @@ def _tuple(x, n=-1):
         else:
             assert len(x) == n, "The length of x is %d, not equal to the expected length %d" % (len(x), n)
         return tuple(x)
+
+
+def select0(t, indices):
+    arange = torch.arange(t.size(1), device=t.device)
+    return t[indices, arange]
+
+
+def select1(t, indices):
+    arange = torch.arange(t.size(0), device=t.device)
+    return t[arange, indices]
+
+
+def select(t, dim, indices):
+    if dim == 0:
+        return select0(t, indices)
+    elif dim == 1:
+        return select1(t, indices)
+    else:
+        raise ValueError("dim could be only 0 or 1, not %d" % dim)

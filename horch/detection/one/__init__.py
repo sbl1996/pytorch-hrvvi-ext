@@ -22,15 +22,15 @@ def coords_to_target(gt_box, anchors):
 
 
 def target_to_coords(loc_t, anchors):
-    loc_t[:, :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[:, 2:].exp_().mul_(anchors[:, 2:])
+    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
+    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
     return loc_t
 
 @curry
-def match_anchors_flat(anns, anchors_xywh, anchors_ltrb, pos_thresh=0.5, neg_thresh=None,
-                       get_label=get('category_id'), debug=False):
-    num_anchors = len(anchors_xywh)
-    loc_t = anchors_xywh.new_zeros(num_anchors, 4)
+def match_anchors_flat(anns, a_xywh, a_ltrb, pos_thresh=0.5, neg_thresh=None,
+                       get_label=lambda x: x['category_id'], debug=False):
+    num_anchors = len(a_xywh)
+    loc_t = a_xywh.new_zeros(num_anchors, 4)
     cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
 
     if len(anns) == 0:
@@ -44,17 +44,17 @@ def match_anchors_flat(anns, anchors_xywh, anchors_ltrb, pos_thresh=0.5, neg_thr
     labels = loc_t.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
 
     bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
-    ious = iou_mn(bboxes_ltrb, anchors_ltrb)
+    ious = iou_mn(bboxes_ltrb, a_ltrb)
 
     max_ious, indices = ious.max(dim=1)
     if debug:
         print(max_ious.tolist())
-    loc_t[indices] = coords_to_target(bboxes, anchors_xywh[indices])
+    loc_t[indices] = coords_to_target(bboxes, a_xywh[indices])
     cls_t[indices] = labels
 
     pos = ious > pos_thresh
     for ipos, bbox, label in zip(pos, bboxes, labels):
-        loc_t[ipos] = coords_to_target(bbox, anchors_xywh[ipos])
+        loc_t[ipos] = coords_to_target(bbox, a_xywh[ipos])
         cls_t[ipos] = label
 
     target = [loc_t, cls_t]
@@ -166,8 +166,6 @@ class MultiBoxLoss(nn.Module):
                 print("loc: %.4f | cls: %.4f" %
                       (loc_loss.item(), cls_loss.item()))
         return loss
-
-
 
 @curry
 def anchor_based_inference(

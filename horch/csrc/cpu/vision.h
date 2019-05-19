@@ -41,3 +41,8 @@ std::tuple<at::Tensor, at::Tensor> iou_mn_backward_cpu(const at::Tensor &dious,
                                                        const at::Tensor &boxes1,
                                                        const at::Tensor &boxes2,
                                                        const at::Tensor &ious);
+
+at::Tensor nms_cpu(
+    const at::Tensor& dets,
+    const at::Tensor& scores,
+    const float threshold);

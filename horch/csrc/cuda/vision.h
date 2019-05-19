@@ -40,3 +40,5 @@ at::Tensor ROIAlign_backward_cuda(const at::Tensor &grad,
                                   const int height,
                                   const int width,
                                   const int sampling_ratio);
+
+at::Tensor nms_cuda(const at::Tensor boxes, float nms_overlap_thresh);

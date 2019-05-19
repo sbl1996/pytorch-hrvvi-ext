@@ -131,11 +131,11 @@ class SNet(nn.Module):
         x = self.layer3(x)
         if 3 in self.feature_levels:
             outs.append(x)
-        x = self.layer4(x)
         if 4 in self.feature_levels:
+            x = self.layer4(x)
             outs.append(x)
-        x = self.layer5(x)
         if 5 in self.feature_levels:
+            x = self.layer5(x)
             outs.append(x)
         return tuple(outs)
 
