@@ -12,7 +12,7 @@ at::Tensor nms(
   if (dets.device().is_cuda()) {
 #ifdef WITH_CUDA
     if (dets.numel() == 0) {
-      at::cuda::CUDAGuard device_guard(dets.device());
+//      at::cuda::CUDAGuard device_guard(dets.device());
       return at::empty({0}, dets.options().dtype(at::kLong));
     }
     auto b = at::cat({dets, scores.unsqueeze(1)}, 1);
