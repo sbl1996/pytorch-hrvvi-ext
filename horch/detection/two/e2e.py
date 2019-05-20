@@ -271,7 +271,7 @@ class MatchAnchors:
         self.debug = debug
 
     def __call__(self, image_gts):
-        is_cpu = self.a_xywh.device.type != 'cpu'
+        is_cpu = self.a_xywh.device.type == 'cpu'
         match_func = match_anchors if is_cpu else match_anchors2
         batch_size = len(image_gts)
         loc_targets = []
@@ -332,7 +332,7 @@ class MatchRoIs:
         self.pos_neg_ratio = pos_neg_ratio
 
     def __call__(self, rois, image_gts):
-        is_cpu = rois.device.type != 'cpu'
+        is_cpu = rois.device.type == 'cpu'
         match_func = match_rois if is_cpu else match_rois2
         batch_size = len(rois)
         rois_ltrb = rois[..., 1:]

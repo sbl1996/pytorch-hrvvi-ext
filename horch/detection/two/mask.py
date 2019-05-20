@@ -65,7 +65,7 @@ def match_anchors2(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
     loc_t_all = coords_to_target2(bboxes, a_xywh)
     loc_t = select(loc_t_all, 0, indices)
 
-    max_ious, max_indices = ious.max(dim=0)
+    max_ious, max_indices = ious.max(dim=1)
     if debug:
         print(max_ious.tolist())
     loc_t[max_indices] = select(loc_t_all, 1, max_indices)
