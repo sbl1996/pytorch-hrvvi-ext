@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from horch.detection.one import MultiBoxLoss, coords_to_target, target_to_coords, match_anchors_flat, AnchorBasedInference
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
-from horch.detection.nms import nms_cpu, soft_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu
 
 
 def match_rois(anns, rois, rois_xywh, pos_thresh=0.5):
@@ -141,7 +141,7 @@ def roi_based_inference(
     scores = scores.cpu()
 
     if nms == 'nms':
-        indices = nms_cpu(bboxes, scores, iou_threshold)
+        indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
         labels = labels[indices]
         bboxes = bboxes[indices]
@@ -151,7 +151,7 @@ def roi_based_inference(
             indices = range(scores.size(0))
     else:
         indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, conf_threshold=conf_threshold)
+            bboxes, scores, iou_threshold, topk, min_score=conf_threshold)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
     for ind in indices:

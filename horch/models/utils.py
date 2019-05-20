@@ -2,18 +2,10 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from horch.common import _concat
+from horch.ext.summary import summary
 from toolz import curry
 from horch.datasets.utils import download_google_drive
-from horch.ext.summary import summary
-
-
-def _concat(xs, dim=1):
-    if torch.is_tensor(xs):
-        return xs
-    elif len(xs) == 1:
-        return xs[0]
-    else:
-        return torch.cat(xs, dim=dim)
 
 
 def get_last_conv(m):

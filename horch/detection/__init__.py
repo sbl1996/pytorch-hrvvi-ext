@@ -13,11 +13,11 @@ from horch.common import Args
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
 from horch.detection.anchor import find_priors_kmeans, find_priors_coco
-from horch.detection.nms import nms_cpu, soft_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu
 from horch.detection.eval import mAP
 
 __all__ = [
-    "BBox", "nms_cpu", "soft_nms_cpu", "misc_target_collate",
+    "BBox", "nms", "soft_nms_cpu", "misc_target_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "get_locations", "calc_anchor_sizes", "generate_anchors",
     "generate_mlvl_anchors", "generate_anchors_with_priors",
@@ -105,21 +105,27 @@ def generate_anchors_with_priors(input_size, stride, priors):
     return anchors
 
 
-@curry
 def misc_target_collate(batch):
     input, target = zip(*batch)
     target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in target]
     return default_collate(input), Args(target)
 
 
-@curry
 def misc_collate(batch):
     input, target = zip(*batch)
-    if any([torch.is_tensor(t) for t in input[0]]):
-        input = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*input)]
+    if torch.is_tensor(input[0]):
+        input = default_collate(input)
+    else:
+        if any([torch.is_tensor(t) for t in input[0]]):
+            input = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*input)]
+        input = Args(input)
     if any([torch.is_tensor(t) for t in target[0]]):
         target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
-    return Args(input), Args(target)
+    if len(target[0]) == 0:
+        target = []
+    else:
+        target = Args(target)
+    return input, target
 
 
 def draw_bboxes(img, anns, categories=None):

@@ -31,9 +31,10 @@ class RPN(Sequential):
     def region_proposal(self, x):
         cs = self.backbone(x)
         ps = self.fpn(*cs)
+        ps = _tuple(ps)
         loc_p, cls_p = self.head(*_tuple(ps))
-        image_dets = self._inference(detach(loc_p), detach(cls_p))
-        return ps, loc_p, cls_p, image_dets
+        rois = self._inference(detach(loc_p), detach(cls_p))
+        return ps, loc_p, cls_p, rois
 
 
 def dets_to_rois(image_dets, ref):
@@ -58,10 +59,7 @@ class RCNN(nn.Module):
         self._inference = inference
 
     def forward(self, x, image_gts=None):
-        ps, rpn_loc_p, rpn_cls_p, image_dets = self.rpn.region_proposal(x)
-        if torch.is_tensor(ps):
-            ps = [ps]
-        rois = dets_to_rois(image_dets, x)
+        ps, rpn_loc_p, rpn_cls_p, rois = self.rpn.region_proposal(x)
 
         if self.training:
             loc_t, cls_t, rois = self.roi_match(rois, image_gts)

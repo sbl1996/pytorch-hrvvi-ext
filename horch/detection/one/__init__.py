@@ -12,7 +12,7 @@ from horch.nn.loss import focal_loss2
 
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
-from horch.detection.nms import nms_cpu, soft_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu
 
 
 def coords_to_target(gt_box, anchors):
@@ -171,7 +171,7 @@ class MultiBoxLoss(nn.Module):
 def anchor_based_inference(
         loc_p, cls_p, anchors, conf_threshold=0.01,
         iou_threshold=0.5, topk=100,
-        conf_strategy='softmax', nms='soft_nms', soft_nms_threshold=None):
+        conf_strategy='softmax', nms_method='soft_nms', soft_nms_threshold=None):
     dets = []
     bboxes = loc_p
     logits = cls_p
@@ -195,8 +195,8 @@ def anchor_based_inference(
         bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
     scores = scores.cpu()
 
-    if nms == 'nms':
-        indices = nms_cpu(bboxes, scores, iou_threshold)
+    if nms_method == 'nms':
+        indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
         labels = labels[indices]
         bboxes = bboxes[indices]
@@ -208,7 +208,7 @@ def anchor_based_inference(
         if soft_nms_threshold is None:
             soft_nms_threshold = conf_threshold
         indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, conf_threshold=soft_nms_threshold)
+            bboxes, scores, iou_threshold, topk, min_score=soft_nms_threshold)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
     for ind in indices:

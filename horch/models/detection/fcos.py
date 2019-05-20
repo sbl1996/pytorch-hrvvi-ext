@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import one_hot, _tuple
-from horch.detection import soft_nms_cpu, BBox, nms_cpu
+from horch.detection import soft_nms_cpu, BBox, nms
 from horch.transforms.detection.functional import to_percent_coords
 from horch.nn.loss import focal_loss2, iou_loss
 from horch.models.detection.head import FCOSHead
@@ -145,7 +145,7 @@ def center_based_inference(
     bboxes = bboxes.cpu()
 
     if nms == 'nms':
-        indices = nms_cpu(bboxes, scores, iou_threshold)
+        indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
         labels = labels[indices]
         bboxes = bboxes[indices]
@@ -157,7 +157,7 @@ def center_based_inference(
         if soft_nms_threshold is None:
             soft_nms_threshold = conf_threshold
         indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, conf_threshold=soft_nms_threshold)
+            bboxes, scores, iou_threshold, topk, min_score=soft_nms_threshold)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
     for ind in indices:

@@ -197,41 +197,35 @@ class COCOEval(Metric):
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
             for d in dets:
-                d['image_id'] = image_id
+                d = {**d, 'image_id': image_id}
                 self.res.append(d)
 
     def compute(self):
         from hpycocotools.cocoeval import COCOeval
         from hpycocotools.mask import encode
-        if self.iou_type == 'segm':
-            for dt in self.res:
-                img = self.coco_gt.imgs[dt['image_id']]
-                width = img['width']
-                height = img['height']
-                l, t, w, h = [int(v) for v in dt['bbox']]
-                r = l + w
-                b = t + h
-                l = max(0, l)
-                t = max(0, t)
+        for dt in self.res:
+            img = self.coco_gt.imgs[dt['image_id']]
+            width = img['width']
+            height = img['height']
+            l, t, w, h = dt['bbox']
+            l *= width
+            t *= height
+            w *= width
+            h *= height
+            dt['bbox'] = [l, t, w, h]
+            if 'segmentation' in dt and self.iou_type == 'segm':
+                r = int(l + w)
+                b = int(t + h)
+                l = max(0, int(l))
+                t = max(0, int(t))
                 r = min(r, width)
                 b = min(b, height)
                 w = r - l
                 h = b - t
                 m = np.zeros((height, width), dtype=np.uint8)
-                segm = cv2.resize(dt['segmentation'], (w, h))
+                segm = cv2.resize(dt['segmentation'], (w, h), interpolation=cv2.INTER_NEAREST)
                 m[t:b, l:r] = segm
                 dt['segmentation'] = encode(np.asfortranarray(m))
-        elif self.iou_type == 'bbox':
-            for dt in self.res:
-                img = self.coco_gt.imgs[dt['image_id']]
-                width = img['width']
-                height = img['height']
-                l, t, w, h = dt['bbox']
-                l *= width
-                t *= height
-                w *= width
-                h *= height
-                dt['bbox'] = [l, t, w, h]
 
         coco_dt = self.coco_gt.loadRes(self.res)
         ev = COCOeval(self.coco_gt, coco_dt,

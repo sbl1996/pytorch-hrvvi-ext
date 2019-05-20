@@ -92,3 +92,20 @@ def select(t, dim, indices):
         return select1(t, indices)
     else:
         raise ValueError("dim could be only 0 or 1, not %d" % dim)
+
+
+def sample(t, n):
+    if len(t) >= n:
+        indices = torch.randperm(len(t), device=t.device)[:n]
+    else:
+        indices = torch.randint(len(t), size=(n,), device=t.device)
+    return t[indices]
+
+
+def _concat(xs, dim=1):
+    if torch.is_tensor(xs):
+        return xs
+    elif len(xs) == 1:
+        return xs[0]
+    else:
+        return torch.cat(xs, dim=dim)
