@@ -102,7 +102,7 @@ class MaskHead(nn.Module):
                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.conv4 = Conv2d(f_channels, f_channels, kernel_size=3,
                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
-        self.deconv = DeConv2d(f_channels, f_channels, kernel_size=4, stride=2,
+        self.deconv = DeConv2d(f_channels, f_channels, kernel_size=2, stride=2,
                                norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.mask_fc = Conv2d(f_channels, num_classes, kernel_size=1)
 
