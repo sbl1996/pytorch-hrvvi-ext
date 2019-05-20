@@ -1,8 +1,6 @@
 from math import log
 
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from horch.models.modules import Conv2d, DWConv2d, get_norm_layer
 from horch.models.utils import get_loc_cls_preds
@@ -114,10 +112,13 @@ class RetinaHead(nn.Module):
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
+    concat : bool
+        Whether to concat predictions in `eval` mode.
     """
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False, concat=True):
         super().__init__()
         self.num_classes = num_classes
+        self.concat = concat
         self.loc_head = _make_head(
             f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite)
         self.cls_head = _make_head(
@@ -140,6 +141,10 @@ class RetinaHead(nn.Module):
 
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p)
+
+        if not self.training and not self.concat:
+            return loc_preds, cls_preds
+
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
@@ -163,11 +168,14 @@ class SSDHead(nn.Module):
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
+    concat : bool
+        Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False):
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False, concat=False):
         super().__init__()
         self.num_classes = num_classes
+        self.concat = concat
         num_anchors = _tuple(num_anchors, len(in_channels))
         self.preds = nn.ModuleList([
             nn.Sequential(
@@ -179,26 +187,10 @@ class SSDHead(nn.Module):
 
     def forward(self, *ps):
         ps = [pred(p) for p, pred in zip(ps, self.preds)]
+        if not self.training and not self.concat:
+            loc_preds, cls_preds = get_loc_cls_preds(ps, self.num_classes, concat=False)
+            return loc_preds, cls_preds
         loc_p, cls_p = get_loc_cls_preds(ps, self.num_classes)
         return loc_p, cls_p
 
 
-class FCOSHead(RetinaHead):
-    def __init__(self, num_levels, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
-        super().__init__(1, num_classes + 1, f_channels, num_layers, norm_layer, lite)
-        start = 1 - (num_levels - 1) * 0.1 / 2
-        scales = [ start + i / 10 for i in range(num_levels) ]
-        self.scales = nn.Parameter(torch.tensor(scales))
-
-    def forward(self, *ps):
-        loc_preds = []
-        cls_preds = []
-        for i,p in enumerate(ps):
-            loc_p = to_pred(self.loc_head(p), 4)
-            loc_preds.append(loc_p * self.scales[i])
-
-            cls_p = to_pred(self.cls_head(p), self.num_classes)
-            cls_preds.append(cls_p)
-        loc_p = _concat(loc_preds, dim=1)
-        cls_p = _concat(cls_preds, dim=1)
-        return loc_p, cls_p

@@ -141,16 +141,17 @@ def draw_bboxes(img, anns, categories=None):
         if isinstance(ann, BBox):
             ann = ann.to_ann()
         bbox = ann["bbox"]
-        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=1,
-                         edgecolor='r', facecolor='none')
+        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=2,
+                         edgecolor='g', facecolor='none')
         ax.add_patch(rect)
         if categories:
             ax.text(bbox[0], bbox[1],
                     categories[ann["category_id"]], fontsize=12,
                     bbox=dict(boxstyle="round",
-                              ec=(1., 0.5, 0.5),
-                              fc=(1., 0.8, 0.8),
-                              facecolor='red', alpha=0.5, edgecolor='red'
-                              )
+                              # ec=(1., 0.5, 0.5),
+                              # fc=(1., 0.8, 0.8),
+                              facecolor='green', alpha=0.5, edgecolor='green'
+                              ),
+                    color='white',
                     )
     return fig, ax

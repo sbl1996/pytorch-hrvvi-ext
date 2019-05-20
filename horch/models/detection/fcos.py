@@ -5,15 +5,38 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, _tuple
+from horch.common import one_hot, _tuple, _concat
 from horch.detection import soft_nms_cpu, BBox, nms
+from horch.models.detection.head import RetinaHead, to_pred
 from horch.transforms.detection.functional import to_percent_coords
 from horch.nn.loss import focal_loss2, iou_loss
-from horch.models.detection.head import FCOSHead
 from horch.models.detection import OneStageDetector
+from torch import nn as nn
+
+
+class FCOSHead(RetinaHead):
+    def __init__(self, num_levels, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
+        super().__init__(1, num_classes + 1, f_channels, num_layers, norm_layer, lite)
+        start = 1 - (num_levels - 1) * 0.1 / 2
+        scales = [ start + i / 10 for i in range(num_levels) ]
+        self.scales = nn.Parameter(torch.tensor(scales))
+
+    def forward(self, *ps):
+        loc_preds = []
+        cls_preds = []
+        for i,p in enumerate(ps):
+            loc_p = to_pred(self.loc_head(p), 4)
+            loc_preds.append(loc_p * self.scales[i])
+
+            cls_p = to_pred(self.cls_head(p), self.num_classes)
+            cls_preds.append(cls_p)
+        loc_p = _concat(loc_preds, dim=1)
+        cls_p = _concat(cls_preds, dim=1)
+        return loc_p, cls_p
+
 
 __all__ = [
-    "get_mlvl_centers", "FCOSTransform", "FCOSHead", "FCOSInference", "FCOS", "FCOSLoss"
+    "get_mlvl_centers", "FCOSTransform", "FCOSInference", "FCOS", "FCOSLoss"
 ]
 
 

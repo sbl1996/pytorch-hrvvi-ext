@@ -144,7 +144,13 @@ class MultiBoxLoss(nn.Module):
                     cls_t = one_hot(cls_t, C=cls_p.size(-1))
                 else:
                     cls_t = cls_t.float()
-                cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
+                if ignore is not None:
+                    cls_loss_pos = focal_loss2(cls_p[pos], cls_t[pos], reduction='sum')
+                    cls_p_neg = cls_p[neg]
+                    cls_loss_neg = focal_loss2(cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+                else:
+                    cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
             else:
                 cls_p = cls_p.view(-1, cls_p.size(-1))
                 cls_t = cls_t.view(-1)
