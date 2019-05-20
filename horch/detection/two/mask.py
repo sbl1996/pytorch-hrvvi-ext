@@ -3,8 +3,6 @@ import random
 
 from toolz import curry
 
-from torch.utils.data.dataloader import default_collate
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,98 +12,7 @@ from horch.detection.one import MultiBoxLoss
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
 from horch.detection.nms import nms, soft_nms_cpu
-
-
-def coords_to_target(gt_box, anchors):
-    box_txty = (gt_box[..., :2] - anchors[..., :2]) / anchors[..., 2:]
-    box_twth = (gt_box[..., 2:] / anchors[..., 2:]).log_()
-    return torch.cat((box_txty, box_twth), dim=-1)
-
-
-def coords_to_target2(bboxes, anchors):
-    r"""
-    Parameters
-    ----------
-    bboxes
-        (n, 4)
-    anchors
-        (m, 4)
-    """
-    bboxes = bboxes[:, None, :]
-    anchors = anchors[None, :, :]
-    txty = (bboxes[..., :2] - anchors[..., :2]) / anchors[..., 2:]
-    twth = (bboxes[..., 2:] / anchors[..., 2:]).log_()
-    return torch.cat((txty, twth), dim=-1)
-
-
-def target_to_coords(loc_t, anchors):
-    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
-    return loc_t
-
-
-def match_anchors2(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
-                   get_label=lambda x: x['category_id'], debug=False):
-    num_anchors = len(a_xywh)
-    if len(anns) == 0:
-        loc_t = a_xywh.new_zeros(num_anchors, 4)
-        cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
-        ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8)
-        return loc_t, cls_t, ignore
-
-    bboxes = a_xywh.new_tensor([ann['bbox'] for ann in anns])
-    bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = a_xywh.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
-
-    bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
-    ious = iou_mn(bboxes_ltrb, a_ltrb)
-
-    pos = ious > pos_thresh
-    cls_t, indices = (pos.long() * labels[:, None]).max(dim=0)
-    loc_t_all = coords_to_target2(bboxes, a_xywh)
-    loc_t = select(loc_t_all, 0, indices)
-
-    max_ious, max_indices = ious.max(dim=1)
-    if debug:
-        print(max_ious.tolist())
-    loc_t[max_indices] = select(loc_t_all, 1, max_indices)
-    cls_t[max_indices] = labels
-
-    ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0)
-    return loc_t, cls_t, ignore
-
-
-@curry
-def match_anchors(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
-                  get_label=lambda x: x['category_id'], debug=False):
-    num_anchors = len(a_xywh)
-    loc_t = a_xywh.new_zeros(num_anchors, 4)
-    cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
-
-    if len(anns) == 0:
-        ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8)
-        return loc_t, cls_t, ignore
-
-    bboxes = loc_t.new_tensor([ann['bbox'] for ann in anns])
-    bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = loc_t.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
-
-    bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
-    ious = iou_mn(bboxes_ltrb, a_ltrb)
-
-    pos = ious > pos_thresh
-    for ipos, bbox, label in zip(pos, bboxes, labels):
-        loc_t[ipos] = coords_to_target(bbox, a_xywh[ipos])
-        cls_t[ipos] = label
-
-    max_ious, indices = ious.max(dim=1)
-    if debug:
-        print(max_ious.tolist())
-    loc_t[indices] = coords_to_target(bboxes, a_xywh[indices])
-    cls_t[indices] = labels
-
-    ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0)
-    return loc_t, cls_t, ignore
+from horch.detection.two import MatchAnchors, coords_to_target2, coords_to_target
 
 
 def match_rois(anns, rois, pos_thresh=0.5, mask_size=(14, 14), n_samples=64, pos_neg_ratio=1 / 3):
@@ -255,48 +162,6 @@ def flatten(xs):
         return xs.view(-1, xs.size(-1))
     xs = [x.view(-1, x.size(-1)) for x in xs]
     return _concat(xs, dim=0)
-
-
-class MatchAnchors:
-    r"""
-
-    Parameters
-    ----------
-    anchors : torch.Tensor or List[torch.Tensor]
-        List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
-    pos_thresh : float
-        IOU threshold of positive anchors.
-    neg_thresh : float
-        If provided, only non-positive anchors whose ious with all ground truth boxes are
-        lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
-    """
-
-    def __init__(self, anchors, pos_thresh=0.7, neg_thresh=0.3, debug=False):
-        self.a_xywh = flatten(anchors)
-        self.a_ltrb = BBox.convert(self.a_xywh, BBox.XYWH, BBox.LTRB)
-        self.pos_thresh = pos_thresh
-        self.neg_thresh = neg_thresh
-        self.get_label = lambda x: 1
-        self.debug = debug
-
-    def __call__(self, image_gts):
-        is_cpu = self.a_xywh.device.type != 'cpu'
-        match_func = match_anchors if is_cpu else match_anchors2
-        batch_size = len(image_gts)
-        loc_targets = []
-        cls_targets = []
-        ignores = []
-        for i in range(batch_size):
-            loc_t, cls_t, ignore = match_func(
-                image_gts[i], self.a_xywh, self.a_ltrb,
-                self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
-            loc_targets.append(loc_t)
-            cls_targets.append(cls_t)
-            ignores.append(ignore)
-        loc_t = torch.cat(loc_targets, dim=0)
-        cls_t = torch.cat(cls_targets, dim=0)
-        ignore = torch.cat(ignores, dim=0)
-        return loc_t, cls_t, ignore
 
 
 class InferenceRoIs:
