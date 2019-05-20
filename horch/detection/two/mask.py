@@ -280,7 +280,7 @@ class MatchAnchors:
         self.debug = debug
 
     def __call__(self, image_gts):
-        is_cpu = self.a_xywh.device.type == 'cpu'
+        is_cpu = self.a_xywh.device.type != 'cpu'
         match_func = match_anchors if is_cpu else match_anchors2
         batch_size = len(image_gts)
         loc_targets = []
@@ -326,7 +326,7 @@ class MatchRoIs:
         self.pos_neg_ratio = pos_neg_ratio
 
     def __call__(self, rois, image_gts):
-        is_cpu = rois.device.type == 'cpu'
+        is_cpu = rois.device.type != 'cpu'
         match_func = match_rois if is_cpu else match_rois2
         rois_ltrb = rois[..., 1:]
 
@@ -367,7 +367,7 @@ class MaskRCNNLoss(nn.Module):
 
     def forward(self, loc_p, cls_p, mask_p, loc_t, cls_t, mask_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore):
         rpn_loc_p = rpn_loc_p.view(-1, 4)
-        rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(0))
+        rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
         rcnn_loss = self.rcnn_loss(loc_p, cls_p, loc_t, cls_t)
         mask_p = select(mask_p, 1, cls_t[cls_t != 0] - 1)
