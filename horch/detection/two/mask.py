@@ -408,7 +408,7 @@ def roi_based_inference(
 
     if predict_mask is not None:
         mask_p = predict_mask(indices)
-        masks = (select(mask_p, 1, labels[indices]).sigmoid_() > 0.5).numpy()
+        masks = (select(mask_p, 1, labels[indices]).sigmoid_() > 0.5).cpu().numpy()
 
     for i, ind in enumerate(indices):
         det = {
