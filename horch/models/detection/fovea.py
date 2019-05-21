@@ -135,7 +135,6 @@ def fovea_inference(
         bboxes = loc_p
         scores, labels = cls_p[:, 1:].max(dim=-1)
         scores = scores.sigmoid_()
-        labels += 1
 
         pos = scores > conf_threshold
         scores = scores[pos]
@@ -186,7 +185,7 @@ def fovea_inference(
     for ind in indices:
         det = {
             'image_id': -1,
-            'category_id': labels[ind].item(),
+            'category_id': labels[ind].item() + 1,
             'bbox': bboxes[ind].tolist(),
             'score': scores[ind].item(),
         }
