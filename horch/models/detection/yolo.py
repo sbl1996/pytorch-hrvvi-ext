@@ -175,18 +175,18 @@ class YOLOv3t2(nn.Module):
         loc_preds = []
         obj_preds = []
         cls_preds = []
-        var_preds = []
+        log_var_preds = []
         for p in preds:
             p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, 9 + self.num_classes)
             loc_preds.append(p[..., :4])
-            var_preds.append(p[..., 4:8])
+            log_var_preds.append(p[..., 4:8])
             obj_preds.append(p[..., 8])
             cls_preds.append(p[..., 9:])
         loc_p = torch.cat(loc_preds, dim=1)
         obj_p = torch.cat(obj_preds, dim=1)
         cls_p = torch.cat(cls_preds, dim=1)
-        var_p = torch.cat(var_preds, dim=1)
-        return loc_p, obj_p, cls_p, var_p
+        log_var_p = torch.cat(log_var_preds, dim=1)
+        return loc_p, obj_p, cls_p, log_var_p
 
 
 def flatten(xs):

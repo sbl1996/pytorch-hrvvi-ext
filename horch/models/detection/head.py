@@ -149,8 +149,8 @@ class RetinaHead(nn.Module):
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         if self.box_std:
-            var_p = _concat(log_var_preds, dim=1)
-            return loc_p, cls_p, var_p
+            log_var_p = _concat(log_var_preds, dim=1)
+            return loc_p, cls_p, log_var_p
         else:
             return loc_p, cls_p
 

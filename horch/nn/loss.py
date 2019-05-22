@@ -49,7 +49,7 @@ def loc_kl_loss(loc_p, log_var_p, loc_t, reduction='sum'):
     ----------
     loc_p : torch.Tensor
         (N, 4)
-    var_p : torch.Tensor
+    log_var_p : torch.Tensor
         (N, 4)
     loc_t : torch.Tensor
         (N, 4)
