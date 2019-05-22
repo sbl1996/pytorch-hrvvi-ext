@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from horch.common import one_hot, inverse_sigmoid
 from horch.models.modules import upsample_concat, Conv2d
+from horch.models.utils import get_last_conv, bias_init_constant
 from horch.nn.loss import focal_loss2, loc_kl_loss
 
 from horch.detection import BBox, soft_nms_cpu, nms, softer_nms_cpu
@@ -69,9 +70,9 @@ class YOLOv3(nn.Module):
                              norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
 
-        self.pred3[-1].bias.data[4].fill_(inverse_sigmoid(0.01))
-        self.pred4[-1].bias.data[4].fill_(inverse_sigmoid(0.01))
-        self.pred5[-1].bias.data[4].fill_(inverse_sigmoid(0.01))
+        get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
+        get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
+        get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
 
     def forward(self, c3, c4, c5):
         b = c3.size(0)
@@ -148,9 +149,9 @@ class YOLOv3t2(nn.Module):
                              norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
 
-        self.pred3[-1].bias.data[8].fill_(inverse_sigmoid(0.01))
-        self.pred4[-1].bias.data[8].fill_(inverse_sigmoid(0.01))
-        self.pred5[-1].bias.data[8].fill_(inverse_sigmoid(0.01))
+        get_last_conv(self.pred3).bias.data[8].fill_(inverse_sigmoid(0.01))
+        get_last_conv(self.pred4).bias.data[8].fill_(inverse_sigmoid(0.01))
+        get_last_conv(self.pred5).bias.data[8].fill_(inverse_sigmoid(0.01))
 
     def forward(self, c3, c4, c5):
         b = c3.size(0)
@@ -334,7 +335,7 @@ class YOLOKLLoss(nn.Module):
         self.neg_gain = neg_gain
         self.loc_gain = loc_gain
 
-    def forward(self, loc_p, obj_p, cls_p, var_p, loc_t, cls_t, ignore):
+    def forward(self, loc_p, obj_p, cls_p, log_var_p, loc_t, cls_t, ignore):
         pos = cls_t != 0
         num_pos = pos.sum().item()
 
@@ -353,7 +354,7 @@ class YOLOKLLoss(nn.Module):
         obj_loss = obj_loss_pos + obj_loss_neg
 
         loc_loss = self.loc_gain * loc_kl_loss(
-            loc_p[pos], var_p[pos], loc_t[pos], reduction='sum') / num_pos
+            loc_p[pos], log_var_p[pos], loc_t[pos], reduction='sum') / num_pos
 
         cls_t = one_hot(cls_t, cls_p.size(-1) + 1)[..., 1:]
         cls_loss = F.binary_cross_entropy_with_logits(
@@ -370,7 +371,8 @@ def yolo_inference(
         loc_p, obj_p, cls_p, anchors, locations, conf_threshold=0.01,
         iou_threshold=0.5, topk=100, nms_method='soft'):
     if nms_method == 'softer':
-        bboxes, vars = loc_p
+        bboxes, log_vars = loc_p
+        vars = log_vars.exp_()
     else:
         bboxes = loc_p
     scores, labels = torch.sigmoid_(cls_p).max(dim=1)
@@ -383,6 +385,8 @@ def yolo_inference(
         bboxes = bboxes[pos]
         anchors = anchors[pos]
         locations = locations[pos]
+        if nms_method == 'softer':
+            vars = vars[pos]
 
     bboxes[..., :2].sigmoid_().sub_(0.5).div_(locations).add_(anchors[:, :2])
     bboxes[..., 2:].exp_().mul_(anchors[:, 2:])
@@ -402,7 +406,7 @@ def yolo_inference(
             indices = range(scores.size(0))
     elif nms_method == 'softer':
         indices = softer_nms_cpu(
-            bboxes, scores, vars, iou_threshold, topk, 0.01, min_score=conf_threshold)
+            bboxes, scores, vars.cpu(), iou_threshold, topk, 0.01, min_score=conf_threshold)
     else:
         indices = soft_nms_cpu(
             bboxes, scores, iou_threshold, topk, min_score=0.01)
@@ -431,12 +435,12 @@ class YOLOInference:
         self.topk = topk
         self.nms = nms
 
-    def __call__(self, loc_p, obj_p, cls_p, var_p=None):
+    def __call__(self, loc_p, obj_p, cls_p, log_var_p=None):
         image_dets = []
         batch_size = loc_p.size(0)
-        softer_nms = var_p is not None and self.nms == 'softer'
+        softer_nms = log_var_p is not None and self.nms == 'softer'
         for i in range(batch_size):
-            i_loc_p = (loc_p[i], var_p[i]) if softer_nms else loc_p[i]
+            i_loc_p = (loc_p[i], log_var_p[i]) if softer_nms else loc_p[i]
             dets = yolo_inference(
                 i_loc_p, obj_p[i], cls_p[i], self.anchors, self.locations,
                 self.conf_threshold, self.iou_threshold,

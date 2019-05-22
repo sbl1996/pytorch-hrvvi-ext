@@ -226,9 +226,10 @@ class KLFocalLoss(nn.Module):
 def anchor_based_inference(
         loc_p, cls_p, anchors, conf_threshold=0.01,
         iou_threshold=0.5, topk=100,
-        conf_strategy='softmax', nms_method='soft_nms', min_score=None):
+        conf_strategy='softmax', nms_method='soft', min_score=None):
     if nms_method == 'softer':
         bboxes, log_vars = loc_p
+        vars = log_vars.exp_()
     else:
         bboxes = loc_p
 
@@ -246,7 +247,7 @@ def anchor_based_inference(
         bboxes = bboxes[mask]
         anchors = anchors[mask]
         if nms_method == 'softer':
-            log_vars = log_vars[mask]
+            vars = vars[mask]
 
     bboxes = target_to_coords(bboxes, anchors)
 
@@ -263,7 +264,7 @@ def anchor_based_inference(
         if min_score is None:
             min_score = conf_threshold
         indices = softer_nms_cpu(
-            bboxes, scores, log_vars, iou_threshold, topk, 0.01, min_score=min_score)
+            bboxes, scores, vars.cpu(), iou_threshold, topk, 0.01, min_score=min_score)
     else:
         indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
