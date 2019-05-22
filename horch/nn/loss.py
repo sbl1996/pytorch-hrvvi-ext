@@ -41,3 +41,25 @@ def iou_loss(prediction, ground_truth, reduction='mean'):
         return loss.mean()
     else:
         raise ValueError("reduction must be mean or sum")
+
+
+def loc_kl_loss(loc_p, log_var_p, loc_t, reduction='sum'):
+    r"""
+    Parameters
+    ----------
+    loc_p : torch.Tensor
+        (N, 4)
+    var_p : torch.Tensor
+        (N, 4)
+    loc_t : torch.Tensor
+        (N, 4)
+    reduction : str
+        `sum` or `mean`
+    """
+    loc_e = (loc_t - loc_p).abs()
+    loss = (torch.pow(loc_e, 2) / 2).masked_fill(loc_e > 1, 0) + (loc_e - 1/2).masked_fill(loc_e <= 1, 0)
+    loss = loss * torch.exp(-log_var_p) + log_var_p / 2
+    if reduction == 'sum':
+        return loss.sum()
+    else:
+        return loss.mean()

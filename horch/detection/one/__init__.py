@@ -8,11 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch import one_hot
-from horch.nn.loss import focal_loss2
+from horch.nn.loss import focal_loss2, loc_kl_loss
 
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
-from horch.detection.nms import nms, soft_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
 
 
 def coords_to_target(gt_box, anchors):
@@ -106,11 +106,12 @@ class MatchAnchors:
 
 class MultiBoxLoss(nn.Module):
 
-    def __init__(self, pos_neg_ratio=None, p=0.01, criterion='softmax', prefix=""):
+    def __init__(self, pos_neg_ratio=None, p=0.01, loc_loss='smoothl1', cls_loss='softmax', prefix=""):
         super().__init__()
         self.pos_neg_ratio = pos_neg_ratio
         self.p = p
-        self.criterion = criterion
+        self.loc_loss = loc_loss
+        self.cls_loss = cls_loss
         self.prefix = prefix
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
@@ -125,6 +126,7 @@ class MultiBoxLoss(nn.Module):
             loc_p = loc_p[pos]
         if loc_t.size()[:-1] == pos.size():
             loc_t = loc_t[pos]
+
         loc_loss = F.smooth_l1_loss(
             loc_p, loc_t, reduction='sum') / num_pos
 
@@ -139,7 +141,7 @@ class MultiBoxLoss(nn.Module):
             cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
             cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
         else:
-            if self.criterion == 'focal':
+            if self.cls_loss == 'focal':
                 if cls_p.ndimension() - cls_t.ndimension() == 1:
                     cls_t = one_hot(cls_t, C=cls_p.size(-1))
                 else:
@@ -173,18 +175,67 @@ class MultiBoxLoss(nn.Module):
                       (loc_loss.item(), cls_loss.item()))
         return loss
 
+
+class KLFocalLoss(nn.Module):
+
+    def __init__(self, p=0.01, prefix=""):
+        super().__init__()
+        self.p = p
+        self.prefix = prefix
+
+    def forward(self, loc_p, cls_p, log_var_p, loc_t, cls_t, ignore=None, *args):
+        pos = cls_t != 0
+        neg = ~pos
+        if ignore is not None:
+            neg = neg & ~ignore
+        num_pos = pos.sum().item()
+        if num_pos == 0:
+            return loc_p.new_tensor(0, requires_grad=True)
+        if loc_p.size()[:-1] == pos.size():
+            loc_p = loc_p[pos]
+            log_var_p = log_var_p[pos]
+        if loc_t.size()[:-1] == pos.size():
+            loc_t = loc_t[pos]
+
+        loc_loss = loc_kl_loss(
+            loc_p, log_var_p, loc_t, reduction='sum') / num_pos
+
+        if cls_p.ndimension() - cls_t.ndimension() == 1:
+            cls_t = one_hot(cls_t, C=cls_p.size(-1))
+        else:
+            cls_t = cls_t.float()
+        if ignore is not None:
+            cls_loss_pos = focal_loss2(cls_p[pos], cls_t[pos], reduction='sum')
+            cls_p_neg = cls_p[neg]
+            cls_loss_neg = focal_loss2(cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
+            cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+        else:
+            cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
+
+        loss = cls_loss + loc_loss
+        if random.random() < self.p:
+            if self.prefix:
+                print("[%s] loc: %.4f | cls: %.4f" %
+                      (self.prefix, loc_loss.item(), cls_loss.item()))
+            else:
+                print("loc: %.4f | cls: %.4f" %
+                      (loc_loss.item(), cls_loss.item()))
+        return loss
+
 @curry
 def anchor_based_inference(
         loc_p, cls_p, anchors, conf_threshold=0.01,
         iou_threshold=0.5, topk=100,
-        conf_strategy='softmax', nms_method='soft_nms', soft_nms_threshold=None):
-    dets = []
-    bboxes = loc_p
-    logits = cls_p
-    if conf_strategy == 'softmax':
-        scores = torch.softmax(logits, dim=1)
+        conf_strategy='softmax', nms_method='soft_nms', min_score=None):
+    if nms_method == 'softer':
+        bboxes, log_vars = loc_p
     else:
-        scores = torch.sigmoid_(logits)
+        bboxes = loc_p
+
+    if conf_strategy == 'softmax':
+        scores = torch.softmax(cls_p, dim=1)
+    else:
+        scores = torch.sigmoid_(cls_p)
     scores = scores[:, 1:]
     scores, labels = torch.max(scores, dim=1)
 
@@ -194,6 +245,8 @@ def anchor_based_inference(
         labels = labels[mask]
         bboxes = bboxes[mask]
         anchors = anchors[mask]
+        if nms_method == 'softer':
+            log_vars = log_vars[mask]
 
     bboxes = target_to_coords(bboxes, anchors)
 
@@ -201,7 +254,17 @@ def anchor_based_inference(
         bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
     scores = scores.cpu()
 
-    if nms_method == 'nms':
+    if nms_method == 'soft':
+        if min_score is None:
+            min_score = conf_threshold
+        indices = soft_nms_cpu(
+            bboxes, scores, iou_threshold, topk, min_score=min_score)
+    elif nms_method == 'softer':
+        if min_score is None:
+            min_score = conf_threshold
+        indices = softer_nms_cpu(
+            bboxes, scores, log_vars, iou_threshold, topk, 0.01, min_score=min_score)
+    else:
         indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
         labels = labels[indices]
@@ -210,13 +273,10 @@ def anchor_based_inference(
             indices = scores.topk(topk)[1]
         else:
             indices = range(scores.size(0))
-    else:
-        if soft_nms_threshold is None:
-            soft_nms_threshold = conf_threshold
-        indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, min_score=soft_nms_threshold)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
+
+    dets = []
     for ind in indices:
         det = {
             'image_id': -1,
@@ -232,7 +292,7 @@ class AnchorBasedInference:
 
     def __init__(self, anchors, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
-                 conf_strategy='softmax', nms='soft_nms', soft_nms_threshold=None):
+                 conf_strategy='softmax', nms='soft', min_score=None):
         self.anchors = flatten(anchors)
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
@@ -241,16 +301,18 @@ class AnchorBasedInference:
             'softmax', 'sigmoid'], "conf_strategy must be softmax or sigmoid"
         self.conf_strategy = conf_strategy
         self.nms = nms
-        self.soft_nms_threshold = soft_nms_threshold
+        self.min_score = min_score
 
-    def __call__(self, loc_p, cls_p):
+    def __call__(self, loc_p, cls_p, log_var_p=None):
         image_dets = []
         batch_size = loc_p.size(0)
+        softer_nms = log_var_p is not None and self.nms == 'softer'
         for i in range(batch_size):
+            i_loc_p = (loc_p[i], log_var_p[i]) if softer_nms else loc_p[i]
             dets = anchor_based_inference(
-                loc_p[i], cls_p[i], self.anchors,
+                i_loc_p, cls_p[i], self.anchors,
                 self.conf_threshold, self.iou_threshold,
-                self.topk, self.conf_strategy, self.nms, self.soft_nms_threshold
+                self.topk, self.conf_strategy, self.nms, self.min_score
             )
             image_dets.append(dets)
         return image_dets

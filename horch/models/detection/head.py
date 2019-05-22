@@ -3,8 +3,8 @@ from math import log
 import torch.nn as nn
 
 from horch.models.modules import Conv2d, DWConv2d, get_norm_layer
-from horch.models.utils import get_loc_cls_preds
-from horch.common import _tuple, _concat
+from horch.models.utils import weight_init_normal, bias_init_constant, get_last_conv
+from horch.common import _tuple, _concat, inverse_sigmoid
 
 
 def to_pred(p, c: int):
@@ -61,12 +61,7 @@ class SharedDWConvHead(nn.Module):
         self.cls_conv = Conv2d(
             f_channels, num_anchors * num_classes, kernel_size=1)
 
-        self.cls_conv.apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            nn.init.constant_(m.bias, -log((1 - p) / p))
+        bias_init_constant(self.cls_conv, inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         loc_preds = []
@@ -115,39 +110,49 @@ class RetinaHead(nn.Module):
     concat : bool
         Whether to concat predictions in `eval` mode.
     """
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False, concat=True):
+
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4,
+                 norm_layer='bn', lite=False, concat=True, box_std=False):
         super().__init__()
         self.num_classes = num_classes
         self.concat = concat
+        self.box_std = box_std
+        self.loc_channels = 8 if box_std else 4
         self.loc_head = _make_head(
-            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite)
+            f_channels, num_layers, num_anchors * self.loc_channels, norm_layer=norm_layer, lite=lite)
         self.cls_head = _make_head(
             f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, lite=lite)
 
-        self.cls_head[-1].apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            if m.bias is not None:
-                nn.init.constant_(m.bias, -log((1 - p) / p))
+        # weight_init_normal(self.loc_head[-1][-1], 0, 0.0001)
+        bias_init_constant(self.cls_head[-1], inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         loc_preds = []
         cls_preds = []
+        if self.box_std:
+            log_var_preds = []
         for p in ps:
-            loc_p = to_pred(self.loc_head(p), 4)
-            loc_preds.append(loc_p)
+            loc_p = to_pred(self.loc_head(p), self.loc_channels)
+            if self.box_std:
+                log_var_preds.append(loc_p[..., 4:])
+            loc_preds.append(loc_p[..., :4])
 
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p)
 
         if not self.training and not self.concat:
-            return loc_preds, cls_preds
+            if self.box_std:
+                return loc_preds, cls_preds, log_var_preds
+            else:
+                return loc_preds, cls_preds
 
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
-        return loc_p, cls_p
+        if self.box_std:
+            var_p = _concat(log_var_preds, dim=1)
+            return loc_p, cls_p, var_p
+        else:
+            return loc_p, cls_p
 
 
 class SSDHead(nn.Module):
@@ -172,9 +177,10 @@ class SSDHead(nn.Module):
         Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False, concat=False):
+    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False, concat=True, box_std=False):
         super().__init__()
         self.num_classes = num_classes
+        self.box_std = box_std
         self.concat = concat
         num_anchors = _tuple(num_anchors, len(in_channels))
         self.preds = nn.ModuleList([
@@ -184,13 +190,52 @@ class SSDHead(nn.Module):
             )
             for c, n in zip(in_channels, num_anchors)
         ])
+        if box_std:
+            self.box_std_preds = nn.ModuleList([
+                nn.Sequential(
+                    get_norm_layer(norm_layer, c),
+                    Conv2d(c, n * 4, kernel_size=3, depthwise_separable=lite, mid_norm_layer=norm_layer)
+                )
+                for c, n in zip(in_channels, num_anchors)
+            ])
+
+        for p in self.preds:
+            get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
+        # if self.box_std:
+        #     for p in self.box_std_preds:
+        #         weight_init_normal(get_last_conv(p), 0, 0.0001)
 
     def forward(self, *ps):
-        ps = [pred(p) for p, pred in zip(ps, self.preds)]
+        preds = [pred(p) for p, pred in zip(ps, self.preds)]
+        loc_preds = []
+        cls_preds = []
+        if self.box_std:
+            log_var_preds = []
+        b = ps[0].size(0)
+        for p in preds:
+            p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, 4 + self.num_classes)
+            loc_preds.append(p[..., :4])
+            cls_p = p[..., 4:]
+            if cls_p.size(-1) == 1:
+                cls_p = cls_p[..., 0]
+            cls_preds.append(cls_p)
+
+        if self.box_std:
+            log_var_preds = [
+                pred(p).permute(0, 3, 2, 1).contiguous().view(b, -1, 4)
+                for p, pred in zip(ps, self.box_std_preds)
+            ]
+
         if not self.training and not self.concat:
-            loc_preds, cls_preds = get_loc_cls_preds(ps, self.num_classes, concat=False)
-            return loc_preds, cls_preds
-        loc_p, cls_p = get_loc_cls_preds(ps, self.num_classes)
-        return loc_p, cls_p
-
-
+            if self.box_std:
+                return loc_preds, cls_preds, log_var_preds
+            else:
+                return loc_preds, cls_preds
+        else:
+            loc_p = _concat(loc_preds, dim=1)
+            cls_p = _concat(cls_preds, dim=1)
+            if self.box_std:
+                log_var_p = _concat(log_var_preds, dim=1)
+                return loc_p, cls_p, log_var_p
+            else:
+                return loc_p, cls_p

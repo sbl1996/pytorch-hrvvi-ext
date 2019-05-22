@@ -1,3 +1,4 @@
+import math
 from collections.abc import Sequence, Mapping
 
 import torch
@@ -109,3 +110,22 @@ def _concat(xs, dim=1):
         return xs[0]
     else:
         return torch.cat(xs, dim=dim)
+
+
+def inverse_sigmoid(x, eps=1e-6, inplace=False):
+    if not torch.is_tensor(x):
+        if eps != 0:
+            x = min(max(x, eps), 1-eps)
+        return math.log(x / (1 - x))
+    if inplace:
+        return inverse_sigmoid_(x, eps)
+    if eps != 0:
+        x = torch.clamp(x, eps, 1-eps)
+    return (x / (1 - x)).log()
+
+
+def inverse_sigmoid_(x, eps=1e-6):
+    if eps != 0:
+        x = torch.clamp_(x, eps, 1 - eps)
+    return x.div_(1 - x).log_()
+

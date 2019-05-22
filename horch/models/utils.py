@@ -143,3 +143,20 @@ def load_state_dict_from_google_drive(file_id, filename, md5, model_dir=None, ma
     download_google_drive(file_id, model_dir, filename, md5)
     cached_file = model_dir / filename
     return torch.load(cached_file, map_location=map_location)
+
+
+def weight_init_normal(module, mean, std):
+    def f(m):
+        name = type(m).__name__
+        if "Linear" in name or "Conv" in name:
+            nn.init.normal_(m.weight, mean, std)
+    module.apply(f)
+
+
+def bias_init_constant(module, val):
+    def f(m):
+        name = type(m).__name__
+        if "Linear" in name or "Conv" in name:
+            if m.bias is not None:
+                nn.init.constant_(m.bias, val)
+    module.apply(f)

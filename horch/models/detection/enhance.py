@@ -27,22 +27,8 @@ class DeconvTopDown(nn.Module):
         self.lat = Conv2d(
             in_channels1, f_channels, kernel_size=1,
             norm_layer=norm_layer)
-        if list:
-            self.deconv = nn.Sequential(
-                nn.ConvTranspose2d(
-                    in_channels2, in_channels2, kernel_size=4,
-                    stride=2, padding=1, groups=in_channels2, bias=False),
-                get_norm_layer(norm_layer, in_channels2),
-                Conv2d(in_channels2, f_channels, kernel_size=1,
-                       norm_layer=norm_layer),
-            )
-        else:
-            self.deconv = nn.Sequential(
-                nn.ConvTranspose2d(
-                    in_channels2, f_channels, kernel_size=4,
-                    stride=2, padding=1, bias=False),
-                get_norm_layer(norm_layer, f_channels),
-            )
+        self.deconv = Conv2d(in_channels2, f_channels, kernel_size=4, stride=2,
+                             norm_layer=norm_layer, depthwise_separable=lite, transposed=True)
         self.conv = Conv2d(
             f_channels, f_channels, kernel_size=3,
             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
@@ -51,32 +37,6 @@ class DeconvTopDown(nn.Module):
         p = self.lat(c) + self.deconv(p)
         p = self.conv(p)
         return p
-
-#
-# class DeconvFPN(nn.Module):
-#     r"""
-#     Feature Pyramid Network which enhance features of different levels.
-#
-#     Parameters
-#     ----------
-#     in_channels : sequence of ints
-#         Number of input channels of every level, e.g., ``(256,512,1024)``
-#     out_channels : int
-#         Number of output channels.
-#     norm_layer : str
-#         `bn` for Batch Normalization and `gn` for Group Normalization.
-#         Default: `bn`
-#     """
-#     def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False):
-#         super().__init__()
-#         self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer=norm_layer)
-#
-#     def forward(self, *cs):
-#         ps = (self.lat(cs[-1]),)
-#         for c, topdown in zip(reversed(cs[:-1]), reversed(self.topdowns)):
-#             p = topdown(c, ps[0])
-#             ps = (p,) + ps
-#         return ps
 
 
 class FPN(nn.Module):

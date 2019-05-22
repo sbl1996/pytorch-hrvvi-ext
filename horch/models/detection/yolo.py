@@ -5,11 +5,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch import one_hot
-from horch.models.modules import upsample_concat, Conv2d
-from horch.nn.loss import focal_loss2
 
-from horch.detection import BBox, soft_nms_cpu, nms, iou_mn
+from horch.common import one_hot, inverse_sigmoid
+from horch.models.modules import upsample_concat, Conv2d
+from horch.nn.loss import focal_loss2, loc_kl_loss
+
+from horch.detection import BBox, soft_nms_cpu, nms, softer_nms_cpu
 
 
 class BasicBlock(nn.Module):
@@ -68,15 +69,9 @@ class YOLOv3(nn.Module):
                              norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
 
-        self.pred3.apply(self._init_final_cls_layer)
-        self.pred4.apply(self._init_final_cls_layer)
-        self.pred5.apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            if m.bias is not None:
-                nn.init.constant_(m.bias[4], -log((1 - p) / p))
+        self.pred3[-1].bias.data[4].fill_(inverse_sigmoid(0.01))
+        self.pred4[-1].bias.data[4].fill_(inverse_sigmoid(0.01))
+        self.pred5[-1].bias.data[4].fill_(inverse_sigmoid(0.01))
 
     def forward(self, c3, c4, c5):
         b = c3.size(0)
@@ -111,19 +106,86 @@ class YOLOv3(nn.Module):
         return loc_p, obj_p, cls_p
 
 
-#
-# def inverse_sigmoid(x, eps=1e-4):
-#     x = torch.clamp(x, eps, 1-eps)
-#     return torch.log(x / (1 - x))
-#
-# def inverse_sigmoid_(x, eps=1e-4):
-#     x = torch.clamp_(x, eps, 1-eps)
-#     return torch.log_(x.div_(1 - x))
+class YOLOv3t2(nn.Module):
+    def __init__(self, in_channels, num_anchors=3, num_classes=80, norm_layer='bn', lite=False):
+        super().__init__()
+        self.num_classes = num_classes
+        out_channels = num_anchors * (9 + num_classes)
+        channels = in_channels
+        self.conv51 = nn.Sequential(
+            BasicBlock(channels[-1], channels[-1], lite=lite),
+            BasicBlock(channels[-1], channels[-1], lite=lite),
+            Conv2d(channels[-1], channels[-1] // 2, kernel_size=1,
+                   norm_layer=norm_layer, activation='default'),
+        )
+        self.conv52 = Conv2d(channels[-1] // 2, channels[-1], kernel_size=3,
+                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+        self.pred5 = Conv2d(channels[-1], out_channels, kernel_size=1)
 
+        self.lat5 = Conv2d(channels[-1] // 2, channels[-1] // 4, kernel_size=1,
+                           norm_layer=norm_layer)
 
-def inverse_sigmoid(x, eps=1e-4):
-    x = min(max(x, eps), 1 - eps)
-    return log(x / (1 - x))
+        self.conv41 = nn.Sequential(
+            BasicBlock(channels[-2] + channels[-1] // 4, channels[-2], lite=lite),
+            BasicBlock(channels[-2], channels[-2], lite=lite),
+            Conv2d(channels[-2], channels[-2] // 2, kernel_size=1,
+                   norm_layer=norm_layer, activation='default'),
+        )
+        self.conv42 = Conv2d(channels[-2] // 2, channels[-2], kernel_size=3,
+                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+        self.pred4 = Conv2d(channels[-2], out_channels, kernel_size=1)
+
+        self.lat4 = Conv2d(channels[-2] // 2, channels[-2] // 4, kernel_size=1,
+                           norm_layer=norm_layer)
+
+        self.conv31 = nn.Sequential(
+            BasicBlock(channels[-3] + channels[-2] // 4, channels[-3], lite=lite),
+            BasicBlock(channels[-3], channels[-3], lite=lite),
+            Conv2d(channels[-3], channels[-3] // 2, kernel_size=1,
+                   norm_layer=norm_layer, activation='default'),
+        )
+        self.conv32 = Conv2d(channels[-3] // 2, channels[-3], kernel_size=3,
+                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+        self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
+
+        self.pred3[-1].bias.data[8].fill_(inverse_sigmoid(0.01))
+        self.pred4[-1].bias.data[8].fill_(inverse_sigmoid(0.01))
+        self.pred5[-1].bias.data[8].fill_(inverse_sigmoid(0.01))
+
+    def forward(self, c3, c4, c5):
+        b = c3.size(0)
+
+        p51 = self.conv51(c5)
+        p52 = self.conv52(p51)
+        p5 = self.pred5(p52)
+
+        p41 = upsample_concat(self.lat5(p51), c4)
+        p42 = self.conv41(p41)
+        p43 = self.conv42(p42)
+        p4 = self.pred4(p43)
+
+        p31 = upsample_concat(self.lat4(p42), c3)
+        p32 = self.conv31(p31)
+        p33 = self.conv32(p32)
+        p3 = self.pred3(p33)
+
+        preds = [p3, p4, p5]
+
+        loc_preds = []
+        obj_preds = []
+        cls_preds = []
+        var_preds = []
+        for p in preds:
+            p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, 9 + self.num_classes)
+            loc_preds.append(p[..., :4])
+            var_preds.append(p[..., 4:8])
+            obj_preds.append(p[..., 8])
+            cls_preds.append(p[..., 9:])
+        loc_p = torch.cat(loc_preds, dim=1)
+        obj_p = torch.cat(obj_preds, dim=1)
+        cls_p = torch.cat(cls_preds, dim=1)
+        var_p = torch.cat(var_preds, dim=1)
+        return loc_p, obj_p, cls_p, var_p
 
 
 def flatten(xs):
@@ -225,10 +287,10 @@ class YOLOTransform:
 
 
 class YOLOLoss(nn.Module):
-    def __init__(self, p=0.01, criterion='sigmoid', neg_gain=1, loc_gain=0.5):
+    def __init__(self, p=0.01, obj_loss='sigmoid', neg_gain=1, loc_gain=0.5):
         super().__init__()
         self.p = p
-        self.criterion = criterion
+        self.obj_loss = obj_loss
         self.neg_gain = neg_gain
         self.loc_gain = loc_gain
 
@@ -236,8 +298,8 @@ class YOLOLoss(nn.Module):
         pos = cls_t != 0
         num_pos = pos.sum().item()
 
-        criterion = focal_loss2 if self.criterion == 'focal' else F.binary_cross_entropy_with_logits
-        neg_gain = 1 if self.criterion == 'focal' else self.neg_gain
+        criterion = focal_loss2 if self.obj_loss == 'focal' else F.binary_cross_entropy_with_logits
+        neg_gain = 1 if self.obj_loss == 'focal' else self.neg_gain
 
         obj_p_pos = obj_p[pos]
         obj_loss_pos = criterion(
@@ -264,14 +326,55 @@ class YOLOLoss(nn.Module):
         return loss
 
 
+class YOLOKLLoss(nn.Module):
+    def __init__(self, p=0.01, obj_loss='sigmoid', neg_gain=1, loc_gain=0.5):
+        super().__init__()
+        self.p = p
+        self.obj_loss = obj_loss
+        self.neg_gain = neg_gain
+        self.loc_gain = loc_gain
+
+    def forward(self, loc_p, obj_p, cls_p, var_p, loc_t, cls_t, ignore):
+        pos = cls_t != 0
+        num_pos = pos.sum().item()
+
+        criterion = focal_loss2 if self.obj_loss == 'focal' else F.binary_cross_entropy_with_logits
+        neg_gain = 1 if self.obj_loss == 'focal' else self.neg_gain
+
+        obj_p_pos = obj_p[pos]
+        obj_loss_pos = criterion(
+            obj_p_pos, torch.ones_like(obj_p_pos), reduction='sum'
+        ) / num_pos
+        obj_p_neg = obj_p[~pos & ~ignore]
+        obj_loss_neg = neg_gain * criterion(
+            obj_p_neg, torch.zeros_like(obj_p_neg), reduction='sum'
+        ) / num_pos
+
+        obj_loss = obj_loss_pos + obj_loss_neg
+
+        loc_loss = self.loc_gain * loc_kl_loss(
+            loc_p[pos], var_p[pos], loc_t[pos], reduction='sum') / num_pos
+
+        cls_t = one_hot(cls_t, cls_p.size(-1) + 1)[..., 1:]
+        cls_loss = F.binary_cross_entropy_with_logits(
+            cls_p[pos], cls_t[pos], reduction='sum') / num_pos
+
+        loss = obj_loss + loc_loss + cls_loss
+        if random.random() < self.p:
+            print("pos: %.4f | neg: %.4f | loc: %.4f | cls: %.4f" %
+                  (obj_loss_pos.item(), obj_loss_neg.item(), loc_loss.item(), cls_loss.item()))
+        return loss
+
+
 def yolo_inference(
         loc_p, obj_p, cls_p, anchors, locations, conf_threshold=0.01,
-        iou_threshold=0.5, topk=100, nms_method='soft_nms'):
-    dets = []
-    bboxes = loc_p
+        iou_threshold=0.5, topk=100, nms_method='soft'):
+    if nms_method == 'softer':
+        bboxes, vars = loc_p
+    else:
+        bboxes = loc_p
     scores, labels = torch.sigmoid_(cls_p).max(dim=1)
     scores *= torch.sigmoid_(obj_p)
-    # scores = torch.sigmoid_(obj_p)
 
     if conf_threshold > 0:
         pos = scores > conf_threshold
@@ -297,11 +400,15 @@ def yolo_inference(
             indices = scores.topk(topk)[1]
         else:
             indices = range(scores.size(0))
+    elif nms_method == 'softer':
+        indices = softer_nms_cpu(
+            bboxes, scores, vars, iou_threshold, topk, 0.01, min_score=conf_threshold)
     else:
         indices = soft_nms_cpu(
             bboxes, scores, iou_threshold, topk, min_score=0.01)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
+    dets = []
     for ind in indices:
         det = {
             'image_id': -1,
@@ -316,22 +423,24 @@ def yolo_inference(
 class YOLOInference:
 
     def __init__(self, mlvl_anchors, conf_threshold=0.5,
-                 iou_threshold=0.5, topk=100, nms_method='soft_nms'):
+                 iou_threshold=0.5, topk=100, nms='soft'):
         self.locations = get_locations(mlvl_anchors)
         self.anchors = flatten(mlvl_anchors)
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.topk = topk
-        self.nms_method = nms_method
+        self.nms = nms
 
-    def __call__(self, loc_p, obj_p, cls_p):
+    def __call__(self, loc_p, obj_p, cls_p, var_p=None):
         image_dets = []
         batch_size = loc_p.size(0)
+        softer_nms = var_p is not None and self.nms == 'softer'
         for i in range(batch_size):
+            i_loc_p = (loc_p[i], var_p[i]) if softer_nms else loc_p[i]
             dets = yolo_inference(
-                loc_p[i], obj_p[i], cls_p[i], self.anchors, self.locations,
+                i_loc_p, obj_p[i], cls_p[i], self.anchors, self.locations,
                 self.conf_threshold, self.iou_threshold,
-                self.topk, self.nms_method,
+                self.topk, self.nms,
             )
             image_dets.append(dets)
         return image_dets

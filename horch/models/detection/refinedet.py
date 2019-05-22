@@ -20,8 +20,8 @@ class RefineLoss:
 
     def __init__(self, neg_threshold=0.01, p=0.01, refine_cls_loss='focal'):
         super().__init__()
-        self.r_loss = MultiBoxLoss(criterion=refine_cls_loss, prefix='refine', p=p)
-        self.d_loss = MultiBoxLoss(criterion='softmax', pos_neg_ratio=1 / 3, prefix='detect', p=p)
+        self.r_loss = MultiBoxLoss(cls_loss=refine_cls_loss, prefix='refine', p=p)
+        self.d_loss = MultiBoxLoss(cls_loss='softmax', pos_neg_ratio=1 / 3, prefix='detect', p=p)
         self.neg_threshold = inverse_sigmoid(neg_threshold)
         self.p = p
 

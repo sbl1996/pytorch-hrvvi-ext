@@ -105,7 +105,7 @@ def get_activation(name):
 def Conv2d(in_channels, out_channels,
            kernel_size, stride=1,
            padding='same', dilation=1, groups=1,
-           norm_layer=None, activation=None, depthwise_separable=False, mid_norm_layer=None):
+           norm_layer=None, activation=None, depthwise_separable=False, mid_norm_layer=None, transposed=False):
     if depthwise_separable:
         assert kernel_size != 1, "No need to use depthwise separable convolution in 1x1"
         if norm_layer is None:
@@ -124,9 +124,14 @@ def Conv2d(in_channels, out_channels,
             padding = (kernel_size - 1) // 2
     layers = []
     bias = norm_layer is None
-    conv = nn.Conv2d(
-        in_channels, out_channels,
-        kernel_size, stride, padding, dilation, groups, bias)
+    if transposed:
+        conv = nn.ConvTranspose2d(
+            in_channels, out_channels,
+            kernel_size, stride, padding, dilation=dilation, groups=groups, bias=bias)
+    else:
+        conv = nn.Conv2d(
+            in_channels, out_channels,
+            kernel_size, stride, padding, dilation=dilation, groups=groups, bias=bias)
     if activation is not None:
         if activation == 'sigmoid':
             nn.init.xavier_normal_(conv.weight)
@@ -149,57 +154,10 @@ def Conv2d(in_channels, out_channels,
     if activation is not None:
         layers.append(get_activation(activation))
     layers = [conv] + layers
-    return nn.Sequential(*layers)
-
-
-def DeConv2d(in_channels, out_channels,
-             kernel_size, stride=1,
-             padding='same', dilation=1, groups=1,
-             norm_layer=None, activation=None, depthwise_separable=False, mid_norm_layer=None):
-    if depthwise_separable:
-        assert kernel_size != 1, "No need to use depthwise separable convolution in 1x1"
-        if norm_layer is None:
-            assert mid_norm_layer is not None, "`mid_norm_layer` must be provided when `norm_layer` is None"
-        else:
-            if mid_norm_layer is None:
-                mid_norm_layer = norm_layer
-        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, mid_norm_layer, norm_layer, activation)
-    if padding == 'same':
-        if isinstance(kernel_size, tuple):
-            kh, kw = kernel_size
-            ph = (kh - 1) // 2
-            pw = (kw - 1) // 2
-            padding = (ph, pw)
-        else:
-            padding = (kernel_size - 1) // 2
-    layers = []
-    bias = norm_layer is None
-    conv = nn.ConvTranspose2d(
-        in_channels, out_channels,
-        kernel_size, stride, padding, dilation=dilation, groups=groups, bias=bias)
-    if activation is not None:
-        if activation == 'sigmoid':
-            nn.init.xavier_normal_(conv.weight)
-        elif activation == 'leaky_relu':
-            nn.init.kaiming_normal_(conv.weight, a=0.1, nonlinearity='leaky_relu')
-        else:
-            try:
-                nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)
-            except ValueError:
-                nn.init.kaiming_normal_(conv.weight, nonlinearity='relu')
+    if len(layers) == 1:
+        return layers[0]
     else:
-        nn.init.kaiming_normal_(conv.weight, nonlinearity='relu')
-    if bias:
-        nn.init.zeros_(conv.bias)
-
-    if norm_layer is not None:
-        if norm_layer == 'default':
-            norm_layer = get_default_norm_layer()
-        layers.append(get_norm_layer(norm_layer, out_channels))
-    if activation is not None:
-        layers.append(get_activation(activation))
-    layers = [conv] + layers
-    return nn.Sequential(*layers)
+        return nn.Sequential(*layers)
 
 
 def Linear(in_channels, out_channels,
@@ -268,7 +226,6 @@ def DWConv2d(in_channels, out_channels,
                norm_layer=mid_norm_layer),
         Conv2d(in_channels, out_channels, kernel_size=1,
                norm_layer=norm_layer, activation=activation),
-
     )
 
 

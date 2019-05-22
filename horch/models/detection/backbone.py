@@ -361,10 +361,10 @@ class SqueezeNet(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, feature_levels=(3, 4, 5)):
+    def __init__(self, feature_levels=(3, 4, 5), pretrained=True):
         super().__init__()
         from torchvision.models.squeezenet import squeezenet1_1, Fire
-        backbone = squeezenet1_1(pretrained=True)
+        backbone = squeezenet1_1(pretrained=pretrained)
         del backbone.classifier
         backbone = backbone.features
         backbone[0].padding = (1, 1)
