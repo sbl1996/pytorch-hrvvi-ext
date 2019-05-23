@@ -4,8 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import detach, _tuple, _concat
-from horch.models.modules import Sequential, Conv2d, DeConv2d
+from horch.common import detach, _tuple, _concat, inverse_sigmoid
+from horch.models.utils import bias_init_constant, weight_init_normal
+from horch.models.modules import Sequential, Conv2d
 from horch.models.detection.head import to_pred
 
 
@@ -38,12 +39,7 @@ class RPNHead(nn.Module):
         self.loc_conv = Conv2d(f_channels, num_anchors * 4, kernel_size=1)
         self.cls_conv = Conv2d(f_channels, num_anchors * 2, kernel_size=1)
 
-        self.cls_conv.apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            nn.init.constant_(m.bias, -log((1 - p) / p))
+        bias_init_constant(self.cls_conv, inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         loc_preds = []
@@ -60,19 +56,22 @@ class RPNHead(nn.Module):
         return loc_p, cls_p
 
 
-class BoxHead(nn.Module):
-    r"""
-    Light head only for R-CNN, not for one-stage detector.
-    """
+class Box2FCHead(nn.Module):
 
-    def __init__(self, num_classes, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_classes, f_channels=256, norm_layer='bn', box_std=False):
         super().__init__()
+        self.box_std = box_std
         self.fc1 = Conv2d(f_channels, f_channels, kernel_size=1,
                           norm_layer=norm_layer, activation='default')
         self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
                           norm_layer=norm_layer, activation='default')
-        self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
-        self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
+        self.loc_fc = Conv2d(f_channels, num_classes * 4, kernel_size=1)
+        weight_init_normal(self.loc_fc, 0, 0.001)
+        self.cls_fc = Conv2d(f_channels, num_classes + 1, kernel_size=1)
+        weight_init_normal(self.cls_fc, 0, 0.01)
+        if box_std:
+            self.box_std_fc = Conv2d(f_channels, num_classes * 4, kernel_size=1)
+            weight_init_normal(self.box_std_fc, 0, 0.0001)
 
     def forward(self, ps):
         r"""
@@ -84,7 +83,11 @@ class BoxHead(nn.Module):
         p = self.fc2(p)
         loc_p = self.loc_fc(p).squeeze()
         cls_p = self.cls_fc(p).squeeze()
-        return loc_p, cls_p
+        if self.box_std:
+            log_var_p = self.box_std_fc(p).squeeze()
+            return loc_p, cls_p, log_var_p
+        else:
+            return loc_p, cls_p
 
 
 class RPN(Sequential):
@@ -104,59 +107,58 @@ class RPN(Sequential):
         Optional feature enhance module from `horch.models.detection.enhance`.
     """
 
-    def __init__(self, backbone, fpn, head, inference=None, match_anchors=None):
+    def __init__(self, backbone, fpn, head, inference=None):
         super().__init__(inference=inference)
         self.backbone = backbone
         self.fpn = fpn
         self.head = head
-        self.match_anchors = match_anchors
+        self._e2e = True
 
-    def region_proposal(self, x, image_gts=None):
+    def region_proposal(self, x):
         cs = self.backbone(x)
         ps = self.fpn(*cs)
         ps = _tuple(ps)
-        loc_p, cls_p = self.head(*_tuple(ps))
+        loc_p, cls_p = self.head(*ps)
         rois = self._inference(detach(loc_p), detach(cls_p))
-        if self.training:
-            loc_t, cls_t, ignore = self.match_anchors(image_gts)
-            return ps, rois, loc_p, cls_p, loc_t, cls_t, ignore
-        else:
+        if self.training and self._e2e:
             return ps, rois, loc_p, cls_p
+        else:
+            return ps, rois
 
 
 class FasterRCNN(nn.Module):
-    def __init__(self, rpn, roi_match, roi_pool, box_head, inference):
+    def __init__(self, match_anchors, rpn, roi_match, roi_pool, box_head, inference):
         super().__init__()
+        self.match_anchors = match_anchors
         self.rpn = rpn
         self.roi_match = roi_match
         self.roi_pool = roi_pool
-        self.position_sensitive = 'PS' in type(roi_pool).__name__
         self.box_head = box_head
         self._inference = inference
+        self._position_sensitive = "PS" in type(self.roi_pool).__name__
 
     def forward(self, x, image_gts=None):
-        b = x.size(0)
-        if self.training:
-            ps, rois, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore = self.rpn.region_proposal(x, image_gts)
-            loc_t, cls_t, rois = self.roi_match(rois, image_gts)
-        else:
-            ps, rois, loc_p, cls_p = self.rpn.region_proposal(x)
+        rpn_loc_t, rpn_cls_t, ignore = self.match_anchors(image_gts)
+
+        ps, rois, rpn_loc_p, rpn_cls_p = self.rpn.region_proposal(x)
+
+        loc_t, cls_t, rois = self.roi_match(rois, image_gts)
 
         ps = [self.roi_pool(p, rois) for p in ps]
-        if self.position_sensitive:
+        if self._position_sensitive:
             ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
-        loc_p, cls_p = self.box_head(ps)
-
-        if self.training:
-            return loc_p, cls_p, loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore
-        else:
-            return rois[..., 1:], loc_p, cls_p
+        preds = self.box_head(ps)
+        return preds + (loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
 
     def inference(self, x):
         self.eval()
         with torch.no_grad():
-            rois, loc_p, cls_p = self.forward(x)
-        image_dets = self._inference(rois, loc_p, cls_p)
+            ps, rois = self.rpn.region_proposal(x)
+            ps = [self.roi_pool(p, rois) for p in ps]
+            if self._position_sensitive:
+                ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
+            preds = self.box_head(ps)
+        image_dets = self._inference(rois[..., 1:], *preds)
         self.train()
         return image_dets
 
@@ -196,45 +198,49 @@ class MaskHead(nn.Module):
 
 
 class MaskRCNN(nn.Module):
-    def __init__(self, rpn, roi_match, roi_pool, box_head, mask_head, inference):
+    def __init__(self, match_anchors, rpn, roi_match, roi_pool, box_head, mask_head, inference):
         super().__init__()
+        self.match_anchors = match_anchors
         self.rpn = rpn
         self.roi_match = roi_match
         self.roi_pool = roi_pool
-        self.position_sensitive = 'PS' in type(roi_pool).__name__
         self.box_head = box_head
         self.mask_head = mask_head
         self._inference = inference
+        self._position_sensitive = "PS" in type(self.roi_pool).__name__
 
     def forward(self, x, image_gts=None):
-        b = x.size(0)
-        if self.training:
-            ps, rois, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore = self.rpn.region_proposal(x, image_gts)
-            loc_t, cls_t, mask_t, rois = self.roi_match(rois, image_gts)
-        else:
-            ps, rois, loc_p, cls_p = self.rpn.region_proposal(x)
+        rpn_loc_t, rpn_cls_t, ignore = self.match_anchors(image_gts)
+
+        ps, rois, rpn_loc_p, rpn_cls_p = self.rpn.region_proposal(x)
+
+        loc_t, cls_t, mask_t, rois = self.roi_match(rois, image_gts)
 
         ps = [self.roi_pool(p, rois) for p in ps]
-        if self.position_sensitive:
+        if self._position_sensitive:
             ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
         loc_p, cls_p = self.box_head(ps)
 
-        if self.training:
-            pos = cls_t != 0
-            mask_p = self.mask_head([p[pos] for p in ps])
-            return loc_p, cls_p, mask_p, loc_t, cls_t, mask_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore
-        else:
+        pos = cls_t != 0
+        mask_p = self.mask_head([p[pos] for p in ps])
+
+        return loc_p, cls_p, mask_p, loc_t, cls_t, mask_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore
+
+    def inference(self, x):
+        b = x.size(0)
+        self.eval()
+        with torch.no_grad():
+            ps, rois = self.rpn.region_proposal(x)
+            ps = [self.roi_pool(p, rois) for p in ps]
+            if self._position_sensitive:
+                ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
+            loc_p, cls_p = self.box_head(ps)
+
             ps = [p.view(b, -1, *p.size()[1:]) for p in ps]
 
             def predict_mask(i, indices):
                 return self.mask_head([p[i][indices] for p in ps])
 
-            return rois[..., 1:], loc_p, cls_p, predict_mask
-
-    def inference(self, x):
-        self.eval()
-        with torch.no_grad():
-            rois, loc_p, cls_p, predict_mask = self.forward(x)
-        image_dets = self._inference(rois, loc_p, cls_p, predict_mask)
+        image_dets = self._inference(rois[..., 1:], loc_p, cls_p, predict_mask)
         self.train()
         return image_dets

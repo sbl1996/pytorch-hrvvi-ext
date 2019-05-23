@@ -129,3 +129,6 @@ def inverse_sigmoid_(x, eps=1e-6):
         x = torch.clamp_(x, eps, 1 - eps)
     return x.div_(1 - x).log_()
 
+
+def expand_last_dim(t, *size):
+    return t.view(*t.size()[:-1], *size)

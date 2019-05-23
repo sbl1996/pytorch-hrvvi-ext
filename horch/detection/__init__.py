@@ -8,8 +8,9 @@ import numpy as np
 import torch
 from torch.utils.data.dataloader import default_collate
 
-from horch.common import Args
 
+from horch.common import Args
+from horch.transforms.detection.functional import to_absolute_coords
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
 from horch.detection.anchor import find_priors_kmeans, find_priors_coco
@@ -21,7 +22,8 @@ __all__ = [
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "get_locations", "calc_anchor_sizes", "generate_anchors",
     "generate_mlvl_anchors", "generate_anchors_with_priors",
-    "find_priors_kmeans", "mAP", "find_priors_coco", "softer_nms_cpu"
+    "find_priors_kmeans", "mAP", "find_priors_coco", "softer_nms_cpu",
+    "misc_collate"
 ]
 
 

@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import select, sample, _concat
+from horch.common import select, sample, _concat, expand_last_dim
 from horch.detection.one import MultiBoxLoss
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
@@ -216,9 +216,9 @@ class MatchRoIs:
 
 class MaskRCNNLoss(nn.Module):
 
-    def __init__(self, p=0.01):
+    def __init__(self, p=0.01, rpn_cls_loss='softmax'):
         super().__init__()
-        self.rpn_loss = MultiBoxLoss(p=p, criterion='focal', prefix='RPN')
+        self.rpn_loss = MultiBoxLoss(p=p, cls_loss=rpn_cls_loss, prefix='RPN')
         self.rcnn_loss = MultiBoxLoss(p=p, prefix='RCNN')
 
     @property
@@ -234,8 +234,17 @@ class MaskRCNNLoss(nn.Module):
         rpn_loc_p = rpn_loc_p.view(-1, 4)
         rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
+
+        num_classes = cls_p.size(-1) - 1
+        loc_p = expand_last_dim(loc_p, num_classes, 4)
+
+        pos = cls_t != 0
+        labels = cls_t[pos] - 1
+        loc_p = select(loc_p[pos], 1, labels)
+
         rcnn_loss = self.rcnn_loss(loc_p, cls_p, loc_t, cls_t)
-        mask_p = select(mask_p, 1, cls_t[cls_t != 0] - 1)
+
+        mask_p = select(mask_p, 1, labels)
         mask_loss = F.binary_cross_entropy_with_logits(mask_p, mask_t)
         if random.random() < self.p:
             print("mask: %.4f" % mask_loss.item())
@@ -247,8 +256,10 @@ class MaskRCNNLoss(nn.Module):
 def roi_based_inference(
         rois, loc_p, cls_p, predict_mask,
         iou_threshold=0.5, topk=100, nms_method='soft_nms'):
-    dets = []
     scores, labels = torch.softmax(cls_p, dim=1)[:, 1:].max(dim=1)
+    num_classes = cls_p.size(1) - 1
+    loc_p = expand_last_dim(loc_p, num_classes, 4)
+    loc_p = select(loc_p, 1, labels)
 
     loc_p[..., :2].mul_(rois[:, 2:]).add_(rois[:, :2])
     loc_p[..., 2:].exp_().mul_(rois[:, 2:])
@@ -275,6 +286,7 @@ def roi_based_inference(
         mask_p = predict_mask(indices)
         masks = (select(mask_p, 1, labels[indices]).sigmoid_() > 0.5).cpu().numpy()
 
+    dets = []
     for i, ind in enumerate(indices):
         det = {
             'image_id': -1,

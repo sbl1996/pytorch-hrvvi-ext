@@ -1,16 +1,18 @@
+import random
 import warnings
 
+from horch.nn.loss import loc_kl_loss
 from toolz import curry
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import select, sample, _concat
-from horch.detection.one import MultiBoxLoss
+from horch.common import select, sample, _concat, one_hot, expand_last_dim
+from horch.detection.one import MultiBoxLoss, AnchorBasedInference
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
-from horch.detection.nms import nms, soft_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
 
 
 def coords_to_target(gt_box, anchors):
@@ -235,18 +237,25 @@ class MatchAnchors:
         lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
     """
 
-    def __init__(self, anchors, pos_thresh=0.7, neg_thresh=0.3, debug=False):
+    def __init__(self, anchors, pos_thresh=0.7, neg_thresh=0.3, get_label=lambda x: 1, debug=False):
         self.a_xywh = flatten(anchors)
         self.a_ltrb = BBox.convert(self.a_xywh, BBox.XYWH, BBox.LTRB)
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
-        self.get_label = lambda x: 1
+        self.get_label = get_label
         self.debug = debug
 
-    def __call__(self, image_gts):
-        is_cpu = self.a_xywh.device.type != 'cpu'
+    def __call__(self, x, image_gts=None):
+        is_transform = image_gts is not None
+        if is_transform:
+            image_gts = [image_gts]
+        else:
+            image_gts = x
+
+        is_cpu = self.a_xywh.device.type == 'cpu'
         match_func = match_anchors if is_cpu else match_anchors2
         batch_size = len(image_gts)
+
         loc_targets = []
         cls_targets = []
         ignores = []
@@ -257,10 +266,14 @@ class MatchAnchors:
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
             ignores.append(ignore)
-        loc_t = torch.cat(loc_targets, dim=0)
-        cls_t = torch.cat(cls_targets, dim=0)
-        ignore = torch.cat(ignores, dim=0)
-        return loc_t, cls_t, ignore
+        loc_t = _concat(loc_targets, dim=0)
+        cls_t = _concat(cls_targets, dim=0)
+        ignore = _concat(ignores, dim=0)
+
+        if is_transform:
+            return x, [loc_t, cls_t, ignore]
+        else:
+            return loc_t, cls_t, ignore
 
 
 class InferenceRoIs:
@@ -289,7 +302,7 @@ class MatchRoIs:
         self.pos_neg_ratio = pos_neg_ratio
 
     def __call__(self, rois, image_gts):
-        is_cpu = rois.device.type != 'cpu'
+        is_cpu = rois.device.type == 'cpu'
         match_func = match_rois if is_cpu else match_rois2
         rois_ltrb = rois[..., 1:]
 
@@ -309,11 +322,11 @@ class MatchRoIs:
         return loc_t, cls_t, rois
 
 
-class FasterRCNNLoss(nn.Module):
+class RCNNLoss(nn.Module):
 
-    def __init__(self, p=0.01):
+    def __init__(self, p=0.01, rpn_cls_loss='softmax'):
         super().__init__()
-        self.rpn_loss = MultiBoxLoss(p=p, criterion='focal', prefix='RPN')
+        self.rpn_loss = MultiBoxLoss(p=p, cls_loss=rpn_cls_loss, prefix='RPN')
         self.rcnn_loss = MultiBoxLoss(p=p, prefix='RCNN')
 
     @property
@@ -329,7 +342,84 @@ class FasterRCNNLoss(nn.Module):
         rpn_loc_p = rpn_loc_p.view(-1, 4)
         rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
+
+        num_classes = cls_p.size(-1) - 1
+        loc_p = expand_last_dim(loc_p, num_classes, 4)
+
+        pos = cls_t != 0
+        loc_p = select(loc_p[pos], 1, cls_t[pos] - 1)
+
         rcnn_loss = self.rcnn_loss(loc_p, cls_p, loc_t, cls_t)
+        loss = rpn_loss + rcnn_loss
+        return loss
+
+
+class KLSoftmaxLoss(nn.Module):
+
+    def __init__(self, p=0.01, prefix=""):
+        super().__init__()
+        self.p = p
+        self.prefix = prefix
+
+    def forward(self, loc_p, cls_p, log_var_p, loc_t, cls_t):
+        pos = cls_t != 0
+        num_pos = pos.sum().item()
+        if num_pos == 0:
+            return loc_p.new_tensor(0, requires_grad=True)
+        if loc_p.size()[:-1] == pos.size():
+            loc_p = loc_p[pos]
+            log_var_p = log_var_p[pos]
+        if loc_t.size()[:-1] == pos.size():
+            loc_t = loc_t[pos]
+
+        loc_loss = loc_kl_loss(
+            loc_p, log_var_p, loc_t, reduction='sum') / num_pos
+
+        cls_p = cls_p.view(-1, cls_p.size(-1))
+        cls_t = cls_t.view(-1)
+        cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
+
+        loss = cls_loss + loc_loss
+        if random.random() < self.p:
+            if self.prefix:
+                print("[%s] loc: %.4f | cls: %.4f" %
+                      (self.prefix, loc_loss.item(), cls_loss.item()))
+            else:
+                print("loc: %.4f | cls: %.4f" %
+                      (loc_loss.item(), cls_loss.item()))
+        return loss
+
+
+class RCNNKLLoss(nn.Module):
+
+    def __init__(self, p=0.01, rpn_cls_loss='softmax'):
+        super().__init__()
+        self.rpn_loss = MultiBoxLoss(p=p, cls_loss=rpn_cls_loss, prefix='RPN')
+        self.rcnn_loss = KLSoftmaxLoss(p=p, prefix='RCNN')
+
+    @property
+    def p(self):
+        return self.rcnn_loss.p
+
+    @p.setter
+    def p(self, new_p):
+        self.rpn_loss.p = new_p
+        self.rcnn_loss.p = new_p
+
+    def forward(self, loc_p, cls_p, log_var_p, loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore):
+        rpn_loc_p = rpn_loc_p.view(-1, 4)
+        rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
+        rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
+
+        num_classes = cls_p.size(-1) - 1
+        loc_p = expand_last_dim(loc_p, num_classes, 4)
+        log_var_p = expand_last_dim(log_var_p, num_classes, 4)
+
+        pos = cls_t != 0
+        labels = cls_t[pos] - 1
+        loc_p = select(loc_p[pos], 1, labels)
+        log_var_p = select(log_var_p[pos], 1, labels)
+        rcnn_loss = self.rcnn_loss(loc_p, cls_p, log_var_p, loc_t, cls_t)
         loss = rpn_loss + rcnn_loss
         return loss
 
@@ -337,31 +427,70 @@ class FasterRCNNLoss(nn.Module):
 @curry
 def roi_based_inference(
         rois, loc_p, cls_p,
-        iou_threshold=0.5, topk=100, nms_method='soft_nms'):
-    dets = []
+        iou_threshold=0.5, topk=100, nms_method='soft'):
+
     scores, labels = torch.softmax(cls_p, dim=1)[:, 1:].max(dim=1)
+    num_classes = cls_p.size(1) - 1
+    loc_p = expand_last_dim(loc_p, num_classes, 4)
+    loc_p = select(loc_p, 1, labels)
 
     loc_p[..., :2].mul_(rois[:, 2:]).add_(rois[:, :2])
     loc_p[..., 2:].exp_().mul_(rois[:, 2:])
 
     bboxes = loc_p
-
     bboxes = BBox.convert(
         bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
     scores = scores.cpu()
 
-    if nms_method == 'nms':
+    if nms_method == 'soft':
+        indices = soft_nms_cpu(
+            bboxes, scores, iou_threshold, topk)
+    else:
         indices = nms(bboxes, scores, iou_threshold)
         if len(indices) > topk:
             indices = indices[scores[indices].topk(topk)[1]]
         else:
             warnings.warn("Only %d RoIs left after nms rather than top %d" % (len(scores), topk))
-    else:
-        indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
 
+    dets = []
+    for i, ind in enumerate(indices):
+        det = {
+            'image_id': -1,
+            'category_id': labels[ind].item() + 1,
+            'bbox': bboxes[ind].tolist(),
+            'score': scores[ind].item(),
+        }
+        dets.append(det)
+    return dets
+
+
+@curry
+def softer_roi_based_inference(
+        rois, loc_p, cls_p, log_var_p, iou_threshold=0.5, topk=100):
+
+    scores, labels = torch.softmax(cls_p, dim=1)[:, 1:].max(dim=1)
+    num_classes = cls_p.size(1) - 1
+    loc_p = expand_last_dim(loc_p, num_classes, 4)
+    log_var_p = expand_last_dim(log_var_p, num_classes, 4)
+    loc_p = select(loc_p, 1, labels)
+    log_var_p = select(log_var_p, 1, labels)
+    var_p = log_var_p.exp_()
+    loc_p[..., :2].mul_(rois[:, 2:]).add_(rois[:, :2])
+    loc_p[..., 2:].exp_().mul_(rois[:, 2:])
+
+    bboxes = BBox.convert(
+        loc_p, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
+    scores = scores.cpu()
+    var_p = var_p.cpu()
+
+    indices = softer_nms_cpu(
+        bboxes, scores, var_p, iou_threshold, topk)
+    bboxes = BBox.convert(
+        bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
+
+    dets = []
     for i, ind in enumerate(indices):
         det = {
             'image_id': -1,
@@ -375,20 +504,27 @@ def roi_based_inference(
 
 class RoIBasedInference:
 
-    def __init__(self, iou_threshold=0.5, topk=100, nms_method='soft_nms'):
+    def __init__(self, iou_threshold=0.5, topk=100, nms='soft'):
         self.iou_threshold = iou_threshold
         self.topk = topk
-        self.nms_method = nms_method
+        self.nms = nms
 
-    def __call__(self, rois, loc_p, cls_p):
+    def __call__(self, rois, loc_p, cls_p, log_var_p=None):
         image_dets = []
         batch_size, num_rois = rois.size()[:2]
         rois = BBox.convert(rois, BBox.LTRB, BBox.XYWH, inplace=True)
         loc_p = loc_p.view(batch_size, num_rois, -1)
         cls_p = cls_p.view(batch_size, num_rois, -1)
+        if log_var_p is not None:
+            log_var_p = log_var_p.view(batch_size, num_rois, -1)
         for i in range(batch_size):
-            dets = roi_based_inference(
-                rois[i], loc_p[i], cls_p[i],
-                self.iou_threshold, self.topk, self.nms_method)
+            if self.nms == 'softer' and log_var_p is not None:
+                dets = softer_roi_based_inference(
+                    rois[i], loc_p[i], cls_p[i], log_var_p[i],
+                    self.iou_threshold, self.topk)
+            else:
+                dets = roi_based_inference(
+                    rois[i], loc_p[i], cls_p[i],
+                    self.iou_threshold, self.topk, self.nms)
             image_dets.append(dets)
         return image_dets
