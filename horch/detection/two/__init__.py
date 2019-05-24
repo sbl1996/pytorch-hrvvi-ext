@@ -150,7 +150,7 @@ def match_rois2(anns, rois, pos_thresh=0.5, n_samples=64, pos_neg_ratio=1 / 3):
     if len(anns) == 0:
         loc_t = rois.new_zeros(num_rois, 4)
         cls_t = loc_t.new_zeros(num_rois, dtype=torch.long)
-        return loc_t, cls_t
+        return loc_t, cls_t,
 
     rois_xywh = BBox.convert(rois, BBox.LTRB, BBox.XYWH)
 

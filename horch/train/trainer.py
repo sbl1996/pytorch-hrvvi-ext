@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from collections import defaultdict
+from pathlib import Path
 
 from toolz.curried import get, keyfilter
 
@@ -243,6 +244,24 @@ class Trainer:
             self.lr_scheduler.load_state_dict(lr_scheduler)
         self.metric_history = metric_history
 
+    def save(self):
+        d = Path(self.save_path)
+        d.mkdir(parents=True, exist_ok=True)
+        filename = "%s_trainer_%d.pth" % (self.name, self.epochs())
+        fp = d / filename
+        torch.save(self.state_dict(), fp)
+        print("Save trainer as %s" % fp)
+
+    def load(self):
+        d = Path(self.save_path)
+        pattern = "%s_trainer*.pth" % self.name
+        saves = list(d.glob(pattern))
+        if len(saves) == 0:
+            raise FileNotFoundError("No checkpoint to load for %s in %s" % (self.name, self.save_path))
+        fp = max(saves, key=lambda f: f.stat().st_mtime)
+        self.load_state_dict(torch.load(fp, map_location=self._device))
+        print("Load trainer from %s" % fp)
+
     def epochs(self):
         return self._epochs
 
@@ -260,4 +279,5 @@ class Trainer:
 def _callback_wrapper(f):
     def func(engine, *args, **kwargs):
         return f(*args, **kwargs)
+
     return func
