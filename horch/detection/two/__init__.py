@@ -189,8 +189,7 @@ def inference_rois(loc_p, cls_p, anchors, iou_threshold=0.5, topk=100, conf_stra
         scores = torch.softmax(cls_p, dim=1)
     else:
         scores = torch.sigmoid_(cls_p)
-    scores = scores[..., 1:]
-    scores = torch.max(scores, dim=-1)[0]
+    scores = torch.max(scores[..., 1:], dim=-1)[0]
 
     loc_p[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
     loc_p[..., 2:].exp_().mul_(anchors[:, 2:])
@@ -426,18 +425,25 @@ class RCNNKLLoss(nn.Module):
 
 @curry
 def roi_based_inference(
-        rois, loc_p, cls_p,
+        rois, loc_p, cls_p, conf_threshold=0.01,
         iou_threshold=0.5, topk=100, nms_method='soft'):
 
     scores, labels = torch.softmax(cls_p, dim=1)[:, 1:].max(dim=1)
     num_classes = cls_p.size(1) - 1
     loc_p = expand_last_dim(loc_p, num_classes, 4)
     loc_p = select(loc_p, 1, labels)
-
-    loc_p[..., :2].mul_(rois[:, 2:]).add_(rois[:, :2])
-    loc_p[..., 2:].exp_().mul_(rois[:, 2:])
-
     bboxes = loc_p
+
+    if conf_threshold:
+        pos = scores > conf_threshold
+        bboxes = bboxes[pos]
+        rois = rois[pos]
+        scores = scores[pos]
+        labels = labels[pos]
+
+    bboxes[..., :2].mul_(rois[:, 2:]).add_(rois[:, :2])
+    bboxes[..., 2:].exp_().mul_(rois[:, 2:])
+
     bboxes = BBox.convert(
         bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
     scores = scores.cpu()
@@ -504,8 +510,9 @@ def softer_roi_based_inference(
 
 class RoIBasedInference:
 
-    def __init__(self, iou_threshold=0.5, topk=100, nms='soft'):
+    def __init__(self, iou_threshold=0.5, conf_threshold=0.01, topk=100, nms='soft'):
         self.iou_threshold = iou_threshold
+        self.conf_threshold = conf_threshold
         self.topk = topk
         self.nms = nms
 
@@ -525,6 +532,6 @@ class RoIBasedInference:
             else:
                 dets = roi_based_inference(
                     rois[i], loc_p[i], cls_p[i],
-                    self.iou_threshold, self.topk, self.nms)
+                    self.iou_threshold, self.conf_threshold, self.topk, self.nms)
             image_dets.append(dets)
         return image_dets

@@ -127,7 +127,7 @@ class RetinaHead(nn.Module):
         loc_preds = []
         cls_preds = []
         for p in ps:
-            loc_p = to_pred(self.loc_head(p), self.loc_channels)
+            loc_p = to_pred(self.loc_head(p), 4)
             loc_preds.append(loc_p[..., :4])
 
             cls_p = to_pred(self.cls_head(p), self.num_classes)

@@ -251,7 +251,7 @@ def anchor_based_inference(
     if nms_method == 'soft':
         min_score = min_score or conf_threshold
         indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, min_score=conf_threshold)
+            bboxes, scores, iou_threshold, topk, min_score=min_score)
     else:
         indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
