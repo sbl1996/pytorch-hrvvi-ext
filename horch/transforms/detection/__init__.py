@@ -85,7 +85,7 @@ class RandomSampleCrop(JointTransform):
             new_anns = HF.crop(anns, l, t, w, h)
             if len(new_anns) == 0:
                 return img, anns
-            return img, anns
+            return new_img, new_anns
 
 
 class RandomResizedCrop(JointTransform):
