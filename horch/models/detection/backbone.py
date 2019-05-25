@@ -206,7 +206,7 @@ class MobileNetV2(nn.Module):
     r"""MobileNetV2: Inverted Residuals and Linear Bottlenecks
 
     Args:
-        feature_levels (list of int): features of which layers to output
+        feature_levels (sequence of int): features of which layers to output
             Default: (3, 4, 5)
     """
 

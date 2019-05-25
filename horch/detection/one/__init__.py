@@ -120,13 +120,16 @@ class MultiBoxLoss(nn.Module):
         if ignore is not None:
             neg = neg & ~ignore
         num_pos = pos.sum().item()
+        # print(loc_p.shape)
+        # print(cls_p.shape)
+        # print(loc_t.shape)
+        # print(cls_t.shape)
         if num_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
         if loc_p.size()[:-1] == pos.size():
             loc_p = loc_p[pos]
         if loc_t.size()[:-1] == pos.size():
             loc_t = loc_t[pos]
-
         loc_loss = F.smooth_l1_loss(
             loc_p, loc_t, reduction='sum') / num_pos
 

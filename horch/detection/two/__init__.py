@@ -342,11 +342,11 @@ class RCNNLoss(nn.Module):
         rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
 
-        num_classes = cls_p.size(-1) - 1
-        loc_p = expand_last_dim(loc_p, num_classes, 4)
-
-        pos = cls_t != 0
-        loc_p = select(loc_p[pos], 1, cls_t[pos] - 1)
+        # num_classes = cls_p.size(-1) - 1
+        # loc_p = expand_last_dim(loc_p, num_classes, 4)
+        #
+        # pos = cls_t != 0
+        # loc_p = select(loc_p[pos], 1, cls_t[pos] - 1)
 
         rcnn_loss = self.rcnn_loss(loc_p, cls_p, loc_t, cls_t)
         loss = rpn_loss + rcnn_loss
@@ -410,15 +410,8 @@ class RCNNKLLoss(nn.Module):
         rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
 
-        num_classes = cls_p.size(-1) - 1
-        loc_p = expand_last_dim(loc_p, num_classes, 4)
-        log_var_p = expand_last_dim(log_var_p, num_classes, 4)
-
-        pos = cls_t != 0
-        labels = cls_t[pos] - 1
-        loc_p = select(loc_p[pos], 1, labels)
-        log_var_p = select(log_var_p[pos], 1, labels)
         rcnn_loss = self.rcnn_loss(loc_p, cls_p, log_var_p, loc_t, cls_t)
+
         loss = rpn_loss + rcnn_loss
         return loss
 
@@ -429,9 +422,9 @@ def roi_based_inference(
         iou_threshold=0.5, topk=100, nms_method='soft'):
 
     scores, labels = torch.softmax(cls_p, dim=1)[:, 1:].max(dim=1)
-    num_classes = cls_p.size(1) - 1
-    loc_p = expand_last_dim(loc_p, num_classes, 4)
-    loc_p = select(loc_p, 1, labels)
+    # num_classes = cls_p.size(1) - 1
+    # loc_p = expand_last_dim(loc_p, num_classes, 4)
+    # loc_p = select(loc_p, 1, labels)
     bboxes = loc_p
 
     if conf_threshold:
@@ -477,11 +470,6 @@ def softer_roi_based_inference(
         rois, loc_p, cls_p, log_var_p, iou_threshold=0.5, topk=100):
 
     scores, labels = torch.softmax(cls_p, dim=1)[:, 1:].max(dim=1)
-    num_classes = cls_p.size(1) - 1
-    loc_p = expand_last_dim(loc_p, num_classes, 4)
-    log_var_p = expand_last_dim(log_var_p, num_classes, 4)
-    loc_p = select(loc_p, 1, labels)
-    log_var_p = select(log_var_p, 1, labels)
     var_p = log_var_p.exp_()
     loc_p[..., :2].mul_(rois[:, 2:]).add_(rois[:, :2])
     loc_p[..., 2:].exp_().mul_(rois[:, 2:])

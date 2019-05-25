@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from horch.common import _tuple
 from horch.models.utils import get_loc_cls_preds
 from horch.models.detection.head import SSDHead
-from horch.models.modules import Conv2d, get_norm_layer, get_activation, SELayerM
+from horch.models.modules import Conv2d, get_norm_layer, get_activation, SELayerM, SELayer
 
 
 class Bottleneck(nn.Module):
@@ -52,18 +52,13 @@ class TransferConnection(nn.Module):
         self.conv1 = nn.Sequential(
             Conv2d(in_channels, out_channels, kernel_size=5,
                    norm_layer=norm_layer, activation='relu', depthwise_separable=True),
-            Conv2d(out_channels, out_channels, kernel_size=1,
-                   norm_layer=norm_layer),
-            SELayerM(out_channels),
+            Conv2d(out_channels, out_channels, kernel_size=5,
+                   norm_layer=norm_layer, depthwise_separable=True),
+            SELayer(out_channels, reduction=4),
         )
         if not last:
-            self.deconv1 = nn.Sequential(
-                nn.ConvTranspose2d(
-                    out_channels, out_channels, 4, stride=2, padding=1, groups=out_channels),
-                get_norm_layer(norm_layer, out_channels),
-                Conv2d(out_channels, out_channels, kernel_size=1,
-                       norm_layer=norm_layer)
-            )
+            self.deconv1 = Conv2d(out_channels, out_channels, kernel_size=4, stride=2,
+                                  norm_layer=norm_layer, depthwise_separable=True, transposed=True)
         self.nl1 = get_activation('default')
         self.conv2 = Conv2d(
             out_channels, out_channels, kernel_size=5,

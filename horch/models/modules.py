@@ -113,7 +113,7 @@ def Conv2d(in_channels, out_channels,
         else:
             if mid_norm_layer is None:
                 mid_norm_layer = norm_layer
-        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, mid_norm_layer, norm_layer, activation)
+        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, mid_norm_layer, norm_layer, activation, transposed)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
             kh, kw = kernel_size
@@ -220,10 +220,10 @@ class SELayerM(nn.Module):
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
              padding='same', mid_norm_layer='bn',
-             norm_layer=None, activation=None):
+             norm_layer=None, activation=None, transposed=False):
     return nn.Sequential(
         Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,
-               norm_layer=mid_norm_layer),
+               norm_layer=mid_norm_layer, transposed=transposed),
         Conv2d(in_channels, out_channels, kernel_size=1,
                norm_layer=norm_layer, activation=activation),
     )

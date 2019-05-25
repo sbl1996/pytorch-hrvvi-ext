@@ -58,36 +58,57 @@ class RPNHead(nn.Module):
 
 class Box2FCHead(nn.Module):
 
-    def __init__(self, num_classes, f_channels=256, norm_layer='bn', box_std=False):
+    def __init__(self, num_classes, in_channels, f_channels=256, norm_layer='bn'):
         super().__init__()
-        self.box_std = box_std
-        self.fc1 = Conv2d(f_channels, f_channels, kernel_size=1,
+        self.fc1 = Conv2d(in_channels, f_channels, kernel_size=1,
                           norm_layer=norm_layer, activation='default')
         self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
                           norm_layer=norm_layer, activation='default')
-        self.loc_fc = Conv2d(f_channels, num_classes * 4, kernel_size=1)
+        self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
         weight_init_normal(self.loc_fc, 0, 0.001)
-        self.cls_fc = Conv2d(f_channels, num_classes + 1, kernel_size=1)
+        self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
         weight_init_normal(self.cls_fc, 0, 0.01)
-        if box_std:
-            self.box_std_fc = Conv2d(f_channels, num_classes * 4, kernel_size=1)
-            weight_init_normal(self.box_std_fc, 0, 0.0001)
 
-    def forward(self, ps):
+    def forward(self, *ps):
         r"""
         p : torch.Tensor
             (batch_size * num_rois, C, 14, 14)
         """
-        ps = [self.fc1(F.adaptive_avg_pool2d(p, 1)) for p in ps]
+        ps = [self.fc1(p.view(p.size(0), -1, 1, 1)) for p in ps]
         p = torch.stack(ps).max(dim=0)[0]
         p = self.fc2(p)
         loc_p = self.loc_fc(p).squeeze()
         cls_p = self.cls_fc(p).squeeze()
-        if self.box_std:
-            log_var_p = self.box_std_fc(p).squeeze()
-            return loc_p, cls_p, log_var_p
-        else:
-            return loc_p, cls_p
+        return loc_p, cls_p
+
+
+class SofterBox2FCHead(nn.Module):
+
+    def __init__(self, num_classes, in_channels, f_channels=256, norm_layer='bn'):
+        super().__init__()
+        self.fc1 = Conv2d(in_channels, f_channels, kernel_size=1,
+                          norm_layer=norm_layer, activation='default')
+        self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer=norm_layer, activation='default')
+        self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
+        weight_init_normal(self.loc_fc, 0, 0.001)
+        self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
+        weight_init_normal(self.cls_fc, 0, 0.01)
+        self.box_std_fc = Conv2d(f_channels, 4, kernel_size=1)
+        weight_init_normal(self.box_std_fc, 0, 0.0001)
+
+    def forward(self, *ps):
+        r"""
+        p : torch.Tensor
+            (batch_size * num_rois, C, 14, 14)
+        """
+        ps = [self.fc1(p.view(p.size(0), -1, 1, 1)) for p in ps]
+        p = torch.stack(ps).max(dim=0)[0]
+        p = self.fc2(p)
+        loc_p = self.loc_fc(p).squeeze()
+        cls_p = self.cls_fc(p).squeeze()
+        log_var_p = self.box_std_fc(p).squeeze()
+        return loc_p, cls_p, log_var_p
 
 
 class RPN(Sequential):
@@ -135,7 +156,7 @@ class FasterRCNN(nn.Module):
         self.roi_pool = roi_pool
         self.box_head = box_head
         self._inference = inference
-        self._position_sensitive = "PS" in type(self.roi_pool).__name__
+        # self._position_sensitive = "PS" in type(self.roi_pool).__name__
 
     def forward(self, x, image_gts=None):
         rpn_loc_t, rpn_cls_t, ignore = self.match_anchors(image_gts)
@@ -145,9 +166,9 @@ class FasterRCNN(nn.Module):
         loc_t, cls_t, rois = self.roi_match(rois, image_gts)
 
         ps = [self.roi_pool(p, rois) for p in ps]
-        if self._position_sensitive:
-            ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
-        preds = self.box_head(ps)
+        # if self._position_sensitive:
+        #     ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
+        preds = self.box_head(*ps)
         return preds + (loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
 
     def inference(self, x):
@@ -155,9 +176,9 @@ class FasterRCNN(nn.Module):
         with torch.no_grad():
             ps, rois = self.rpn.region_proposal(x)
             ps = [self.roi_pool(p, rois) for p in ps]
-            if self._position_sensitive:
-                ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
-            preds = self.box_head(ps)
+            # if self._position_sensitive:
+            #     ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
+            preds = self.box_head(*ps)
         image_dets = self._inference(rois[..., 1:], *preds)
         self.train()
         return image_dets
