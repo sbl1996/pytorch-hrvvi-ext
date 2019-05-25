@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from horch.common import _tuple, inverse_sigmoid
 from horch.models.utils import get_loc_cls_preds
 from horch.models.detection.head import SSDHead
-from horch.models.modules import Conv2d, get_norm_layer, get_activation, SELayer
+from horch.models.modules import Conv2d, get_norm_layer, get_activation, get_attention
 
 from horch.detection.one import MultiBoxLoss, anchor_based_inference, flatten
 
@@ -144,15 +144,15 @@ class Bottleneck(nn.Module):
 
 
 class TransferConnection(nn.Module):
-    def __init__(self, in_channels, out_channels, last=False, norm_layer='bn', lite=False):
+    def __init__(self, in_channels, out_channels, last=False, norm_layer='bn', lite=False, attention=None):
         super().__init__()
         self.last = last
-        kernel_size = 3
+        kernel_size = 5 if lite else 3
         self.conv1 = Conv2d(in_channels, out_channels, kernel_size=kernel_size,
                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=kernel_size,
                             norm_layer=norm_layer, depthwise_separable=lite)
-        self.se = SELayer(out_channels, reduction=4)
+        self.attn = get_attention(attention, in_channels=out_channels, reduction=4)
         if not last:
             self.deconv1 = Conv2d(out_channels, out_channels, kernel_size=4, stride=2,
                                   norm_layer=norm_layer, depthwise_separable=lite, transposed=True)
@@ -163,7 +163,7 @@ class TransferConnection(nn.Module):
     def forward(self, x, x_next=None):
         x = self.conv1(x)
         x = self.conv2(x)
-        x = self.se(x)
+        x = self.attn(x)
         if not self.last:
             x = x + self.deconv1(x_next)
         x = self.relu2(x)
@@ -173,7 +173,7 @@ class TransferConnection(nn.Module):
 
 class RefineDet(nn.Module):
     def __init__(self, backbone, num_anchors, num_classes, f_channels, inference, norm_layer='bn', extra_levels=None,
-                 lite=False):
+                 lite=False, attention=None):
         super().__init__()
         self.num_classes = num_classes
         self.backbone = backbone
@@ -192,10 +192,10 @@ class RefineDet(nn.Module):
         self.r_head = SSDHead(num_anchors, 1, stages, norm_layer=norm_layer, lite=lite)
 
         self.tcbs = nn.ModuleList([
-            TransferConnection(stages[-1], f_channels, norm_layer=norm_layer, last=True, lite=lite)])
+            TransferConnection(stages[-1], f_channels, norm_layer=norm_layer, last=True, lite=lite, attention=attention)])
         for c in reversed(stages[:-1]):
             self.tcbs.append(
-                TransferConnection(c, f_channels, norm_layer=norm_layer, lite=lite)
+                TransferConnection(c, f_channels, norm_layer=norm_layer, lite=lite, attention=attention)
             )
 
         self.d_head = SSDHead(num_anchors, num_classes, _tuple(f_channels, 3),

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import Conv2d, SELayer
+from horch.models.modules import Conv2d, SEModule
 
 
 def channel_shuffle(x, g):
@@ -39,7 +39,7 @@ class BasicBlock(nn.Module):
             norm_layer=norm_layer, activation='default',
         )
         if with_se:
-            self.se = SELayer(channels, reduction=8)
+            self.se = SEModule(channels, reduction=8)
         self.shuffle = ShuffleBlock(shuffle_groups)
 
     def forward(self, x):

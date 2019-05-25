@@ -2,7 +2,7 @@ import math
 
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, get_activation, SELayer
+from horch.models.modules import Conv2d, get_activation, SEModule
 
 __all__ = ['RootResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -18,7 +18,7 @@ class BasicBlock(nn.Module):
         self.conv2 = Conv2d(channels, channels, kernel_size=3,
                             norm_layer=norm_layer)
         if self.with_se:
-            self.se = SELayer(channels, reduction=8)
+            self.se = SEModule(channels, reduction=8)
         self.nl = get_activation('default')
         self.downsample = None
         if stride != 1 or in_channels != channels:

@@ -80,7 +80,21 @@ def get_norm_layer(name, channels):
         num_groups = get_groups(channels, 32)
         return nn.GroupNorm(num_groups, channels)
     else:
-        raise NotImplementedError
+        raise NotImplementedError("No normalization named %s" % name)
+
+
+def get_attention(name, **kwargs):
+    if not name:
+        return Identity()
+    name = name.lower()
+    if name == 'se':
+        return SEModule(**kwargs)
+    elif name == 'sem':
+        return SELayerM(**kwargs)
+    elif name == 'cbam':
+        return CBAM(**kwargs)
+    else:
+        raise NotImplementedError("No attention module named %s" % name)
 
 
 def get_activation(name):
@@ -99,7 +113,7 @@ def get_activation(name):
     elif name == 'hswish':
         return HardSwish(inplace=True)
     else:
-        raise NotImplementedError
+        raise NotImplementedError("No activation named %s" % name)
 
 
 def Conv2d(in_channels, out_channels,
@@ -178,11 +192,11 @@ def Linear(in_channels, out_channels,
     return nn.Sequential(*layers)
 
 
-class SELayer(nn.Module):
+class SEModule(nn.Module):
     def __init__(self, in_channels, reduction=8):
         super().__init__()
         channels = in_channels // reduction
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.pool = nn.AdaptiveAvgPool2d(1)
         self.layers = nn.Sequential(
             nn.Linear(in_channels, channels),
             nn.ReLU(True),
@@ -192,9 +206,54 @@ class SELayer(nn.Module):
 
     def forward(self, x):
         b, c = x.size()[:2]
-        s = self.avgpool(x).view(b, c)
+        s = self.pool(x).view(b, c)
         s = self.layers(s).view(b, c, 1, 1)
         return x * s
+
+
+class CBAMChannelAttention(nn.Module):
+    def __init__(self, in_channels, reduction=8):
+        super().__init__()
+        channels = in_channels // reduction
+        self.mlp = nn.Sequential(
+            nn.Linear(in_channels, channels),
+            nn.ReLU(True),
+            nn.Linear(channels, in_channels),
+        )
+
+    def forward(self, x):
+        b, c = x.size()[:2]
+        aa = F.adaptive_avg_pool2d(x, 1).view(b, c)
+        aa = self.mlp(aa)
+        am = F.adaptive_max_pool2d(x, 1).view(b, c)
+        am = self.mlp(am)
+        a = torch.sigmoid(aa + am).view(b, c, 1, 1)
+        return x * a
+
+
+class CBAMSpatialAttention(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2d(2, 1, kernel_size=7, norm_layer='bn')
+
+    def forward(self, x):
+        aa = x.mean(dim=1, keepdim=True)
+        am = x.max(dim=1, keepdim=True)[0]
+        a = torch.cat([aa, am], dim=1)
+        a = torch.sigmoid(self.conv(a))
+        return x * a
+
+
+class CBAM(nn.Module):
+    def __init__(self, in_channels, reduction=4):
+        super().__init__()
+        self.channel = CBAMChannelAttention(in_channels, reduction)
+        self.spatial = CBAMSpatialAttention()
+
+    def forward(self, x):
+        x = self.channel(x)
+        x = self.spatial(x)
+        return x
 
 
 class SELayerM(nn.Module):
@@ -247,3 +306,11 @@ class Sequential(nn.Sequential):
         preds = self._inference(*_tuple(xs))
         self.train()
         return preds
+
+
+class Identity(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def forward(self, x):
+        return x

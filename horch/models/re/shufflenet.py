@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import Conv2d, SELayer, get_activation
+from horch.models.modules import Conv2d, SEModule, get_activation
 
 
 def channel_shuffle(x, g):
@@ -103,7 +103,7 @@ class SEBlock(nn.Module):
             channels, channels, kernel_size=1,
             norm_layer=norm_layer, activation='default',
         )
-        self.se = SELayer(channels, reduction=2)
+        self.se = SEModule(channels, reduction=2)
         self.shuffle = ShuffleBlock(shuffle_groups)
 
     def forward(self, x):
@@ -135,7 +135,7 @@ class SEResBlock(nn.Module):
             norm_layer=norm_layer,
         )
         self.shortcut = nn.Sequential()
-        self.se = SELayer(channels, reduction=2)
+        self.se = SEModule(channels, reduction=2)
         if in_channels != out_channels:
             self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
                                    norm_layer=norm_layer)
