@@ -130,8 +130,12 @@ class Trainer:
               (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine):
+        data_loader = engine.state.dataloader
+        iteration = engine.state.iteration - 1
+        iters_per_epoch = len(data_loader)
+        cur_iter = iteration % iters_per_epoch
         if self.lr_scheduler:
-            self.lr_scheduler.step(self.epochs())
+            self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
 
     def _increment_epoch(self, engine):
         self._epochs += 1
@@ -175,7 +179,7 @@ class Trainer:
 
         # lr_scheduler
         engine.add_event_handler(
-            Events.EPOCH_STARTED, self._lr_scheduler_step)
+            Events.ITERATION_STARTED, self._lr_scheduler_step)
 
         # timer and epoch logger
         self._timer.attach(engine, start=Events.EPOCH_STARTED)
