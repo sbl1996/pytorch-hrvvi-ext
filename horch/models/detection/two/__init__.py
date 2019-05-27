@@ -75,7 +75,10 @@ class Box2FCHead(nn.Module):
             (batch_size * num_rois, C, 14, 14)
         """
         ps = [self.fc1(p.view(p.size(0), -1, 1, 1)) for p in ps]
-        p = torch.stack(ps).max(dim=0)[0]
+        if len(ps) != 1:
+            p = torch.stack(ps).max(dim=0)[0]
+        else:
+            p = ps[0]
         p = self.fc2(p)
         loc_p = self.loc_fc(p).squeeze()
         cls_p = self.cls_fc(p).squeeze()

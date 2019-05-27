@@ -322,12 +322,12 @@ class MobileNetV3(nn.Module):
         )
         self.layer4 = nn.Sequential(
             features[7].conv[3:],
-            *features[8:14],
-            features[14].conv[:3],
+            *features[8:13],
+            features[13].conv[:3],
         )
         self.layer5 = nn.Sequential(
-            features[14].conv[3:],
-            *features[15:],
+            features[13].conv[3:],
+            *features[14:],
         )
         self.feature_levels = feature_levels
         self.out_channels = [

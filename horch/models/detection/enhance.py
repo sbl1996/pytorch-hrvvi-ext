@@ -140,7 +140,6 @@ class ContextEnhance(nn.Module):
                               norm_layer=norm_layer)
 
     def forward(self, *cs):
-        print(len(cs))
         size = cs[0].size()[2:4]
         p = self.lats[0](cs[0])
         for c, lat in zip(cs[1:], self.lats[1:]):
