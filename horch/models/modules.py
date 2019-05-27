@@ -16,6 +16,18 @@ def hardswish(x, inplace=False):
     return x * (F.relu6(x + 3, inplace=inplace) / 6)
 
 
+def swish(x):
+    return x * torch.sigmoid(x)
+
+
+class Swish(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return swish(x)
+
+
 class HardSigmoid(nn.Module):
     def __init__(self, inplace=False):
         super().__init__()
@@ -112,6 +124,8 @@ def get_activation(name):
         return nn.Sigmoid()
     elif name == 'hswish':
         return HardSwish(inplace=True)
+    elif name == 'swish':
+        return Swish()
     else:
         raise NotImplementedError("No activation named %s" % name)
 
