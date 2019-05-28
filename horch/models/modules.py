@@ -86,7 +86,11 @@ def get_groups(channels, ref=32):
 def get_norm_layer(name, channels):
     if isinstance(name, nn.Module):
         return name
-    if name == 'bn':
+    elif hasattr(name, '__call__'):
+        return name(channels)
+    elif name == 'default':
+        return get_norm_layer(get_default_norm_layer(), channels)
+    elif name == 'bn':
         return nn.BatchNorm2d(channels)
     elif name == 'gn':
         num_groups = get_groups(channels, 32)
@@ -132,15 +136,15 @@ def get_activation(name):
 
 def Conv2d(in_channels, out_channels,
            kernel_size, stride=1,
-           padding='same', dilation=1, groups=1,
+           padding='same', dilation=1, groups=1, bias=None,
            norm_layer=None, activation=None, depthwise_separable=False, mid_norm_layer=None, transposed=False):
     if depthwise_separable:
         assert kernel_size != 1, "No need to use depthwise separable convolution in 1x1"
-        if norm_layer is None:
-            assert mid_norm_layer is not None, "`mid_norm_layer` must be provided when `norm_layer` is None"
-        else:
-            if mid_norm_layer is None:
-                mid_norm_layer = norm_layer
+        # if norm_layer is None:
+        #     assert mid_norm_layer is not None, "`mid_norm_layer` must be provided when `norm_layer` is None"
+        # else:
+        if mid_norm_layer is None:
+            mid_norm_layer = norm_layer
         return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, mid_norm_layer, norm_layer, activation, transposed)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
@@ -151,7 +155,8 @@ def Conv2d(in_channels, out_channels,
         else:
             padding = (kernel_size - 1) // 2
     layers = []
-    bias = norm_layer is None
+    if bias is None:
+        bias = norm_layer is None
     if transposed:
         conv = nn.ConvTranspose2d(
             in_channels, out_channels,
@@ -186,6 +191,23 @@ def Conv2d(in_channels, out_channels,
         return layers[0]
     else:
         return nn.Sequential(*layers)
+
+
+def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
+    if padding == 'same':
+        if isinstance(kernel_size, tuple):
+            kh, kw = kernel_size
+            ph = (kh - 1) // 2
+            pw = (kw - 1) // 2
+            padding = (ph, pw)
+        else:
+            padding = (kernel_size - 1) // 2
+    if name == 'avg':
+        return nn.AvgPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
+    elif name == 'max':
+        return nn.MaxPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
+    else:
+        raise NotImplementedError("No activation named %s" % name)
 
 
 def Linear(in_channels, out_channels,
