@@ -4,7 +4,8 @@ import torch.nn.init as init
 import torch.nn.functional as F
 
 from pytorchcv.models.nasnet import Reduction1Unit, Reduction2Unit, nasnet_dual_path_sequential, NormalUnit, \
-    nasnet_batch_norm, nas_conv1x1, NasPathBlock, dws_branch_k5_s1_p2, dws_branch_k3_s1_p1, nasnet_avgpool3x3_s1
+    nasnet_batch_norm, nas_conv1x1, dws_branch_k5_s1_p2, dws_branch_k3_s1_p1, nasnet_avgpool3x3_s1, \
+    NasPathBranch
 
 
 class NASNetCIFARInitBlock(nn.Module):
@@ -18,6 +19,7 @@ class NASNetCIFARInitBlock(nn.Module):
     out_channels : int
         Number of output channels.
     """
+
     def __init__(self,
                  in_channels,
                  out_channels):
@@ -37,6 +39,43 @@ class NASNetCIFARInitBlock(nn.Module):
         return x
 
 
+class NasPathBlock(nn.Module):
+    """
+    NASNet specific `path` block.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    """
+
+    def __init__(self,
+                 in_channels,
+                 out_channels):
+        super(NasPathBlock, self).__init__()
+        mid_channels = out_channels // 2
+
+        self.activ = nn.ReLU()
+        self.path1 = NasPathBranch(
+            in_channels=in_channels,
+            out_channels=mid_channels)
+        self.path2 = NasPathBranch(
+            in_channels=in_channels,
+            out_channels=mid_channels,
+            extra_padding=False)
+        self.bn = nasnet_batch_norm(channels=out_channels)
+
+    def forward(self, x):
+        x = self.activ(x)
+        x1 = self.path1(x)
+        x2 = self.path2(x)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.bn(x)
+        return x
+
+
 class FirstUnit(nn.Module):
     """
     NASNet First unit.
@@ -50,6 +89,7 @@ class FirstUnit(nn.Module):
     out_channels : int
         Number of output channels.
     """
+
     def __init__(self,
                  in_channels,
                  prev_in_channels,
@@ -137,6 +177,7 @@ class NASNet(nn.Module):
     num_classes : int, default 1000
         Number of classification classes.
     """
+
     def __init__(self,
                  channels,
                  init_block_channels,
@@ -159,7 +200,7 @@ class NASNet(nn.Module):
             stage = nasnet_dual_path_sequential()
             for j, out_channels in enumerate(channels_per_stage):
                 if (j == 0) and (i != 0):
-                    unit = reduction_units[i - 1]
+                    unit = Reduction2Unit
                 elif ((i == 0) and (j == 0)) or ((i != 0) and (j == 1)):
                     unit = FirstUnit
                 else:
