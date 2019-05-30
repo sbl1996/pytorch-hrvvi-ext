@@ -145,7 +145,7 @@ def Conv2d(in_channels, out_channels,
         # else:
         if mid_norm_layer is None:
             mid_norm_layer = norm_layer
-        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, mid_norm_layer, norm_layer, activation, transposed)
+        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, bias, mid_norm_layer, norm_layer, activation, transposed)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
             kh, kw = kernel_size
@@ -203,7 +203,7 @@ def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
         else:
             padding = (kernel_size - 1) // 2
     if name == 'avg':
-        return nn.AvgPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
+        return nn.AvgPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode, count_include_pad=False)
     elif name == 'max':
         return nn.MaxPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
     else:
@@ -314,13 +314,13 @@ class SELayerM(nn.Module):
 @curry
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
-             padding='same', mid_norm_layer='bn',
+             padding='same', bias=True, mid_norm_layer='bn',
              norm_layer=None, activation=None, transposed=False):
     return nn.Sequential(
         Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,
                norm_layer=mid_norm_layer, transposed=transposed),
         Conv2d(in_channels, out_channels, kernel_size=1,
-               norm_layer=norm_layer, activation=activation),
+               norm_layer=norm_layer, activation=activation, bias=bias),
     )
 
 
@@ -350,3 +350,22 @@ class Identity(nn.Module):
 
     def forward(self, x):
         return x
+
+
+class DropConnect(nn.Module):
+    def __init__(self, p=0.2):
+        super().__init__()
+        assert 0 <= p <= 1, "drop probability has to be between 0 and 1, but got %f" % p
+        self.p = p
+
+    def forward(self, x):
+        if not self.training or self.p == 0:
+            return x
+        keep_prob = 1.0 - self.p
+        batch_size = x.size(0)
+        t = torch.rand(batch_size, 1, 1, 1, dtype=x.dtype, device=x.device) < keep_prob
+        x = (x / keep_prob).masked_fill(t, 0)
+        return x
+
+    def extra_repr(self):
+        return 'p={}'.format(self.p)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, SELayerM, get_activation
+from horch.models.modules import Conv2d, SELayerM, get_activation, Identity, SEModule
 
 
 def _make_divisible(v, divisor=8, min_value=None):
@@ -25,49 +25,50 @@ def _make_divisible(v, divisor=8, min_value=None):
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, in_channels, exp, out_channels, kernel_size, stride, activation='relu6', with_se=True,
-                 norm_layer='bn'):
+    def __init__(self, in_channels, channels, out_channels, kernel_size, stride, activation='relu6', with_se=True):
         super().__init__()
-        self.stride = stride
-        assert stride in [1, 2]
+        self.with_se = with_se
+        if in_channels != channels:
+            self.expand = Conv2d(in_channels, channels, kernel_size=1,
+                                 norm_layer='default', activation=activation)
+        else:
+            self.expand = Identity()
 
-        self.use_res_connect = self.stride == 1 and in_channels == out_channels
+        self.dwconv = Conv2d(channels, channels, kernel_size, stride, groups=channels,
+                             norm_layer='default',
+                             activation=activation)
 
-        layers = [
-            *Conv2d(in_channels, exp, kernel_size=1,
-                   norm_layer=norm_layer, activation=activation),
-            *Conv2d(exp, exp, kernel_size=kernel_size, stride=stride, groups=exp,
-                   norm_layer=norm_layer),
-        ]
-        if with_se:
-            layers.append(SELayerM(exp))
-        layers.extend([
-            get_activation(activation),
-            *Conv2d(exp, out_channels, kernel_size=1,
-                   norm_layer=norm_layer)
-        ])
+        if self.with_se:
+            self.se = SELayerM(channels, 4)
 
-        self.conv = nn.Sequential(*layers)
+        self.project = Conv2d(channels, out_channels, kernel_size=1,
+                              norm_layer='default')
+        self.use_res_connect = stride == 1 and in_channels == out_channels
 
     def forward(self, x):
+        identity = x
+        x = self.expand(x)
+        x = self.dwconv(x)
+        if self.with_se:
+            x = self.se(x)
+        x = self.project(x)
         if self.use_res_connect:
-            return x + self.conv(x)
-        else:
-            return self.conv(x)
+            x += identity
+        return x
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, num_classes=1000, width_mult=1.0, norm_layer='bn'):
+    def __init__(self, num_classes=10, width_mult=1.0, norm_layer='bn'):
         super().__init__()
         block = InvertedResidual
         in_channels = 16
         last_channels = 1280
         inverted_residual_setting = [
-            # k, exp, c,  se,     nl,  s,
+            # k, e, o,  se,     nl,  s,
             [3, 16, 16, False, 'relu6', 1],
             [3, 64, 24, False, 'relu6', 1],
             [3, 72, 24, False, 'relu6', 1],
-            [5, 72, 40, True, 'relu6', 2],
+            [5, 72, 40, True, 'relu6', 1],
             [5, 120, 40, True, 'relu6', 1],
             [5, 120, 40, True, 'relu6', 1],
             [3, 240, 80, False, 'hswish', 2],
@@ -109,19 +110,6 @@ class MobileNetV3(nn.Module):
                    activation='hswish'),
             Conv2d(last_channels, num_classes, kernel_size=1)
         )
-
-        # weight initialization
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.ones_(m.weight)
-                nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.zeros_(m.bias)
 
     def forward(self, x):
         x = self.features(x)
