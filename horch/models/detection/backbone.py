@@ -5,7 +5,7 @@ import torch.nn as nn
 from pytorchcv.model_provider import get_model as ptcv_get_model
 
 from horch.models.mobilenet import mobilenetv2
-from horch.models.efficientnet import efficientnet
+from horch.models.efficientnet import efficientnet, EfficientNet as BEfficientNet
 from horch.models.mobilenetv3 import mobilenetv3
 from horch.models.snet import SNet as BSNet
 from horch.models.utils import get_out_channels, calc_out_channels
@@ -301,7 +301,73 @@ class EfficientNet(nn.Module):
         if pretrained:
             raise NotImplementedError("Pretrained models for EfficientNet are not provided.")
         else:
-            net = efficientnet(version, num_classes=1)
+            net = efficientnet(version, num_classes=1, drop_connect=0, **kwargs)
+            del net.classifier
+            net = net.features
+            self.layer1 = nn.Sequential(
+                net.init_block,
+                net.stage1,
+                net.stage2.unit1.expand,
+            )
+            self.layer2 = nn.Sequential(
+                net.stage2.unit1.dwconv,
+                net.stage2.unit1.se,
+                net.stage2.unit1.project,
+                net.stage2.unit2,
+                net.stage3.unit1.expand,
+            )
+            self.layer3 = nn.Sequential(
+                net.stage3.unit1.dwconv,
+                net.stage3.unit1.se,
+                net.stage3.unit1.project,
+                *net.stage3[1:],
+                net.stage4.unit1.expand,
+            )
+            self.layer4 = nn.Sequential(
+                net.stage4.unit1.dwconv,
+                net.stage4.unit1.se,
+                net.stage4.unit1.project,
+                *net.stage4[1:],
+                net.stage5.unit1.expand,
+            )
+            self.layer5 = nn.Sequential(
+                net.stage5.unit1.dwconv,
+                net.stage5.unit1.se,
+                net.stage5.unit1.project,
+                *net.stage5[1:],
+                net.final_block,
+            )
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
+class EfficientNetC(nn.Module):
+    r"""EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks
+
+    Parameters
+    ----------
+    version : str
+        b0, b1, b2, b3, b4, b5, b6, b7 are avaliable.
+        Default: b0
+    feature_levels (sequence of int): features of which layers to output
+        Default: (3, 4, 5)
+    """
+
+    def __init__(self, width_mult=1.0, depth_coef=1.0, feature_levels=(3, 4, 5), pretrained=False, **kwargs):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.out_levels = feature_levels
+
+        if pretrained:
+            raise NotImplementedError("Pretrained models for EfficientNet are not provided.")
+        else:
+            net = BEfficientNet(width_mult=width_mult, depth_coef=depth_coef, drop_connect=0, num_classes=1, **kwargs)
             del net.classifier
             net = net.features
             self.layer1 = nn.Sequential(

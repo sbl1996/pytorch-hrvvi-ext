@@ -73,7 +73,7 @@ class EfficientNet(nn.Module):
             [1, 3, 1, 6, 192, 320, 0.25],
         ]
 
-        last_channels = round_channels(last_channels, width_mult) if width_mult > 1.0 else last_channels
+        last_channels = round_channels(last_channels, width_mult)
 
         # building stem
         features = [Conv2d(3, in_channels, kernel_size=3, stride=1,
@@ -102,6 +102,11 @@ class EfficientNet(nn.Module):
             dropout,
             Conv2d(last_channels, num_classes, kernel_size=1)
         )
+
+        for m in self.modules():
+            if isinstance(m, MBConv):
+                bn = m.conv[-1][-1]
+                nn.init.constant_(bn.weight, 0)
 
     def forward(self, x):
         x = self.features(x)

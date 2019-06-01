@@ -102,7 +102,7 @@ class EfficientNet(nn.Module):
         ]
 
         in_channels = round_channels(in_channels, width_mult)
-        last_channels = round_channels(last_channels, width_mult) if width_mult > 1.0 else last_channels
+        last_channels = round_channels(last_channels, width_mult)
 
         # building stem
         self.features = nn.Sequential()
@@ -159,7 +159,7 @@ efficient_params = {
 }
 
 
-def efficientnet(version='b0', num_classes=10):
+def efficientnet(version='b0', num_classes=10, **kwargs):
     name = 'efficientnet-%s' % version
     assert name in efficient_params, "%s is invalid." % name
     width_mult, depth_coef, resolution, dropout = efficient_params[name]
@@ -167,85 +167,94 @@ def efficientnet(version='b0', num_classes=10):
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs,
     )
 
 
-def efficientnet_b0(num_classes):
+def efficientnet_b0(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b0']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )
 
 
-def efficientnet_b1(num_classes):
+def efficientnet_b1(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b1']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )
 
 
-def efficientnet_b2(num_classes):
+def efficientnet_b2(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b2']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )
 
 
-def efficientnet_b3(num_classes):
+def efficientnet_b3(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b3']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )
 
 
-def efficientnet_b4(num_classes):
+def efficientnet_b4(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b4']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
         num_classes=num_classes
+        **kwargs,
     )
 
 
-def efficientnet_b5(num_classes):
+def efficientnet_b5(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b5']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )
 
 
-def efficientnet_b6(num_classes):
+def efficientnet_b6(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b6']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )
 
 
-def efficientnet_b7(num_classes):
+def efficientnet_b7(num_classes, **kwargs):
     width_mult, depth_coef, resolution, dropout = efficient_params['efficientnet-b7']
     return EfficientNet(
         width_mult=width_mult,
         depth_coef=depth_coef,
         dropout=dropout,
-        num_classes=num_classes
+        num_classes=num_classes,
+        **kwargs
     )

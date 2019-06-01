@@ -34,8 +34,8 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         https://arxiv.org/abs/1608.03983
     """
 
-    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, last_epoch=-1,
-                 decoupled_weight_decay=False, iters_per_epoch=None, gamma=1.0):
+    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, gamma=1.0,
+                 decoupled_weight_decay=False, iters_per_epoch=None, last_epoch=-1):
         if T_0 <= 0 or not isinstance(T_0, int):
             raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
         if T_mult < 1 or not isinstance(T_mult, int):
@@ -66,7 +66,9 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
                 T_cur = self.T_cur
                 T_i = self.T_i
                 mult = (1 + math.cos(math.pi * T_cur / T_i)) / 2
+            mult *= self._gamma
             lr = eta_min + (base_lr - eta_min) * mult
+            print(lr)
             lrs.append(lr)
         return lrs
 
@@ -96,6 +98,7 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
             if epoch >= self.T_0:
                 if self.T_mult == 1:
                     self.T_cur = epoch % self.T_0
+                    self._gamma = self.gamma ** (epoch // self.T_0)
                 else:
                     n = int(math.log((epoch / self.T_0 * (self.T_mult - 1) + 1), self.T_mult))
                     self.T_cur = epoch - self.T_0 * (self.T_mult ** n - 1) / (self.T_mult - 1)
