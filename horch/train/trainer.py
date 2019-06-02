@@ -68,9 +68,10 @@ def create_supervised_trainer(
             from apex import amp
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
+            optimizer.step()
         else:
             loss.backward()
-        optimizer.step()
+            optimizer.step()
         output = {
             "preds": detach(preds),
             "target": detach(target),

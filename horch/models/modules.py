@@ -193,6 +193,38 @@ def Conv2d(in_channels, out_channels,
         return nn.Sequential(*layers)
 
 
+def Linear(in_channels, out_channels, bias=None, norm_layer=None, activation=None):
+    layers = []
+    if bias is None:
+        bias = norm_layer is None
+    fc = nn.Linear(
+        in_channels, out_channels, bias=bias)
+    if activation is not None:
+        if activation == 'sigmoid':
+            nn.init.xavier_normal_(fc.weight)
+        elif activation == 'leaky_relu':
+            nn.init.kaiming_normal_(fc.weight, a=0.1, nonlinearity='leaky_relu')
+        else:
+            try:
+                nn.init.kaiming_normal_(fc.weight, nonlinearity=activation)
+            except ValueError:
+                nn.init.kaiming_normal_(fc.weight, nonlinearity='relu')
+    else:
+        nn.init.kaiming_normal_(fc.weight, nonlinearity='relu')
+    if bias:
+        nn.init.zeros_(fc.bias)
+
+    if norm_layer == 'default' or norm_layer == 'bn':
+        layers.append(nn.BatchNorm1d(out_channels))
+    if activation is not None:
+        layers.append(get_activation(activation))
+    layers = [fc] + layers
+    if len(layers) == 1:
+        return layers[0]
+    else:
+        return nn.Sequential(*layers)
+
+
 def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
     if padding == 'same':
         if isinstance(kernel_size, tuple):
@@ -208,24 +240,6 @@ def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
         return nn.MaxPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
     else:
         raise NotImplementedError("No activation named %s" % name)
-
-
-def Linear(in_channels, out_channels,
-           norm_layer=None, activation=None):
-    layers = []
-    bias = norm_layer is None
-    fc = nn.Linear(in_channels, out_channels)
-    nn.init.kaiming_normal_(fc.weight, nonlinearity=activation or 'default')
-    if bias:
-        nn.init.zeros_(fc.bias)
-    layers.append(fc)
-    if norm_layer == 'bn':
-        layers.append(nn.BatchNorm1d(out_channels))
-    elif norm_layer == 'gn':
-        layers.append(nn.GroupNorm(get_groups(out_channels, 32), out_channels))
-    if activation is not None:
-        layers.append(get_activation(activation))
-    return nn.Sequential(*layers)
 
 
 class SEModule(nn.Module):

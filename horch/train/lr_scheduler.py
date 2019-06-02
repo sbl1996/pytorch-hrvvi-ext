@@ -68,7 +68,6 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
                 mult = (1 + math.cos(math.pi * T_cur / T_i)) / 2
             mult *= self._gamma
             lr = eta_min + (base_lr - eta_min) * mult
-            print(lr)
             lrs.append(lr)
         return lrs
 
