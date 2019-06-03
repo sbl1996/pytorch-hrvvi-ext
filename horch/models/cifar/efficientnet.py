@@ -104,7 +104,7 @@ class EfficientNet(nn.Module):
         )
 
         for m in self.modules():
-            if isinstance(m, MBConv):
+            if isinstance(m, MBConv) and m.use_res_connect:
                 bn = m.conv[-1][-1]
                 nn.init.constant_(bn.weight, 0)
 
