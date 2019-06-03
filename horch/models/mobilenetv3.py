@@ -58,12 +58,12 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, num_classes=1000, width_mult=1.0, norm_layer='bn'):
+    def __init__(self, num_classes=1000, width_mult=1.0, rf2=False):
         super().__init__()
         block = InvertedResidual
         in_channels = 16
         last_channels = 1280
-        inverted_residual_setting = [
+        cfg = [
             # k, e, o,  se,     nl,  s,
             [3, 16, 16, False, 'relu6', 1],
             [3, 64, 24, False, 'relu6', 2],
@@ -81,14 +81,34 @@ class MobileNetV3(nn.Module):
             [5, 960, 160, True, 'hswish', 1],
             [5, 960, 160, True, 'hswish', 1],
         ]
+        if rf2:
+            cfg = [
+                # k, e, o,  se,     nl,  s,
+                [3, 16, 16, False, 'relu6', 1],
+                [3, 64, 24, False, 'relu6', 2],
+                [3, 72, 24, False, 'relu6', 1],
+                [5, 72, 40, True, 'relu6', 2],
+                [5, 120, 40, True, 'relu6', 1],
+                [5, 120, 40, True, 'relu6', 1],
+                [3, 240, 80, False, 'hswish', 2],
+                [3, 200, 80, False, 'hswish', 1],
+                [3, 184, 80, False, 'hswish', 1],
+                [3, 184, 80, False, 'hswish', 1],
+                [3, 480, 112, True, 'hswish', 1],
+                [3, 672, 112, True, 'hswish', 1],
+                [5, 336, 80, True, 'hswish', 2],
+                [5, 480, 80, True, 'hswish', 1],
+                [5, 480, 80, True, 'hswish', 1],
+            ]
+
 
         last_channels = _make_divisible(last_channels * width_mult) if width_mult > 1.0 else last_channels
 
         # building first layer
         features = [Conv2d(3, in_channels, kernel_size=3, stride=2,
-                           norm_layer=norm_layer, activation='hswish')]
+                           norm_layer='default', activation='hswish')]
         # building inverted residual blocks
-        for k, exp, c, se, nl, s in inverted_residual_setting:
+        for k, exp, c, se, nl, s in cfg:
             out_channels = _make_divisible(c * width_mult)
             exp_channels = _make_divisible(exp * width_mult)
             features.append(block(
@@ -97,7 +117,7 @@ class MobileNetV3(nn.Module):
         # building last several layers
         features.extend([
             Conv2d(in_channels, exp_channels, kernel_size=1,
-                   norm_layer=norm_layer, activation='hswish'),
+                   norm_layer='default', activation='hswish'),
         ])
         in_channels = exp_channels
         # make it nn.Sequential

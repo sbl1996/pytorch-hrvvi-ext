@@ -236,13 +236,13 @@ class MobileNetV3(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, mult=1.0, feature_levels=(3, 4, 5), pretrained=False, norm_layer='bn'):
+    def __init__(self, mult=1.0, feature_levels=(3, 4, 5), pretrained=False, **kwargs):
         super().__init__()
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.out_levels = feature_levels
         assert not pretrained, "Pretrained models are not avaliable now."
-        backbone = mobilenetv3(mult=mult, num_classes=1, norm_layer=norm_layer)
+        backbone = mobilenetv3(mult=mult, num_classes=1, **kwargs)
         del backbone.classifier
         features = backbone.features
 
