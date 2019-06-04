@@ -16,8 +16,8 @@ class SameTransform(JointTransform):
         super().__init__()
         self.t = t
 
-    def __call__(self, img, seg):
-        return self.t(img), self.t(seg)
+    def __call__(self, img, mask):
+        return self.t(img), self.t(mask)
 
 
 class ToTensor(JointTransform):
@@ -27,9 +27,9 @@ class ToTensor(JointTransform):
     def __init__(self):
         super().__init__()
 
-    def __call__(self, img, seg):
+    def __call__(self, img, mask):
         input = TF.to_tensor(img)
-        target = np.array(seg)
+        target = np.array(mask)
         target = torch.from_numpy(target).long()
         return input, target
 
@@ -52,7 +52,7 @@ class Resize(JointTransform):
         assert isinstance(size, int) or (isinstance(size, Iterable) and len(size) == 2)
         self.size = size
 
-    def __call__(self, img, seg):
+    def __call__(self, img, mask):
         """
         Args:
             img (PIL Image): Image to be scaled.
@@ -61,8 +61,8 @@ class Resize(JointTransform):
             PIL Image: Rescaled image.
         """
         img = TF.resize(img, self.size, Image.BILINEAR)
-        seg = TF.resize(seg, self.size, Image.NEAREST)
-        return img, seg
+        mask = TF.resize(mask, self.size, Image.NEAREST)
+        return img, mask
 
     def __repr__(self):
         return self.__class__.__name__ + '(size={0})'.format(self.size)
@@ -134,7 +134,7 @@ class RandomCrop(JointTransform):
         j = random.randint(0, w - tw)
         return i, j, th, tw
 
-    def __call__(self, img, seg):
+    def __call__(self, img, mask):
         """
         Args:
             img (PIL Image): Image to be cropped.
@@ -144,25 +144,57 @@ class RandomCrop(JointTransform):
         """
         if self.padding is not None:
             img = TF.pad(img, self.padding, self.fill, self.padding_mode)
-            seg = TF.pad(seg, self.padding, self.fill, self.padding_mode)
+            mask = TF.pad(mask, self.padding, self.fill, self.padding_mode)
 
         # pad the width if needed
         if self.pad_if_needed and img.size[0] < self.size[1]:
             img = TF.pad(img, (self.size[1] - img.size[0], 0), self.fill, self.padding_mode)
-            seg = TF.pad(seg, (self.size[1] - img.size[0], 0), self.fill, self.padding_mode)
+            mask = TF.pad(mask, (self.size[1] - img.size[0], 0), self.fill, self.padding_mode)
         # pad the height if needed
         if self.pad_if_needed and img.size[1] < self.size[0]:
             img = TF.pad(img, (0, self.size[0] - img.size[1]), self.fill, self.padding_mode)
-            seg = TF.pad(seg, (0, self.size[0] - img.size[1]), self.fill, self.padding_mode)
+            mask = TF.pad(mask, (0, self.size[0] - img.size[1]), self.fill, self.padding_mode)
 
         i, j, h, w = self.get_params(img, self.size)
 
         img = TF.crop(img, i, j, h, w)
-        seg = TF.crop(seg, i, j, h, w)
-        return img, seg
+        mask = TF.crop(mask, i, j, h, w)
+        return img, mask
 
     def __repr__(self):
         return self.__class__.__name__ + '(size={0}, padding={1})'.format(self.size, self.padding)
+
+
+class CenterCrop(JointTransform):
+    """Crops the given PIL Image at the center.
+
+    Args:
+        size (sequence or int): Desired output size of the crop. If size is an
+            int instead of sequence like (h, w), a square crop (size, size) is
+            made.
+    """
+
+    def __init__(self, size):
+        super().__init__()
+        if isinstance(size, numbers.Number):
+            self.size = (int(size), int(size))
+        else:
+            self.size = size
+
+    def __call__(self, img, mask):
+        """
+        Args:
+            img (PIL Image): Image to be cropped.
+
+        Returns:
+            PIL Image: Cropped image.
+        """
+        img = TF.center_crop(img, self.size)
+        mask = TF.center_crop(mask, self.size)
+        return img, mask
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(size={0})'.format(self.size)
 
 
 class RandomHorizontalFlip(JointTransform):
@@ -176,7 +208,7 @@ class RandomHorizontalFlip(JointTransform):
         super().__init__()
         self.p = p
 
-    def __call__(self, img, seg):
+    def __call__(self, img, mask):
         """
         Args:
             img (PIL Image): Image to be flipped.
@@ -185,8 +217,8 @@ class RandomHorizontalFlip(JointTransform):
             PIL Image: Randomly flipped image.
         """
         if random.random() < self.p:
-            return TF.hflip(img), TF.hflip(seg)
-        return img, seg
+            return TF.hflip(img), TF.hflip(mask)
+        return img, mask
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)

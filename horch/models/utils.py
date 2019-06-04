@@ -84,6 +84,7 @@ def unfreeze(model):
 
 def clip(model, tol=1e-6):
     for p in model.parameters():
+        p = p.data
         p[p.abs() < tol] = 0
     return model
 
