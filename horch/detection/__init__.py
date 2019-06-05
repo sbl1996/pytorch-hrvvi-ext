@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Iterable
 from math import sqrt
 
 from toolz import curry
@@ -124,13 +124,16 @@ def misc_collate(batch):
             input = Args(input)
     if torch.is_tensor(target[0]):
         target = default_collate(target)
-    elif len(target[0]) == 0:
-        target = []
-    else:
-        if any([torch.is_tensor(t) for t in target[0]]):
-            target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
+    elif isinstance(target[0], Sequence):
+        if len(target[0]) == 0:
+            target = []
         else:
-            target = Args(target)
+            if any([torch.is_tensor(t) for t in target[0]]):
+                target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
+            else:
+                target = Args(target)
+    else:
+        target = Args(target)
     return input, target
 
 

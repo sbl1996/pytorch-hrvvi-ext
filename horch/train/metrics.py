@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+from PIL import Image
 from toolz import curry
 from toolz.curried import get
 
@@ -241,6 +242,98 @@ def get_ap(values):
     return values
 
 
+def mean_iou(pred, gt, num_classes):
+    n = 0
+    miou = 0
+    for c in range(num_classes):
+        class_iou = class_seg_iou(pred, gt, c)
+        if class_iou is not None:
+            n += 1
+            miou += class_iou
+    return miou / n
+
+
+def class_seg_iou(pred, gt, class_):
+    p = pred == class_
+    g = gt == class_
+    tp = (p & g).sum()
+    fn = (~p & g).sum()
+    fp = (p & ~g).sum()
+    denominator = tp + fn + fp
+    if denominator == 0:
+        return None
+    else:
+        return tp / denominator
+
+
+class SegmentationMeanIoU(Average):
+    r"""
+    Args:
+
+    Inputs:
+        target (list of list of horch.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
+    """
+
+    def __init__(self, num_classes, iou_threshold=0.5):
+        self.num_classes = num_classes
+        self.iou_threshold = iou_threshold
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        targets, preds, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+        gts = targets[0]
+        if isinstance(gts[0], Image.Image):
+            gts = [np.array(img) for img in gts]
+        elif torch.is_tensor(gts):
+            gts = gts.cpu().byte().numpy()
+
+        v = np.mean([
+            mean_iou(preds[i], gts[i], self.num_classes)
+            for i in range(batch_size)
+        ])
+
+        return v, batch_size
+
+
+class PixelAccuracy(Average):
+    r"""
+    Args:
+
+    Inputs:
+        target (list of list of horch.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
+    """
+
+    def __init__(self, ignore_index=255):
+        self.ignore_index = ignore_index
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        targets, preds, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+
+        gts = targets[0]
+        if isinstance(gts[0], Image.Image):
+            gts = [np.array(img) for img in gts]
+        elif torch.is_tensor(gts):
+            gts = gts.cpu().byte().numpy()
+
+        accs = []
+        for i in range(batch_size):
+            g = gts[i]
+            p = preds[i]
+            tp = (g == p).sum()
+            if self.ignore_index is not None:
+                tp += (g == self.ignore_index).sum()
+            accs.append(tp / np.prod(g.shape))
+        acc = np.mean(accs)
+        return acc, batch_size
+
+
 class CocoAveragePrecision(Average):
     r"""
     Args:
@@ -315,3 +408,21 @@ class MeanAveragePrecision(Average):
         values = np.mean([mAP(image_dets[i], image_gts[i],
                               self.iou_threshold) for i in range(batch_size)])
         return values, batch_size
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

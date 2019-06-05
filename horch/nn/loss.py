@@ -8,6 +8,16 @@ def inverse_sigmoid(x):
     return math.log(x / (1-x))
 
 
+def focal_loss(input, target, weight=None, ignore_index=None, gamma=2, reduction='mean'):
+    logpt = -F.cross_entropy(input, target, weight=weight, ignore_index=ignore_index, reduction='none')
+    pt = torch.exp(logpt)
+    loss = -((1 - pt) ** gamma) * logpt
+    if reduction == 'mean':
+        return loss.mean()
+    else:
+        return loss.sum()
+
+
 def focal_loss2(input, target, gamma=2, beta=1, alpha=0.25, eps=1e-6, reduction='mean'):
     xt = gamma * input + beta * (2 * target - 1)
     eps = inverse_sigmoid(1-eps)
