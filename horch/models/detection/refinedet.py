@@ -52,7 +52,7 @@ class RefineLoss:
 def anchor_refine_inference(
         r_loc_p, r_cls_p, d_loc_p, d_cls_p, anchors,
         neg_threshold=0.01, iou_threshold=0.5, r_topk=400, d_topk=200,
-        detect_conf_strategy='softmax', reg='refine'):
+        detect_conf_strategy='softmax', detect_conf_threshold=0.01, detect_nms='soft', reg='refine'):
     pos = r_cls_p > inverse_sigmoid(neg_threshold)
     r_loc_p = r_loc_p[pos]
     r_cls_p = r_cls_p[pos]
@@ -75,25 +75,28 @@ def anchor_refine_inference(
     if reg == 'refine':
         return anchor_based_inference(
             d_loc_p, d_cls_p, r_loc_p,
-            conf_threshold=0, iou_threshold=iou_threshold,
-            topk=d_topk, conf_strategy=detect_conf_strategy)
+            conf_threshold=detect_conf_threshold, iou_threshold=iou_threshold,
+            topk=d_topk, conf_strategy=detect_conf_strategy, nms_method=detect_nms)
     else:  # residual
         return anchor_based_inference(
             d_loc_p + r_loc_p, d_cls_p, anchors,
-            conf_threshold=0, iou_threshold=iou_threshold,
-            topk=d_topk, conf_strategy=detect_conf_strategy)
+            conf_threshold=detect_conf_threshold, iou_threshold=iou_threshold,
+            topk=d_topk, conf_strategy=detect_conf_strategy, nms_method=detect_nms)
 
 
 class AnchorRefineInference:
 
     def __init__(self, anchors, neg_threshold=0.01,
-                 iou_threshold=0.5, r_topk=400, d_topk=200, detect_conf_strategy='softmax', reg='refine'):
+                 iou_threshold=0.5, r_topk=400, d_topk=200,
+                 detect_conf_strategy='softmax', detect_conf_threshold=0.01, detect_nms='soft', reg='refine'):
         self.neg_threshold = neg_threshold
         self.anchors = flatten(anchors)
         self.iou_threshold = iou_threshold
         self.r_topk = r_topk
         self.d_topk = d_topk
         self.detect_conf_strategy = detect_conf_strategy
+        self.detect_conf_threshold = detect_conf_threshold
+        self.detect_nms = detect_nms
         self.reg = reg
 
     def __call__(self, r_loc_p, r_cls_p, d_loc_p, d_cls_p, *args):
@@ -103,7 +106,7 @@ class AnchorRefineInference:
             dets = anchor_refine_inference(
                 r_loc_p[i], r_cls_p[i], d_loc_p[i], d_cls_p[i], self.anchors,
                 self.neg_threshold, self.iou_threshold,
-                self.r_topk, self.d_topk, self.detect_conf_strategy, self.reg
+                self.r_topk, self.d_topk, self.detect_conf_strategy, self.detect_conf_threshold, self.detect_nms, self.reg
             )
             image_dets.append(dets)
         return image_dets
