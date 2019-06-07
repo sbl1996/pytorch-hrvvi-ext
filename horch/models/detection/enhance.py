@@ -59,7 +59,7 @@ class FPN(nn.Module):
         Use bilinear upsampling when `interpolate` and ConvTransposed when `deconv`
         Default: `interpolate`
     """
-    def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False, upsample='interpolate'):
+    def __init__(self, in_channels, out_channels=256, lite=False, upsample='interpolate'):
         super().__init__()
         self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer='default')
         if upsample == 'deconv':
@@ -112,7 +112,7 @@ class FPN2(nn.Module):
         `bn` for Batch Normalization and `gn` for Group Normalization.
         Default: `bn`
     """
-    def __init__(self, in_channels, out_channels, norm_layer='gn', lite=False):
+    def __init__(self, in_channels, out_channels, lite=False):
         super().__init__()
         assert len(set(in_channels)) == 1, "Input channels of every level must be the same"
         assert in_channels[0] == out_channels, "Input channels must be the same as `out_channels`"

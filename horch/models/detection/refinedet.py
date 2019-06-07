@@ -186,13 +186,13 @@ class RefineDet(nn.Module):
 
         self.extra_levels = _tuple(extra_levels)
         self.extra_layers = nn.ModuleList([])
-        for l in self.extra_levels:
+        for _ in self.extra_levels:
             self.extra_layers.append(
                 Bottleneck(stages[-1], f_channels, stride=2)
             )
             stages.append(f_channels)
 
-        self.r_head = SSDHead(num_anchors, 1, stages, norm_layer='default', lite=lite)
+        self.r_head = SSDHead(num_anchors, 1, stages, lite=lite)
 
         self.tcbs = nn.ModuleList([
             TransferConnection(stages[-1], f_channels, last=True, lite=lite, attention=attention)])
@@ -201,8 +201,7 @@ class RefineDet(nn.Module):
                 TransferConnection(c, f_channels, lite=lite, attention=attention)
             )
 
-        self.d_head = SSDHead(num_anchors, num_classes, _tuple(f_channels, 3),
-                              norm_layer='default', lite=lite)
+        self.d_head = SSDHead(num_anchors, num_classes, _tuple(f_channels, 3), lite=lite)
 
     def forward(self, x):
         cs = self.backbone(x)
