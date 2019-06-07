@@ -22,21 +22,21 @@ class ShuffleBlock(nn.Module):
 
 
 class BasicBlock(nn.Module):
-    def __init__(self, in_channels, shuffle_groups=2, norm_layer='bn', with_se=False):
+    def __init__(self, in_channels, shuffle_groups=2, with_se=False):
         super().__init__()
         self.with_se = with_se
         channels = in_channels // 2
         self.conv1 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='default',
+            norm_layer='default', activation='default',
         )
         self.conv2 = Conv2d(
             channels, channels, kernel_size=5, groups=channels,
-            norm_layer=norm_layer,
+            norm_layer='default',
         )
         self.conv3 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='default',
+            norm_layer='default', activation='default',
         )
         if with_se:
             self.se = SEModule(channels, reduction=8)
@@ -58,28 +58,28 @@ class BasicBlock(nn.Module):
 
 
 class DownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, shuffle_groups=2, norm_layer='bn', **kwargs):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2, **kwargs):
         super().__init__()
         channels = out_channels // 2
         self.conv11 = Conv2d(
             in_channels, in_channels, kernel_size=5, stride=2, groups=in_channels,
-            norm_layer=norm_layer,
+            norm_layer='default',
         )
         self.conv12 = Conv2d(
             in_channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='default',
+            norm_layer='default', activation='default',
         )
         self.conv21 = Conv2d(
             in_channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='default',
+            norm_layer='default', activation='default',
         )
         self.conv22 = Conv2d(
             channels, channels, kernel_size=5, stride=2, groups=channels,
-            norm_layer=norm_layer,
+            norm_layer='default',
         )
         self.conv23 = Conv2d(
             channels, channels, kernel_size=1,
-            norm_layer=norm_layer, activation='default',
+            norm_layer='default', activation='default',
         )
         self.shuffle = ShuffleBlock(shuffle_groups)
 

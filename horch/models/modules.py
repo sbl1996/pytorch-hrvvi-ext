@@ -328,7 +328,7 @@ class SELayerM(nn.Module):
 @curry
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
-             padding='same', bias=True, mid_norm_layer='bn',
+             padding='same', bias=True, mid_norm_layer='default',
              norm_layer=None, activation=None, transposed=False):
     return nn.Sequential(
         Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,

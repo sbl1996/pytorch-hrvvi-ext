@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, _tuple
+from horch.common import one_hot, _tuple, _concat
 from horch.detection import soft_nms_cpu, BBox, nms
 from horch.nn.loss import focal_loss2
 
@@ -135,7 +135,6 @@ def fovea_inference(
         bboxes = loc_p
         scores, labels = cls_p[:, 1:].max(dim=-1)
         scores = scores.sigmoid_()
-
         pos = scores > conf_threshold
         scores = scores[pos]
         if len(scores) == 0:
@@ -155,6 +154,9 @@ def fovea_inference(
         mlvl_scores.append(scores)
         mlvl_labels.append(labels)
         mlvl_bboxes.append(bboxes)
+
+    if len(mlvl_scores) == 0:
+        return []
 
     scores = torch.cat(mlvl_scores, dim=0)
     labels = torch.cat(mlvl_labels, dim=0)

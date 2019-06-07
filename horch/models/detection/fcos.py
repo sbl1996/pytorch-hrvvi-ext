@@ -15,8 +15,8 @@ from torch import nn as nn
 
 
 class FCOSHead(RetinaHead):
-    def __init__(self, num_levels, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
-        super().__init__(1, num_classes + 1, f_channels, num_layers, norm_layer, lite)
+    def __init__(self, num_levels, num_classes, f_channels=256, num_layers=4, lite=False):
+        super().__init__(1, num_classes + 1, f_channels, num_layers, lite)
         start = 1 - (num_levels - 1) * 0.1 / 2
         scales = [ start + i / 10 for i in range(num_levels) ]
         self.scales = nn.Parameter(torch.tensor(scales))

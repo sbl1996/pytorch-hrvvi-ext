@@ -55,6 +55,7 @@ class Subset(Dataset):
         return len(self.indices)
 
     def to_coco(self, indices=None):
+        assert hasattr(self.dataset, "to_coco"), "Dataset don't support to_coco"
         if indices is None:
             indices = self.indices
         else:

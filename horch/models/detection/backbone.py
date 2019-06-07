@@ -12,7 +12,6 @@ from horch.models.utils import get_out_channels, calc_out_channels
 from horch.models.darknet import Darknet as BDarknet
 
 
-
 def _check_levels(levels):
     assert tuple(range(levels[0], levels[-1] + 1)) == tuple(levels), "Feature levels must in ascending order."
 
@@ -61,8 +60,6 @@ class ShuffleNetV2(nn.Module):
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.out_levels = feature_levels
         if pretrained:
-            norm_layer = kwargs.get("norm_layer")
-            assert norm_layer is None or norm_layer == 'bn', "`gn` can be only set when `pretrained` is False"
             net = ptcv_get_model(self.mult2name[mult], pretrained=True)
             del net.output
             net = net.features
@@ -164,8 +161,6 @@ class MobileNetV2(nn.Module):
         self.out_levels = feature_levels
 
         if pretrained:
-            norm_layer = kwargs.get("norm_layer")
-            assert norm_layer is None or norm_layer == 'bn', "`gn` can be only set when `pretrained` is False"
             net = ptcv_get_model(self.mult2name[mult], pretrained=True)
             del net.output
             net = net.features
@@ -452,7 +447,6 @@ class SqueezeNet(nn.Module):
         return backbone_forward(self, x)
 
 
-
 class Darknet(nn.Module):
     def __init__(self, feature_levels=(3, 4, 5), pretrained=False, **kwargs):
         super().__init__()
@@ -460,8 +454,6 @@ class Darknet(nn.Module):
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.out_levels = feature_levels
         if pretrained:
-            norm_layer = kwargs.get("norm_layer")
-            assert norm_layer is None or norm_layer == 'bn', "`gn` can be only set when `pretrained` is False"
             net = ptcv_get_model("darknet53", pretrained=True)
             del net.output
             net = net.features
@@ -573,6 +565,7 @@ class Backbone(nn.Module):
     General backbone network for ResNet-like architecture.
     Supported: ResNet, DenseNet, SENet, PyramidNet
     """
+
     def __init__(self, name, feature_levels=(3, 4, 5), pretrained=True):
         super().__init__()
         _check_levels(feature_levels)

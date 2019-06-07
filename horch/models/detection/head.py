@@ -22,12 +22,12 @@ class ThunderRCNNHead(nn.Module):
     Light head only for R-CNN, not for one-stage detector.
     """
 
-    def __init__(self, num_classes, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_classes, f_channels=256):
         super().__init__()
         self.fc1 = Conv2d(f_channels, f_channels, kernel_size=1,
-                          norm_layer=norm_layer, activation='default')
+                          norm_layer='default', activation='default')
         self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
-                          norm_layer=norm_layer, activation='default')
+                          norm_layer='default', activation='default')
         self.loc_fc = nn.Linear(f_channels, 4)
         self.cls_fc = nn.Linear(f_channels, num_classes)
 
@@ -49,12 +49,12 @@ class SharedDWConvHead(nn.Module):
     Light head for RPN, not for R-CNN.
     """
 
-    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256):
         super().__init__()
         self.num_classes = num_classes
         self.conv = DWConv2d(
             in_channels, f_channels, kernel_size=5,
-            mid_norm_layer=norm_layer, norm_layer=norm_layer,
+            mid_norm_layer='default', norm_layer='default',
             activation='default')
         self.loc_conv = Conv2d(
             f_channels, num_anchors * 4, kernel_size=1)
@@ -78,11 +78,11 @@ class SharedDWConvHead(nn.Module):
         return loc_p, cls_p
 
 
-def _make_head(f_channels, num_layers, out_channels, norm_layer, lite):
+def _make_head(f_channels, num_layers, out_channels, lite):
     layers = []
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite))
+                             norm_layer='default', activation='default', depthwise_separable=lite))
     layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
     return nn.Sequential(*layers)
 
@@ -111,15 +111,14 @@ class RetinaHead(nn.Module):
         Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4,
-                 norm_layer='bn', lite=False, concat=True):
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, lite=False, concat=True):
         super().__init__()
         self.num_classes = num_classes
         self.concat = concat
         self.loc_head = _make_head(
-            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite)
+            f_channels, num_layers, num_anchors * 4, lite=lite)
         self.cls_head = _make_head(
-            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, lite=lite)
+            f_channels, num_layers, num_anchors * num_classes, lite=lite)
 
         bias_init_constant(self.cls_head[-1], inverse_sigmoid(0.01))
 
@@ -163,15 +162,15 @@ class SSDHead(nn.Module):
         Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False, concat=True):
+    def __init__(self, num_anchors, num_classes, in_channels, lite=False, concat=True):
         super().__init__()
         self.num_classes = num_classes
         self.concat = concat
         num_anchors = _tuple(num_anchors, len(in_channels))
         self.preds = nn.ModuleList([
             nn.Sequential(
-                get_norm_layer(norm_layer, c),
-                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer=norm_layer)
+                get_norm_layer('default', c),
+                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
             )
             for c, n in zip(in_channels, num_anchors)
         ])

@@ -202,6 +202,18 @@ class COCOEval(Metric):
                 self.res.append(d)
 
     def compute(self):
+        from hpycocotools.coco import COCO
+        img_ids = list(set([ d['image_id'] for d in self.res ]))
+        imgs = self.coco_gt.loadImgs(img_ids)
+        ann_ids = self.coco_gt.getAnnIds(imgIds=img_ids)
+        anns = self.coco_gt.loadAnns(ann_ids)
+        annotations = {
+            **self.annotations,
+            'images': imgs,
+            'annotations': anns,
+        }
+        coco_gt = COCO(annotations, verbose=False, use_percent=bool(self.percent_area_ranges))
+
         from hpycocotools.cocoeval import COCOeval
         from hpycocotools.mask import encode
         for dt in self.res:
@@ -228,8 +240,8 @@ class COCOEval(Metric):
                 m[t:b, l:r] = segm
                 dt['segmentation'] = encode(np.asfortranarray(m))
 
-        coco_dt = self.coco_gt.loadRes(self.res)
-        ev = COCOeval(self.coco_gt, coco_dt,
+        coco_dt = coco_gt.loadRes(self.res)
+        ev = COCOeval(coco_gt, coco_dt,
                       iouType=self.iou_type, pAreaRng=self.percent_area_ranges, verbose=False)
         ev.evaluate()
         ev.accumulate()

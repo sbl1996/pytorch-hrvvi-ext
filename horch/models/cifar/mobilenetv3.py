@@ -58,7 +58,7 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, num_classes=10, width_mult=1.0, norm_layer='bn'):
+    def __init__(self, num_classes=10, width_mult=1.0):
         super().__init__()
         block = InvertedResidual
         in_channels = 16
@@ -86,7 +86,7 @@ class MobileNetV3(nn.Module):
 
         # building first layer
         features = [Conv2d(3, in_channels, kernel_size=3, stride=1,
-                           norm_layer=norm_layer, activation='hswish')]
+                           norm_layer='default', activation='hswish')]
         # building inverted residual blocks
         for k, exp, c, se, nl, s in inverted_residual_setting:
             out_channels = _make_divisible(c * width_mult)
@@ -97,7 +97,7 @@ class MobileNetV3(nn.Module):
         # building last several layers
         features.extend([
             Conv2d(in_channels, exp_channels, kernel_size=1,
-                   norm_layer=norm_layer, activation='hswish'),
+                   norm_layer='default', activation='hswish'),
         ])
         in_channels = exp_channels
         # make it nn.Sequential

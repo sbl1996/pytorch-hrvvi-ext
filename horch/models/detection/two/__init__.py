@@ -22,20 +22,17 @@ class RPNHead(nn.Module):
         Number of input channels.
     f_channels : int
         Number of feature channels.
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: "bn"
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
     """
 
-    def __init__(self, num_anchors, in_channels, f_channels=256, norm_layer='bn', lite=False):
+    def __init__(self, num_anchors, in_channels, f_channels=256, lite=False):
         super().__init__()
         kernel_size = 5 if lite else 3
         self.conv = Conv2d(
             in_channels, f_channels, kernel_size=kernel_size,
-            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+            norm_layer='default', activation='default', depthwise_separable=lite)
         self.loc_conv = Conv2d(f_channels, num_anchors * 4, kernel_size=1)
         self.cls_conv = Conv2d(f_channels, num_anchors * 2, kernel_size=1)
 
@@ -58,12 +55,12 @@ class RPNHead(nn.Module):
 
 class Box2FCHead(nn.Module):
 
-    def __init__(self, num_classes, in_channels, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_classes, in_channels, f_channels=256):
         super().__init__()
         self.fc1 = Conv2d(in_channels, f_channels, kernel_size=1,
-                          norm_layer=norm_layer, activation='default')
+                          norm_layer='default', activation='default')
         self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
-                          norm_layer=norm_layer, activation='default')
+                          norm_layer='default', activation='default')
         self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
         weight_init_normal(self.loc_fc, 0, 0.001)
         self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
@@ -87,12 +84,12 @@ class Box2FCHead(nn.Module):
 
 class SofterBox2FCHead(nn.Module):
 
-    def __init__(self, num_classes, in_channels, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_classes, in_channels, f_channels=256):
         super().__init__()
         self.fc1 = Conv2d(in_channels, f_channels, kernel_size=1,
-                          norm_layer=norm_layer, activation='default')
+                          norm_layer='default', activation='default')
         self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
-                          norm_layer=norm_layer, activation='default')
+                          norm_layer='default', activation='default')
         self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
         weight_init_normal(self.loc_fc, 0, 0.001)
         self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
@@ -192,18 +189,18 @@ class MaskHead(nn.Module):
     Light head only for R-CNN, not for one-stage detector.
     """
 
-    def __init__(self, num_classes, f_channels=256, norm_layer='bn', lite=False):
+    def __init__(self, num_classes, f_channels=256, lite=False):
         super().__init__()
         self.conv1 = Conv2d(f_channels, f_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                            norm_layer='default', activation='default', depthwise_separable=lite)
         self.conv2 = Conv2d(f_channels, f_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                            norm_layer='default', activation='default', depthwise_separable=lite)
         self.conv3 = Conv2d(f_channels, f_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                            norm_layer='default', activation='default', depthwise_separable=lite)
         self.conv4 = Conv2d(f_channels, f_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                            norm_layer='default', activation='default', depthwise_separable=lite)
         self.deconv = Conv2d(f_channels, f_channels, kernel_size=2, stride=2,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite, transposed=True)
+                             norm_layer='default', activation='default', depthwise_separable=lite, transposed=True)
         self.mask_fc = Conv2d(f_channels, num_classes, kernel_size=1)
 
     def forward(self, ps):

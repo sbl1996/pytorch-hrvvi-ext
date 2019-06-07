@@ -6,14 +6,14 @@ from horch.models.modules import upsample_add, Conv2d, Sequential, get_norm_laye
 
 
 class TopDown(nn.Module):
-    def __init__(self, in_channels, f_channels, norm_layer='gn', lite=False):
+    def __init__(self, in_channels, f_channels, lite=False):
         super().__init__()
         self.lat = Conv2d(
             in_channels, f_channels, kernel_size=1,
-            norm_layer=norm_layer)
+            norm_layer='default')
         self.conv = Conv2d(
             f_channels, f_channels, kernel_size=3,
-            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+            norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, c, p):
         p = upsample_add(p, self.lat(c))
@@ -22,16 +22,16 @@ class TopDown(nn.Module):
 
 
 class DeconvTopDown(nn.Module):
-    def __init__(self, in_channels1, in_channels2, f_channels, norm_layer='gn', lite=False):
+    def __init__(self, in_channels1, in_channels2, f_channels, lite=False):
         super().__init__()
         self.lat = Conv2d(
             in_channels1, f_channels, kernel_size=1,
-            norm_layer=norm_layer)
+            norm_layer='default')
         self.deconv = Conv2d(in_channels2, f_channels, kernel_size=4, stride=2,
-                             norm_layer=norm_layer, depthwise_separable=lite, transposed=True)
+                             norm_layer='default', depthwise_separable=lite, transposed=True)
         self.conv = Conv2d(
             f_channels, f_channels, kernel_size=3,
-            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+            norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, c, p):
         p = self.lat(c) + self.deconv(p)
@@ -61,15 +61,15 @@ class FPN(nn.Module):
     """
     def __init__(self, in_channels, out_channels=256, norm_layer='gn', lite=False, upsample='interpolate'):
         super().__init__()
-        self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer=norm_layer)
+        self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer='default')
         if upsample == 'deconv':
             self.topdowns = nn.ModuleList([
-                DeconvTopDown(c, out_channels, out_channels, norm_layer=norm_layer, lite=lite)
+                DeconvTopDown(c, out_channels, out_channels, lite=lite)
                 for c in in_channels[:-1]
             ])
         else:
             self.topdowns = nn.ModuleList([
-                TopDown(c, out_channels, norm_layer=norm_layer, lite=lite)
+                TopDown(c, out_channels, lite=lite)
                 for c in in_channels[:-1]
             ])
 
@@ -82,14 +82,14 @@ class FPN(nn.Module):
 
 
 class BottomUp(nn.Module):
-    def __init__(self, f_channels, norm_layer='gn', lite=False):
+    def __init__(self, f_channels, lite=False):
         super().__init__()
         self.down = Conv2d(
             f_channels, f_channels, kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+            norm_layer='default', activation='default', depthwise_separable=lite)
         self.conv = Conv2d(
             f_channels, f_channels, kernel_size=3,
-            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+            norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, p, n):
         n = p + self.down(n)
@@ -117,7 +117,7 @@ class FPN2(nn.Module):
         assert len(set(in_channels)) == 1, "Input channels of every level must be the same"
         assert in_channels[0] == out_channels, "Input channels must be the same as `out_channels`"
         self.bottomups = nn.ModuleList([
-            BottomUp(out_channels, norm_layer=norm_layer, lite=lite)
+            BottomUp(out_channels, lite=lite)
             for _ in in_channels[1:]
         ])
 
@@ -130,14 +130,14 @@ class FPN2(nn.Module):
 
 
 class ContextEnhance(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_layer='bn'):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
         self.lats = nn.ModuleList([
-            Conv2d(c, out_channels, kernel_size=1, norm_layer=norm_layer)
+            Conv2d(c, out_channels, kernel_size=1, norm_layer='default')
             for c in in_channels
         ])
         self.lat_glb = Conv2d(in_channels[-1], out_channels, kernel_size=1,
-                              norm_layer=norm_layer)
+                              norm_layer='default')
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -150,7 +150,7 @@ class ContextEnhance(nn.Module):
         return p
 
 
-def stacked_fpn(num_stacked, in_channels, f_channels=256, norm_layer='bn', lite=False, upsample='interpolate'):
+def stacked_fpn(num_stacked, in_channels, f_channels=256, lite=False, upsample='interpolate'):
     r"""
     Stacked FPN with alternant top down block and bottom up block.
 
@@ -175,12 +175,12 @@ def stacked_fpn(num_stacked, in_channels, f_channels=256, norm_layer='bn', lite=
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
     num_levels = len(in_channels)
-    layers = [FPN(in_channels, f_channels, norm_layer=norm_layer, lite=lite)]
+    layers = [FPN(in_channels, f_channels, norm_layer='default', lite=lite)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
-            layers.append(FPN([f_channels] * num_levels, f_channels, norm_layer=norm_layer, lite=lite, upsample=upsample))
+            layers.append(FPN([f_channels] * num_levels, f_channels, norm_layer='default', lite=lite, upsample=upsample))
         else:
-            layers.append(FPN2([f_channels] * num_levels, f_channels, norm_layer=norm_layer, lite=lite))
+            layers.append(FPN2([f_channels] * num_levels, f_channels, norm_layer='default', lite=lite))
     return Sequential(*layers)
 
 

@@ -15,12 +15,12 @@ from horch.detection import BBox, soft_nms_cpu, nms, softer_nms_cpu
 
 
 class BasicBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_layer='bn', lite=False):
+    def __init__(self, in_channels, out_channels, lite=False):
         super().__init__()
         self.conv1 = Conv2d(in_channels, out_channels // 2, kernel_size=1,
-                            norm_layer=norm_layer, activation='default')
+                            norm_layer='default', activation='default')
         self.conv2 = Conv2d(out_channels // 2, out_channels, kernel_size=3,
-                            norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                            norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -29,7 +29,7 @@ class BasicBlock(nn.Module):
 
 
 class YOLOv3(nn.Module):
-    def __init__(self, in_channels, num_anchors=3, num_classes=80, norm_layer='bn', lite=False):
+    def __init__(self, in_channels, num_anchors=3, num_classes=80, lite=False):
         super().__init__()
         self.num_classes = num_classes
         out_channels = num_anchors * (5 + num_classes)
@@ -38,36 +38,36 @@ class YOLOv3(nn.Module):
             BasicBlock(channels[-1], channels[-1], lite=lite),
             BasicBlock(channels[-1], channels[-1], lite=lite),
             Conv2d(channels[-1], channels[-1] // 2, kernel_size=1,
-                   norm_layer=norm_layer, activation='default'),
+                   norm_layer='default', activation='default'),
         )
         self.conv52 = Conv2d(channels[-1] // 2, channels[-1], kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                             norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred5 = Conv2d(channels[-1], out_channels, kernel_size=1)
 
         self.lat5 = Conv2d(channels[-1] // 2, channels[-1] // 4, kernel_size=1,
-                           norm_layer=norm_layer)
+                           norm_layer='default')
 
         self.conv41 = nn.Sequential(
             BasicBlock(channels[-2] + channels[-1] // 4, channels[-2], lite=lite),
             BasicBlock(channels[-2], channels[-2], lite=lite),
             Conv2d(channels[-2], channels[-2] // 2, kernel_size=1,
-                   norm_layer=norm_layer, activation='default'),
+                   norm_layer='default', activation='default'),
         )
         self.conv42 = Conv2d(channels[-2] // 2, channels[-2], kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                             norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred4 = Conv2d(channels[-2], out_channels, kernel_size=1)
 
         self.lat4 = Conv2d(channels[-2] // 2, channels[-2] // 4, kernel_size=1,
-                           norm_layer=norm_layer)
+                           norm_layer='default')
 
         self.conv31 = nn.Sequential(
             BasicBlock(channels[-3] + channels[-2] // 4, channels[-3], lite=lite),
             BasicBlock(channels[-3], channels[-3], lite=lite),
             Conv2d(channels[-3], channels[-3] // 2, kernel_size=1,
-                   norm_layer=norm_layer, activation='default'),
+                   norm_layer='default', activation='default'),
         )
         self.conv32 = Conv2d(channels[-3] // 2, channels[-3], kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                             norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
 
         get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
@@ -108,7 +108,7 @@ class YOLOv3(nn.Module):
 
 
 class YOLOv3t2(nn.Module):
-    def __init__(self, in_channels, num_anchors=3, num_classes=80, norm_layer='bn', lite=False):
+    def __init__(self, in_channels, num_anchors=3, num_classes=80, lite=False):
         super().__init__()
         self.num_classes = num_classes
         out_channels = num_anchors * (9 + num_classes)
@@ -117,36 +117,36 @@ class YOLOv3t2(nn.Module):
             BasicBlock(channels[-1], channels[-1], lite=lite),
             BasicBlock(channels[-1], channels[-1], lite=lite),
             Conv2d(channels[-1], channels[-1] // 2, kernel_size=1,
-                   norm_layer=norm_layer, activation='default'),
+                   norm_layer='default', activation='default'),
         )
         self.conv52 = Conv2d(channels[-1] // 2, channels[-1], kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                             norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred5 = Conv2d(channels[-1], out_channels, kernel_size=1)
 
         self.lat5 = Conv2d(channels[-1] // 2, channels[-1] // 4, kernel_size=1,
-                           norm_layer=norm_layer)
+                           norm_layer='default')
 
         self.conv41 = nn.Sequential(
             BasicBlock(channels[-2] + channels[-1] // 4, channels[-2], lite=lite),
             BasicBlock(channels[-2], channels[-2], lite=lite),
             Conv2d(channels[-2], channels[-2] // 2, kernel_size=1,
-                   norm_layer=norm_layer, activation='default'),
+                   norm_layer='default', activation='default'),
         )
         self.conv42 = Conv2d(channels[-2] // 2, channels[-2], kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                             norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred4 = Conv2d(channels[-2], out_channels, kernel_size=1)
 
         self.lat4 = Conv2d(channels[-2] // 2, channels[-2] // 4, kernel_size=1,
-                           norm_layer=norm_layer)
+                           norm_layer='default')
 
         self.conv31 = nn.Sequential(
             BasicBlock(channels[-3] + channels[-2] // 4, channels[-3], lite=lite),
             BasicBlock(channels[-3], channels[-3], lite=lite),
             Conv2d(channels[-3], channels[-3] // 2, kernel_size=1,
-                   norm_layer=norm_layer, activation='default'),
+                   norm_layer='default', activation='default'),
         )
         self.conv32 = Conv2d(channels[-3] // 2, channels[-3], kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite)
+                             norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
 
         get_last_conv(self.pred3).bias.data[8].fill_(inverse_sigmoid(0.01))

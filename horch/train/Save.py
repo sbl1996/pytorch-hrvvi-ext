@@ -11,15 +11,13 @@ class ByMetric:
 
     def parse(self, trainer):
         mat = re.match(
-            "(?P<sign>-?)(?P<metric>val_[a-zA-Z]+)", self.metric)
-        assert mat, "save by metric must be of form `-?val_<evaluate_metric>`"
+            "(?P<sign>-?)(?P<dataset>[a-zA-Z]+)_(?P<metric>[a-zA-Z]+)", self.metric)
+        assert mat, "save by metric must be of form `-?<valset_name>?_<test_metric>`"
         sign = -1 if mat.group('sign') else 1
-        save_metric = mat.group('metric')
-        assert save_metric[4:] in trainer.evaluate_metrics, "the metric used must be one of \
-            evaluate_metrics"
-
-        def score_function(e): return sign * \
-                                      trainer.metric_history[save_metric][-1]
+        metric_name = mat.group("metric")
+        save_metric = mat.group("dataset") + "_" + metric_name
+        assert metric_name in trainer.test_metrics, "Metric %s not in traier's test_metrics" % metric_name
+        def score_function(e): return sign * trainer.metric_history[save_metric][-1]
 
         checkpoint_handler = ModelCheckpoint(
             trainer.save_path, trainer.name,
@@ -28,6 +26,7 @@ class ByMetric:
             save_as_state_dict=True, require_empty=False)
         checkpoint_handler._iteration = trainer.epochs()
         return checkpoint_handler
+
 
 class PerEpochs:
 
