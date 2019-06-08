@@ -175,12 +175,12 @@ def stacked_fpn(num_stacked, in_channels, f_channels=256, lite=False, upsample='
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
     num_levels = len(in_channels)
-    layers = [FPN(in_channels, f_channels, norm_layer='default', lite=lite)]
+    layers = [FPN(in_channels, f_channels, lite=lite)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
-            layers.append(FPN([f_channels] * num_levels, f_channels, norm_layer='default', lite=lite, upsample=upsample))
+            layers.append(FPN([f_channels] * num_levels, f_channels, lite=lite, upsample=upsample))
         else:
-            layers.append(FPN2([f_channels] * num_levels, f_channels, norm_layer='default', lite=lite))
+            layers.append(FPN2([f_channels] * num_levels, f_channels, lite=lite))
     return Sequential(*layers)
 
 

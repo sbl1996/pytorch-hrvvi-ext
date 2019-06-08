@@ -341,21 +341,19 @@ def DWConv2d(in_channels, out_channels,
 class Sequential(nn.Sequential):
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
-        if 'inference' in kwargs:
-            self._inference = kwargs['inference']
 
     def forward(self, *xs):
         for module in self._modules.values():
             xs = module(*_tuple(xs))
         return xs
-
-    def inference(self, *xs):
-        self.eval()
-        with torch.no_grad():
-            xs = self.forward(*xs)
-        preds = self._inference(*_tuple(xs))
-        self.train()
-        return preds
+    #
+    # def inference(self, *xs):
+    #     self.eval()
+    #     with torch.no_grad():
+    #         xs = self.forward(*xs)
+    #     preds = self._inference(*_tuple(xs))
+    #     self.train()
+    #     return preds
 
 
 class Identity(nn.Module):

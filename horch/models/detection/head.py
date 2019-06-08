@@ -8,12 +8,14 @@ from horch.common import _tuple, _concat, inverse_sigmoid
 
 
 def to_pred(p, c: int):
-    b = p.size(0)
     p = p.permute(0, 3, 2, 1).contiguous()
+    b, w, h, pc = p.size()
     if c == 1:
-        p = p.view(b, -1)
+        p = p.view(b, w, h, -1)
     else:
-        p = p.view(b, -1, c)
+        p = p.view(b, w, h, -1, c)
+    if c == pc:
+        p = p.squeeze(3)
     return p
 
 
@@ -127,17 +129,13 @@ class RetinaHead(nn.Module):
         cls_preds = []
         for p in ps:
             loc_p = to_pred(self.loc_head(p), 4)
-            loc_preds.append(loc_p[..., :4])
+            loc_preds.append(loc_p)
 
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p)
 
-        if not self.training and not self.concat:
-            return loc_preds, cls_preds
+        return loc_preds, cls_preds
 
-        loc_p = _concat(loc_preds, dim=1)
-        cls_p = _concat(cls_preds, dim=1)
-        return loc_p, cls_p
 
 
 class SSDHead(nn.Module):
@@ -179,23 +177,12 @@ class SSDHead(nn.Module):
             get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
 
     def forward(self, *ps):
-        b = ps[0].size(0)
-
         preds = [pred(p) for p, pred in zip(ps, self.preds)]
-
         loc_preds = []
         cls_preds = []
         for p in preds:
-            p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, 4 + self.num_classes)
+            p = to_pred(p, 4 + self.num_classes)
             loc_preds.append(p[..., :4])
-            cls_p = p[..., 4:]
-            if cls_p.size(-1) == 1:
-                cls_p = cls_p[..., 0]
-            cls_preds.append(cls_p)
+            cls_preds.append(p[..., 4:])
 
-        if not self.training and not self.concat:
-            return loc_preds, cls_preds
-
-        loc_p = _concat(loc_preds, dim=1)
-        cls_p = _concat(cls_preds, dim=1)
-        return loc_p, cls_p
+        return loc_preds, cls_preds

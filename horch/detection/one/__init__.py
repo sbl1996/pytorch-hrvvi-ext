@@ -1,5 +1,7 @@
 import random
 
+from horch.common import select, _concat
+from horch.detection import generate_mlvl_anchors
 from toolz import curry
 from toolz.curried import get
 
@@ -15,30 +17,104 @@ from horch.detection.iou import iou_mn
 from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
 
 
+def flatten(xs):
+    if torch.is_tensor(xs):
+        return xs.view(-1, xs.size(-1))
+    xs = [x.view(-1, x.size(-1)) for x in xs]
+    return _concat(xs, dim=0)
+
+
+class AnchorGenerator:
+    def __init__(self, anchor_sizes, flatten=True, cache=True):
+        super().__init__()
+        self.anchor_sizes = anchor_sizes
+        self.flatten = flatten
+        self.cache = cache
+        self.caches = {}
+
+    def __call__(self, grid_sizes, device='cpu', dtype=torch.float32):
+        if not isinstance(grid_sizes, tuple):
+            grid_sizes = tuple(grid_sizes)
+        if self.cache:
+            if grid_sizes in self.caches:
+                mlvl_anchors, mlvl_anchors_ltrb = self.caches[grid_sizes]
+            else:
+                mlvl_anchors = generate_mlvl_anchors(
+                    grid_sizes, self.anchor_sizes, device, dtype)
+                mlvl_anchors = flatten(mlvl_anchors)
+                mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
+                self.caches[grid_sizes] = (mlvl_anchors, mlvl_anchors_ltrb)
+        else:
+            mlvl_anchors = generate_mlvl_anchors(
+                grid_sizes, self.anchor_sizes, device, dtype)
+            mlvl_anchors = flatten(mlvl_anchors)
+            mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
+        return mlvl_anchors, mlvl_anchors_ltrb
+
+
 def coords_to_target(gt_box, anchors):
     box_txty = (gt_box[..., :2] - anchors[..., :2]) / anchors[..., 2:]
     box_twth = (gt_box[..., 2:] / anchors[..., 2:]).log_()
     return torch.cat((box_txty, box_twth), dim=-1)
 
 
-def target_to_coords(loc_t, anchors):
-    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
-    return loc_t
+def coords_to_target2(bboxes, anchors):
+    r"""
+    Parameters
+    ----------
+    bboxes
+        (n, 4)
+    anchors
+        (m, 4)
+    """
+    bboxes = bboxes[:, None, :]
+    anchors = anchors[None, :, :]
+    txty = (bboxes[..., :2] - anchors[..., :2]) / anchors[..., 2:]
+    twth = (bboxes[..., 2:] / anchors[..., 2:]).log_()
+    return torch.cat((txty, twth), dim=-1)
+
+
+def match_anchors2(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
+                   get_label=lambda x: x['category_id'], debug=False):
+    num_anchors = len(a_xywh)
+    if len(anns) == 0:
+        loc_t = a_xywh.new_zeros(num_anchors, 4)
+        cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
+        ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8) if neg_thresh else None
+        return loc_t, cls_t, ignore
+
+    bboxes = a_xywh.new_tensor([ann['bbox'] for ann in anns])
+    bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
+    labels = a_xywh.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
+
+    bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
+    ious = iou_mn(bboxes_ltrb, a_ltrb)
+
+    pos = ious > pos_thresh
+    cls_t, indices = (pos.long() * labels[:, None]).max(dim=0)
+    loc_t_all = coords_to_target2(bboxes, a_xywh)
+    loc_t = select(loc_t_all, 0, indices)
+
+    max_ious, max_indices = ious.max(dim=1)
+    if debug:
+        print(max_ious.tolist())
+    loc_t[max_indices] = select(loc_t_all, 1, max_indices)
+    cls_t[max_indices] = labels
+
+    ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
+    return loc_t, cls_t, ignore
 
 
 @curry
-def match_anchors_flat(anns, a_xywh, a_ltrb, pos_thresh=0.5, neg_thresh=None,
-                       get_label=lambda x: x['category_id'], debug=False):
+def match_anchors(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
+                  get_label=lambda x: x['category_id'], debug=False):
     num_anchors = len(a_xywh)
     loc_t = a_xywh.new_zeros(num_anchors, 4)
     cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
 
     if len(anns) == 0:
-        target = [loc_t, cls_t]
-        if neg_thresh:
-            target.append(loc_t.new_zeros(num_anchors, dtype=torch.uint8))
-        return target
+        ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8) if neg_thresh else None
+        return loc_t, cls_t, ignore
 
     bboxes = loc_t.new_tensor([ann['bbox'] for ann in anns])
     bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
@@ -47,33 +123,22 @@ def match_anchors_flat(anns, a_xywh, a_ltrb, pos_thresh=0.5, neg_thresh=None,
     bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
     ious = iou_mn(bboxes_ltrb, a_ltrb)
 
+    pos = ious > pos_thresh
+    for ipos, bbox, label in zip(pos, bboxes, labels):
+        loc_t[ipos] = coords_to_target(bbox, a_xywh[ipos])
+        cls_t[ipos] = label
+
     max_ious, indices = ious.max(dim=1)
     if debug:
         print(max_ious.tolist())
     loc_t[indices] = coords_to_target(bboxes, a_xywh[indices])
     cls_t[indices] = labels
 
-    pos = ious > pos_thresh
-    for ipos, bbox, label in zip(pos, bboxes, labels):
-        loc_t[ipos] = coords_to_target(bbox, a_xywh[ipos])
-        cls_t[ipos] = label
-
-    target = [loc_t, cls_t]
-
-    if neg_thresh:
-        ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0)
-        target.append(ignore)
-    return target
+    ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
+    return loc_t, cls_t, ignore
 
 
-def flatten(xs):
-    if torch.is_tensor(xs):
-        return xs.view(-1, xs.size(-1))
-    xs = [x.view(-1, x.size(-1)) for x in xs]
-    return torch.cat(xs, dim=0)
-
-
-class MatchAnchors:
+class AnchorMatcher:
     r"""
 
     Parameters
@@ -85,24 +150,66 @@ class MatchAnchors:
     neg_thresh : float
         If provided, only non-positive anchors whose ious with all ground truth boxes are
         lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
-    get_label : function
-        Function to extract label from annotations.
     """
 
-    def __init__(self, anchors, pos_thresh=0.5, neg_thresh=None,
-                 get_label=get('category_id'), debug=False):
-        self.anchors_xywh = flatten(anchors)
-        self.anchors_ltrb = BBox.convert(self.anchors_xywh, BBox.XYWH, BBox.LTRB)
+    def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'], debug=False):
+        self.generator = generator
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
         self.debug = debug
 
-    def __call__(self, img, anns):
-        target = match_anchors_flat(
-            anns, self.anchors_xywh, self.anchors_ltrb,
-            self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
-        return img, target
+    def __call__(self, features, targets):
+        is_cpu = features[0].device.type == 'cpu'
+        match_func = match_anchors if is_cpu else match_anchors2
+        batch_size = len(targets)
+        grid_sizes = [f.size()[-2:][::-1] for f in features]
+        a_xywh, a_ltrb = self.generator(grid_sizes, features[0].device, features[0].dtype)
+        loc_targets = []
+        cls_targets = []
+        ignores = []
+        for i in range(batch_size):
+            loc_t, cls_t, ignore = match_func(
+                targets[i], a_xywh, a_ltrb,
+                self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
+            loc_targets.append(loc_t)
+            cls_targets.append(cls_t)
+            ignores.append(ignore)
+        loc_t = torch.stack(loc_targets, dim=0)
+        cls_t = torch.stack(cls_targets, dim=0)
+        if ignores[0] is not None:
+            ignore = torch.stack(ignores, dim=0)
+            return loc_t, cls_t, ignore
+        else:
+            return loc_t, cls_t
+
+
+def target_to_coords(loc_t, anchors):
+    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
+    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
+    return loc_t
+
+
+def flatten_loc_cls_preds(loc_preds, cls_preds):
+    r"""
+    Parameters
+    ----------
+    loc_preds :
+        [(b, w, h, ?a, 4)]
+    cls_preds :
+        [(b, w, h, ?a, ?c)]
+    """
+    b = loc_preds[0].size(0)
+    loc_p = torch.cat([
+        p.view(b, -1, 4) for p in loc_preds], dim=1)
+    if len(loc_preds[0].size()) == len(cls_preds[0].size()):
+        c = cls_preds[0].size(-1)
+        cls_p = torch.cat([
+            p.view(b, -1, c) for p in cls_preds], dim=1)
+    else:
+        cls_p = torch.cat([
+            p.view(b, -1) for p in cls_preds], dim=1)
+    return loc_p, cls_p
 
 
 class MultiBoxLoss(nn.Module):
@@ -115,15 +222,18 @@ class MultiBoxLoss(nn.Module):
         self.prefix = prefix
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
+        if not torch.is_tensor(loc_p):
+            loc_p, cls_p = flatten_loc_cls_preds(loc_p, cls_p)
+        # print(loc_p.shape)
+        # print(cls_p.shape)
+        # print(loc_t.shape)
+        # print(cls_t.shape)
         pos = cls_t != 0
         neg = ~pos
         if ignore is not None:
             neg = neg & ~ignore
         num_pos = pos.sum().item()
-        # print(loc_p.shape)
-        # print(cls_p.shape)
-        # print(loc_t.shape)
-        # print(cls_t.shape)
+
         if num_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
         if loc_p.size()[:-1] == pos.size():
@@ -226,66 +336,12 @@ class KLFocalLoss(nn.Module):
         return loss
 
 
-@curry
-def anchor_based_inference(
-        loc_p, cls_p, anchors, conf_threshold=0.01,
-        iou_threshold=0.5, topk=100,
-        conf_strategy='softmax', nms_method='soft', min_score=None):
-    bboxes = loc_p
-    if conf_strategy == 'softmax':
-        scores = torch.softmax(cls_p, dim=1)
-    else:
-        scores = torch.sigmoid_(cls_p)
-    scores, labels = torch.max(scores[:, 1:], dim=1)
-
-    if conf_threshold > 0:
-        pos = scores > conf_threshold
-        scores = scores[pos]
-        labels = labels[pos]
-        bboxes = bboxes[pos]
-        anchors = anchors[pos]
-
-    bboxes = target_to_coords(bboxes, anchors)
-
-    bboxes = BBox.convert(
-        bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
-    scores = scores.cpu()
-
-    if nms_method == 'soft':
-        min_score = min_score or conf_threshold
-        indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, min_score=min_score)
-    else:
-        indices = nms(bboxes, scores, iou_threshold)
-        scores = scores[indices]
-        labels = labels[indices]
-        bboxes = bboxes[indices]
-        if scores.size(0) > topk:
-            indices = scores.topk(topk)[1]
-        else:
-            indices = range(scores.size(0))
-
-    bboxes = BBox.convert(
-        bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
-
-    dets = []
-    for ind in indices:
-        det = {
-            'image_id': -1,
-            'category_id': labels[ind].item() + 1,
-            'bbox': bboxes[ind].tolist(),
-            'score': scores[ind].item(),
-        }
-        dets.append(det)
-    return dets
-
-
 class AnchorBasedInference:
 
-    def __init__(self, anchors, conf_threshold=0.01,
+    def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
                  conf_strategy='softmax', nms='soft', min_score=None):
-        self.anchors = flatten(anchors)
+        self.generator = generator
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.topk = topk
@@ -295,14 +351,64 @@ class AnchorBasedInference:
         self.nms = nms
         self.min_score = min_score
 
-    def __call__(self, loc_p, cls_p):
-        image_dets = []
+    def __call__(self, loc_preds, cls_preds):
+        grid_sizes = [p.size()[1:3] for p in loc_preds]
+        anchors = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)[0]
+        loc_p, cls_p = flatten_loc_cls_preds(loc_preds, cls_preds)
         batch_size = loc_p.size(0)
-        for i in range(batch_size):
-            dets = anchor_based_inference(
-                loc_p[i], cls_p[i], self.anchors,
-                self.conf_threshold, self.iou_threshold,
-                self.topk, self.conf_strategy, self.nms, self.min_score
-            )
-            image_dets.append(dets)
+        image_dets = [
+            self.inference_single(loc_p[i], cls_p[i], anchors)
+            for i in range(batch_size)
+        ]
         return image_dets
+
+    def inference_single(self, loc_p, cls_p, anchors):
+        bboxes = loc_p.view(-1, 4)
+        logits = cls_p.view(-1, cls_p.size(-1)).squeeze(-1)
+        if self.conf_strategy == 'softmax':
+            scores = torch.softmax(logits, dim=1)
+        else:
+            scores = torch.sigmoid_(logits)
+        scores, labels = torch.max(scores[:, 1:], dim=1)
+
+        if self.conf_threshold > 0:
+            pos = scores > self.conf_threshold
+            scores = scores[pos]
+            labels = labels[pos]
+            bboxes = bboxes[pos]
+            anchors = anchors[pos]
+
+        bboxes = target_to_coords(bboxes, anchors)
+
+        bboxes = BBox.convert(
+            bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
+        scores = scores.cpu()
+
+        if self.nms == 'soft':
+            min_score = self.min_score or self.conf_threshold
+            indices = soft_nms_cpu(
+                bboxes, scores, self.iou_threshold, self.topk, min_score=min_score)
+        else:
+            indices = nms(bboxes, scores, self.iou_threshold)
+            scores = scores[indices]
+            labels = labels[indices]
+            bboxes = bboxes[indices]
+            if scores.size(0) > self.topk:
+                indices = scores.topk(self.topk)[1]
+            else:
+                indices = range(scores.size(0))
+
+        bboxes = BBox.convert(
+            bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
+
+        dets = []
+        for ind in indices:
+            det = {
+                'image_id': -1,
+                'category_id': labels[ind].item() + 1,
+                'bbox': bboxes[ind].tolist(),
+                'score': scores[ind].item(),
+            }
+            dets.append(det)
+        return dets
+

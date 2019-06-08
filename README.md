@@ -206,7 +206,7 @@ import horch
 from horch import cuda
 from horch.datasets import train_test_split, Fullset, CocoDetection
 
-from horch.train import Trainer, Save
+from horch.train import Trainer, Save, misc_collate
 from horch.train.optimizer import AdamW
 from horch.train.metrics import TrainLoss, COCOEval
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
@@ -214,7 +214,7 @@ from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.transforms import Compose, ToTensor
 from horch.transforms.detection import Resize, ToPercentCoords, SSDTransform
 
-from horch.detection import generate_mlvl_anchors, misc_collate, find_priors_coco
+from horch.detection import generate_mlvl_anchors,  find_priors_coco
 from horch.detection.one import MatchAnchors
 
 from horch.models.utils import summary
@@ -329,14 +329,14 @@ import horch
 from horch import cuda
 from horch.datasets import SVHNDetection, train_test_split, Fullset, Subset
 
-from horch.train import Trainer, Save, ValSet
+from horch.train import Trainer, Save, ValSet, misc_collate
 from horch.train.optimizer import AdamW
 from horch.train.metrics import TrainLoss, COCOEval
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 
 from horch.transforms.detection import Compose, Resize, ToTensor, ToPercentCoords
 
-from horch.detection import get_locations, misc_collate
+from horch.detection import get_locations
 
 from horch.models.utils import summary
 from horch.models.detection import OneStageDetector

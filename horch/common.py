@@ -4,12 +4,22 @@ from collections.abc import Sequence, Mapping
 import torch
 
 
-class Args(tuple):
-    def __new__(cls, *args):
-        return super().__new__(cls, tuple(args))
+class Args:
+
+    def __init__(self, seq):
+        self.seq = seq
+
+    def __getitem__(self, item):
+        return self.seq
+
+    def __len__(self):
+        return 1
 
     def __repr__(self):
-        return "Args" + super().__repr__()
+        return "Args(" + str(self.seq) + ")"
+
+    def __iter__(self):
+        return iter((self.seq,))
 
 
 def one_hot(tensor, C=None, dtype=torch.float):
@@ -115,12 +125,12 @@ def _concat(xs, dim=1):
 def inverse_sigmoid(x, eps=1e-6, inplace=False):
     if not torch.is_tensor(x):
         if eps != 0:
-            x = min(max(x, eps), 1-eps)
+            x = min(max(x, eps), 1 - eps)
         return math.log(x / (1 - x))
     if inplace:
         return inverse_sigmoid_(x, eps)
     if eps != 0:
-        x = torch.clamp(x, eps, 1-eps)
+        x = torch.clamp(x, eps, 1 - eps)
     return (x / (1 - x)).log()
 
 

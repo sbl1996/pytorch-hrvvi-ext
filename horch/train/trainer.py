@@ -11,7 +11,7 @@ from ignite.engine import Engine, Events
 from ignite.handlers import Timer
 from tensorboardX import SummaryWriter
 
-from horch.common import CUDA, detach
+from horch.common import CUDA, detach, _tuple
 from horch.train.metrics import TrainLoss, Loss
 from horch.train._utils import _prepare_batch, set_lr
 from torch.utils.data import DataLoader
@@ -33,8 +33,7 @@ def create_supervised_evaluator(model, metrics=None,
                 preds = model.inference(*input)
             else:
                 preds = model(*input)
-            if torch.is_tensor(preds):
-                preds = (preds,)
+            preds = _tuple(preds)
             output = {
                 "preds": preds,
                 "target": target,
@@ -52,7 +51,7 @@ def create_supervised_evaluator(model, metrics=None,
 
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch, fp16=False):
+        device=None, prepare_batch=_prepare_batch, targets_as_inputs=False):
     if metrics is None:
         metrics = {}
     if device:
@@ -61,26 +60,23 @@ def create_supervised_trainer(
     def _update(engine, batch):
         model.train()
         optimizer.zero_grad()
-        input, target = prepare_batch(batch, device=device)
-        preds = model(*input)
-        if torch.is_tensor(preds):
-            preds = (preds,)
-        loss = criterion(*preds, *target)
-        if fp16:
-            from apex import amp
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            optimizer.step()
+        inputs, targets = prepare_batch(batch, device=device)
+        if targets_as_inputs:
+            outputs = model(*inputs, *targets)
+            loss = criterion(*_tuple(outputs))
         else:
-            loss.backward()
-            optimizer.step()
-        output = {
-            "preds": detach(preds),
-            "target": detach(target),
+            preds = model(*inputs)
+            loss = criterion(*_tuple(preds), *targets)
+        loss.backward()
+        optimizer.step()
+        outs = {
+            "target": detach(targets),
             "loss": loss.item(),
-            "batch_size": input[0].size(0),
+            "batch_size": inputs[0].size(0),
         }
-        return output
+        if not targets_as_inputs:
+            outs["preds"] = preds
+        return outs
 
     engine = Engine(_update)
     for name, metric in metrics.items():
@@ -102,7 +98,7 @@ def _evaluate(engine, evaluator, val_loader, per_epochs):
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics=None, test_metrics=None, save_path=".", name="Net"):
+                 metrics=None, test_metrics=None, save_path=".", name="Net", targets_as_inputs=False):
 
         self.model = model
         self.criterion = criterion
@@ -116,6 +112,7 @@ class Trainer:
                 self.test_metrics['loss'] = Loss(criterion=criterion)
         self.save_path = os.path.join(save_path, 'trainer')
         self.name = name
+        self.targets_as_inputs = targets_as_inputs
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
         log_dir = os.path.join(save_path, 'runs', self.name, current_time)
@@ -181,7 +178,7 @@ class Trainer:
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device)
+            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs)
         self._attach_timer(engine)
 
         engine.add_event_handler(
@@ -234,7 +231,8 @@ class Trainer:
         validate = ValSet.parse(validate, self)
 
         engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer, self.metrics, self.device)
+            self.model, self.criterion, self.optimizer,
+            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs)
         self._attach_timer(engine)
 
         engine.add_event_handler(
@@ -267,39 +265,6 @@ class Trainer:
         # Return history
         hist = {metric: hist[-epochs:]
                 for metric, hist in self.metric_history.items()}
-        return hist
-
-    def fit2(self, train_loader, epochs=1, save=None, callbacks=()):
-
-        engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer,
-            self.metrics, self.device)
-
-        engine.add_event_handler(Events.ITERATION_STARTED, self._lr_scheduler_step)
-
-        self._timer.attach(engine, start=Events.EPOCH_STARTED)
-        engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
-
-        engine.add_event_handler(Events.EPOCH_COMPLETED, self._increment_epoch)
-        engine.add_event_handler(Events.EPOCH_COMPLETED, self._log_results)
-
-        # Set checkpoint
-        if save:
-            checkpoint_handler = save.parse(self)
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
-
-        for callback in callbacks:
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, wrap(callback), self)
-
-        # Run
-        engine.run(train_loader, epochs)
-
-        # Return history
-        hist = {metric: hist[-epochs:]
-                for metric, hist in self.metric_history.items()}
-        hist = keyfilter(lambda k: not k.startswith("val_"), hist)
         return hist
 
     def state_dict(self):
@@ -423,15 +388,15 @@ class ValSet:
             return
         msg = "%s%s ------\t" % (self.name, " " * max(0, 8 - len(self.name)))
         for name, val in self.evaluator.state.metrics.items():
-            name = self.name + "_" + name
+            fname = self.name + "_" + name
             if isinstance(val, float):
                 msg += "%s: %.4f\t" % (name, val)
-                trainer.writer.add_scalar(name, val, trainer.epochs())
+                trainer.writer.add_scalar(fname, val, trainer.epochs())
             else:
                 msg += "%s: %s\t" % (name, val)
                 for i, v in enumerate(val):
                     trainer.writer.add_scalar("%s-%d" % (name, i + 1), v, trainer.epochs())
-            trainer.metric_history[name].append(val)
+            trainer.metric_history[fname].append(val)
         print(msg)
 
 
