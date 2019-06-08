@@ -1,4 +1,4 @@
-from horch.train.trainer import Trainer
+from horch.train.trainer import Trainer, ValSet
 from horch.train.gan_trainer import GANTrainer
 
 from toolz import curry

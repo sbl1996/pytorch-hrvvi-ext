@@ -1,3 +1,6 @@
+from copy import deepcopy
+
+from PIL import Image
 from toolz import curry
 from toolz.curried import get
 
@@ -195,44 +198,50 @@ class COCOEval(Metric):
         for dets, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
             for d in dets:
-                d['image_id'] = image_id
+                d = {**d, 'image_id': image_id}
                 self.res.append(d)
 
     def compute(self):
+        from hpycocotools.coco import COCO
+        img_ids = list(set([ d['image_id'] for d in self.res ]))
+        imgs = self.coco_gt.loadImgs(img_ids)
+        ann_ids = self.coco_gt.getAnnIds(imgIds=img_ids)
+        anns = self.coco_gt.loadAnns(ann_ids)
+        annotations = {
+            **self.annotations,
+            'images': imgs,
+            'annotations': anns,
+        }
+        coco_gt = COCO(annotations, verbose=False, use_percent=bool(self.percent_area_ranges))
+
         from hpycocotools.cocoeval import COCOeval
         from hpycocotools.mask import encode
-        if self.iou_type == 'segm':
-            for dt in self.res:
-                img = self.coco_gt.imgs[dt['image_id']]
-                width = img['width']
-                height = img['height']
-                l, t, w, h = [int(v) for v in dt['bbox']]
-                r = l + w
-                b = t + h
-                l = max(0, l)
-                t = max(0, t)
+        for dt in self.res:
+            img = self.coco_gt.imgs[dt['image_id']]
+            width = img['width']
+            height = img['height']
+            l, t, w, h = dt['bbox']
+            l *= width
+            t *= height
+            w *= width
+            h *= height
+            dt['bbox'] = [l, t, w, h]
+            if 'segmentation' in dt and self.iou_type == 'segm':
+                r = int(l + w)
+                b = int(t + h)
+                l = max(0, int(l))
+                t = max(0, int(t))
                 r = min(r, width)
                 b = min(b, height)
                 w = r - l
                 h = b - t
                 m = np.zeros((height, width), dtype=np.uint8)
-                segm = cv2.resize(dt['segmentation'], (w, h))
+                segm = cv2.resize(dt['segmentation'], (w, h), interpolation=cv2.INTER_NEAREST)
                 m[t:b, l:r] = segm
                 dt['segmentation'] = encode(np.asfortranarray(m))
-        elif self.iou_type == 'bbox':
-            for dt in self.res:
-                img = self.coco_gt.imgs[dt['image_id']]
-                width = img['width']
-                height = img['height']
-                l, t, w, h = dt['bbox']
-                l *= width
-                t *= height
-                w *= width
-                h *= height
-                dt['bbox'] = [l, t, w, h]
 
-        coco_dt = self.coco_gt.loadRes(self.res)
-        ev = COCOeval(self.coco_gt, coco_dt,
+        coco_dt = coco_gt.loadRes(self.res)
+        ev = COCOeval(coco_gt, coco_dt,
                       iouType=self.iou_type, pAreaRng=self.percent_area_ranges, verbose=False)
         ev.evaluate()
         ev.accumulate()
@@ -243,6 +252,98 @@ class COCOEval(Metric):
 def get_ap(values):
     values = np.array([np.mean(values), values[0], values[5]])
     return values
+
+
+def mean_iou(pred, gt, num_classes):
+    n = 0
+    miou = 0
+    for c in range(num_classes):
+        class_iou = class_seg_iou(pred, gt, c)
+        if class_iou is not None:
+            n += 1
+            miou += class_iou
+    return miou / n
+
+
+def class_seg_iou(pred, gt, class_):
+    p = pred == class_
+    g = gt == class_
+    tp = (p & g).sum()
+    fn = (~p & g).sum()
+    fp = (p & ~g).sum()
+    denominator = tp + fn + fp
+    if denominator == 0:
+        return None
+    else:
+        return tp / denominator
+
+
+class SegmentationMeanIoU(Average):
+    r"""
+    Args:
+
+    Inputs:
+        target (list of list of horch.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
+    """
+
+    def __init__(self, num_classes, iou_threshold=0.5):
+        self.num_classes = num_classes
+        self.iou_threshold = iou_threshold
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        targets, preds, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+        gts = targets[0]
+        if isinstance(gts[0], Image.Image):
+            gts = [np.array(img) for img in gts]
+        elif torch.is_tensor(gts):
+            gts = gts.cpu().byte().numpy()
+
+        v = np.mean([
+            mean_iou(preds[i], gts[i], self.num_classes)
+            for i in range(batch_size)
+        ])
+
+        return v, batch_size
+
+
+class PixelAccuracy(Average):
+    r"""
+    Args:
+
+    Inputs:
+        target (list of list of horch.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
+    """
+
+    def __init__(self, ignore_index=255):
+        self.ignore_index = ignore_index
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        targets, preds, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+
+        gts = targets[0]
+        if isinstance(gts[0], Image.Image):
+            gts = [np.array(img) for img in gts]
+        elif torch.is_tensor(gts):
+            gts = gts.cpu().byte().numpy()
+
+        accs = []
+        for i in range(batch_size):
+            g = gts[i]
+            p = preds[i]
+            tp = (g == p).sum()
+            if self.ignore_index is not None:
+                tp += (g == self.ignore_index).sum()
+            accs.append(tp / np.prod(g.shape))
+        acc = np.mean(accs)
+        return acc, batch_size
 
 
 class CocoAveragePrecision(Average):
@@ -319,3 +420,21 @@ class MeanAveragePrecision(Average):
         values = np.mean([mAP(image_dets[i], image_gts[i],
                               self.iou_threshold) for i in range(batch_size)])
         return values, batch_size
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

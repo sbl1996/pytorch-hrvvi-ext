@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Iterable
 from math import sqrt
 
 from toolz import curry
@@ -8,20 +8,22 @@ import numpy as np
 import torch
 from torch.utils.data.dataloader import default_collate
 
-from horch.common import Args
 
+from horch.common import Args
+from horch.transforms.detection.functional import to_absolute_coords
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
 from horch.detection.anchor import find_priors_kmeans, find_priors_coco
-from horch.detection.nms import nms_cpu, soft_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
 from horch.detection.eval import mAP
 
 __all__ = [
-    "BBox", "nms_cpu", "soft_nms_cpu", "misc_target_collate",
+    "BBox", "nms", "soft_nms_cpu", "misc_target_collate",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "get_locations", "calc_anchor_sizes", "generate_anchors",
     "generate_mlvl_anchors", "generate_anchors_with_priors",
-    "find_priors_kmeans", "mAP", "find_priors_coco"
+    "find_priors_kmeans", "mAP", "find_priors_coco", "softer_nms_cpu",
+    "misc_collate"
 ]
 
 
@@ -105,10 +107,34 @@ def generate_anchors_with_priors(input_size, stride, priors):
     return anchors
 
 
-@curry
 def misc_target_collate(batch):
     input, target = zip(*batch)
+    target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in target]
     return default_collate(input), Args(target)
+
+
+def misc_collate(batch):
+    input, target = zip(*batch)
+    if torch.is_tensor(input[0]):
+        input = default_collate(input)
+    else:
+        if any([torch.is_tensor(t) for t in input[0]]):
+            input = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*input)]
+        else:
+            input = Args(input)
+    if torch.is_tensor(target[0]):
+        target = default_collate(target)
+    elif isinstance(target[0], Sequence):
+        if len(target[0]) == 0:
+            target = []
+        else:
+            if any([torch.is_tensor(t) for t in target[0]]):
+                target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
+            else:
+                target = Args(target)
+    else:
+        target = Args(target)
+    return input, target
 
 
 def draw_bboxes(img, anns, categories=None):
@@ -120,16 +146,17 @@ def draw_bboxes(img, anns, categories=None):
         if isinstance(ann, BBox):
             ann = ann.to_ann()
         bbox = ann["bbox"]
-        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=1,
-                         edgecolor='r', facecolor='none')
+        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=2,
+                         edgecolor='g', facecolor='none')
         ax.add_patch(rect)
         if categories:
             ax.text(bbox[0], bbox[1],
                     categories[ann["category_id"]], fontsize=12,
                     bbox=dict(boxstyle="round",
-                              ec=(1., 0.5, 0.5),
-                              fc=(1., 0.8, 0.8),
-                              facecolor='red', alpha=0.5, edgecolor='red'
-                              )
+                              # ec=(1., 0.5, 0.5),
+                              # fc=(1., 0.8, 0.8),
+                              facecolor='green', alpha=0.5, edgecolor='green'
+                              ),
+                    color='white',
                     )
     return fig, ax

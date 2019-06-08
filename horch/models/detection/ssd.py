@@ -8,14 +8,14 @@ from horch.models.detection.head import SSDHead
 
 
 class DownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, padding=1, norm_layer='bn', lite=False):
+    def __init__(self, in_channels, out_channels, padding=1, lite=False):
         super().__init__()
         self.conv1 = Conv2d(
             in_channels, out_channels // 2, kernel_size=1,
-            norm_layer=norm_layer, activation='default')
+            norm_layer='default', activation='default')
         self.conv2 = Conv2d(
             out_channels // 2, out_channels, kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='default', padding=padding, depthwise_separable=lite)
+            norm_layer='default', activation='default', padding=padding, depthwise_separable=lite)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -29,7 +29,7 @@ class SSD(nn.Module):
     """
     def __init__(self, backbone, num_anchors=(4, 6, 6, 6, 6, 4), num_classes=21,
                  f_channels=256, extra_levels=(6,7,8),
-                 pad_last=False, norm_layer='bn', lite=False):
+                 pad_last=False, lite=False):
         super().__init__()
         extra_levels = _tuple(extra_levels)
         feature_levels = backbone.feature_levels + extra_levels
@@ -41,14 +41,14 @@ class SSD(nn.Module):
         backbone_channels = backbone.out_channels
         head_in_channels = list(backbone_channels)
         if 6 in extra_levels:
-            self.layer6 = DownBlock(backbone_channels[-1], 2 * f_channels, norm_layer=norm_layer, lite=lite)
+            self.layer6 = DownBlock(backbone_channels[-1], 2 * f_channels, lite=lite)
             head_in_channels.append(2 * f_channels)
         if 7 in extra_levels:
-            self.layer7 = DownBlock(2 * f_channels, f_channels, norm_layer=norm_layer, lite=lite)
+            self.layer7 = DownBlock(2 * f_channels, f_channels, lite=lite)
             head_in_channels.append(f_channels)
         if 8 in extra_levels:
             padding = 1 if pad_last else 0
-            self.layer8 = DownBlock(f_channels, f_channels, padding=padding, norm_layer=norm_layer, lite=lite)
+            self.layer8 = DownBlock(f_channels, f_channels, padding=padding, lite=lite)
             head_in_channels.append(f_channels)
         self.head = SSDHead(num_anchors, num_classes, head_in_channels, lite=lite)
 

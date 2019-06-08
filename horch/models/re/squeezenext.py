@@ -6,35 +6,35 @@ from horch.models.modules import Conv2d
 
 
 class BasicBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_layer):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv = nn.Sequential(
             Conv2d(
                 in_channels, out_channels // 2, kernel_size=1,
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 out_channels // 2, out_channels // 4, kernel_size=1,
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 out_channels // 4, out_channels // 2, kernel_size=(3, 1),
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 out_channels // 2, out_channels // 2, kernel_size=(1, 3),
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 out_channels // 2, out_channels, kernel_size=1,
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             )
         )
         self.shortcut = nn.Sequential()
         if in_channels != out_channels:
             self.shortcut = Conv2d(
                 in_channels, out_channels, kernel_size=1,
-                norm_layer=norm_layer,
+                norm_layer='default',
             )
 
     def forward(self, x):
@@ -43,34 +43,32 @@ class BasicBlock(nn.Module):
 
 
 class DownBlock(nn.Module):
-    def __init__(self, channels, norm_layer):
+    def __init__(self, channels):
         super().__init__()
         self.conv = nn.Sequential(
             Conv2d(
                 channels, channels, kernel_size=1, stride=2,
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 channels, channels // 2, kernel_size=1,
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 channels // 2, channels, kernel_size=(3, 1),
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 channels, channels, kernel_size=(1, 3),
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             ),
             Conv2d(
                 channels, channels * 2, kernel_size=1,
-                norm_layer=norm_layer, activation='default'
+                norm_layer='default', activation='default'
             )
         )
         self.shortcut = Conv2d(
-            channels, channels * 2, kernel_size=1, stride=2,
-            norm_layer=norm_layer
-        )
+            channels, channels * 2, kernel_size=1, stride=2, norm_layer='default')
 
     def forward(self, x):
         x = self.conv(x) + self.shortcut(x)
@@ -85,31 +83,30 @@ class SqueezeNext(nn.Module):
         2: [24, 244, 488, 976, 2048],
     }
 
-    def __init__(self, num_classes=1000, norm_layer='bn'):
+    def __init__(self, num_classes=1000):
         super().__init__()
         num_layers = [5, 5, 7]
         self.num_layers = num_layers
         channels = [64, 32, 64, 128, 256, 128]
         self.channels = channels
-        self.norm_layer = norm_layer
 
         self.conv1 = Conv2d(
             3, channels[0], kernel_size=3, stride=2,
-            norm_layer=norm_layer, activation='default'
+            norm_layer='default', activation='default'
         )
         self.maxpool = nn.MaxPool2d(
             kernel_size=3, stride=2, padding=1,
         )
-        self.stage21 = BasicBlock(channels[0], channels[1], norm_layer)
+        self.stage21 = BasicBlock(channels[0], channels[1])
         self.stage22 = self._make_layer(num_layers[0], channels[1])
-        self.stage31 = DownBlock(channels[1], norm_layer)
+        self.stage31 = DownBlock(channels[1])
         self.stage32 = self._make_layer(num_layers[1], channels[2])
-        self.stage41 = DownBlock(channels[2], norm_layer)
+        self.stage41 = DownBlock(channels[2])
         self.stage42 = self._make_layer(num_layers[2], channels[3])
-        self.stage51 = DownBlock(channels[3], norm_layer)
+        self.stage51 = DownBlock(channels[3])
         self.stage52 = Conv2d(
             channels[4], channels[5], kernel_size=1,
-            norm_layer=norm_layer, activation='default'
+            norm_layer='default', activation='default'
         )
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(channels[5], num_classes)
@@ -117,8 +114,7 @@ class SqueezeNext(nn.Module):
     def _make_layer(self, num_layers, channels):
         layers = []
         for i in range(num_layers):
-            layers.append(BasicBlock(
-                channels, channels, self.norm_layer))
+            layers.append(BasicBlock(channels, channels))
         return nn.Sequential(*layers)
 
     def forward(self, x):

@@ -291,9 +291,9 @@ PSROIAlign_forward_cuda(const at::Tensor &input, const at::Tensor &rois,
     auto channels = input.size(1);
     auto height = input.size(2);
     auto width = input.size(3);
-    AT_ASSERTM(channels == (out_channels * pooled_height * pooled_height),
+    AT_ASSERTM(channels == (out_channels * pooled_height * pooled_width),
                "the number of input channels must be equal to out_channels * "
-               "pooled_height * pooled_height");
+               "pooled_height * pooled_width");
 
     at::Tensor output = at::zeros(
         {num_rois, out_channels, pooled_height, pooled_width}, input.options());

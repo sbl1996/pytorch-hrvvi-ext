@@ -2,7 +2,7 @@ import math
 
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, get_activation, SELayer
+from horch.models.modules import Conv2d, get_activation, SEModule
 
 __all__ = ['RootResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -10,19 +10,19 @@ __all__ = ['RootResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
 
 class BasicBlock(nn.Module):
 
-    def __init__(self, in_channels, channels, stride=1, norm_layer='bn', with_se=True):
+    def __init__(self, in_channels, channels, stride=1, with_se=True):
         super().__init__()
         self.with_se = with_se
         self.conv1 = Conv2d(in_channels, channels, kernel_size=3, stride=stride,
-                            norm_layer=norm_layer, activation='default')
+                            norm_layer='default', activation='default')
         self.conv2 = Conv2d(channels, channels, kernel_size=3,
-                            norm_layer=norm_layer)
+                            norm_layer='default')
         if self.with_se:
-            self.se = SELayer(channels, reduction=8)
+            self.se = SEModule(channels, reduction=8)
         self.nl = get_activation('default')
         self.downsample = None
         if stride != 1 or in_channels != channels:
-            self.downsample = Conv2d(in_channels, channels, stride=stride, norm_layer=norm_layer)
+            self.downsample = Conv2d(in_channels, channels, stride=stride, norm_layer='default')
 
     def forward(self, x):
         identity = x

@@ -5,15 +5,38 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, _tuple
-from horch.detection import soft_nms_cpu, BBox, nms_cpu
+from horch.common import one_hot, _tuple, _concat
+from horch.detection import soft_nms_cpu, BBox, nms
+from horch.models.detection.head import RetinaHead, to_pred
 from horch.transforms.detection.functional import to_percent_coords
 from horch.nn.loss import focal_loss2, iou_loss
-from horch.models.detection.head import FCOSHead
 from horch.models.detection import OneStageDetector
+from torch import nn as nn
+
+
+class FCOSHead(RetinaHead):
+    def __init__(self, num_levels, num_classes, f_channels=256, num_layers=4, lite=False):
+        super().__init__(1, num_classes + 1, f_channels, num_layers, lite)
+        start = 1 - (num_levels - 1) * 0.1 / 2
+        scales = [ start + i / 10 for i in range(num_levels) ]
+        self.scales = nn.Parameter(torch.tensor(scales))
+
+    def forward(self, *ps):
+        loc_preds = []
+        cls_preds = []
+        for i,p in enumerate(ps):
+            loc_p = to_pred(self.loc_head(p), 4)
+            loc_preds.append(loc_p * self.scales[i])
+
+            cls_p = to_pred(self.cls_head(p), self.num_classes)
+            cls_preds.append(cls_p)
+        loc_p = _concat(loc_preds, dim=1)
+        cls_p = _concat(cls_preds, dim=1)
+        return loc_p, cls_p
+
 
 __all__ = [
-    "get_mlvl_centers", "FCOSTransform", "FCOSHead", "FCOSInference", "FCOS", "FCOSLoss"
+    "get_mlvl_centers", "FCOSTransform", "FCOSInference", "FCOS", "FCOSLoss"
 ]
 
 
@@ -87,8 +110,9 @@ class FCOSTransform:
 
 
 class FCOSLoss(nn.Module):
-    def __init__(self, p=0.1):
+    def __init__(self, use_ctn=True, p=0.1):
         super().__init__()
+        self.use_ctn = use_ctn
         self.p = p
 
     def forward(self, loc_p, cls_p, ctn_p, loc_t, cls_t, ctn_t):
@@ -100,22 +124,28 @@ class FCOSLoss(nn.Module):
         loc_loss = iou_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
         cls_t = one_hot(cls_t, C=cls_p.size(-1))
         cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
-        ctn_loss = F.binary_cross_entropy_with_logits(ctn_p[pos], ctn_t[pos], reduction='sum') / num_pos
-        loss = loc_loss + cls_loss + ctn_loss
-        if random.random() < self.p:
-            print("loc: %.4f | cls: %.4f | ctn: %.4f" %
-                  (loc_loss.item(), cls_loss.item(), ctn_loss.item()))
+        if self.use_ctn:
+            ctn_loss = F.binary_cross_entropy_with_logits(ctn_p[pos], ctn_t[pos], reduction='sum') / num_pos
+            loss = loc_loss + cls_loss + ctn_loss
+            if random.random() < self.p:
+                print("loc: %.4f | cls: %.4f | ctn: %.4f" %
+                      (loc_loss.item(), cls_loss.item(), ctn_loss.item()))
+        else:
+            loss = loc_loss + cls_loss
+            if random.random() < self.p:
+                print("loc: %.4f | cls: %.4f" %
+                      (loc_loss.item(), cls_loss.item()))
         return loss
 
 
 def center_based_inference(
         size, loc_p, cls_p, ctn_p, centers, conf_threshold=0.01,
-        iou_threshold=0.5, topk=100, nms='soft_nms', soft_nms_threshold=None, use_centerness=True):
+        iou_threshold=0.5, topk=100, nms_method='soft_nms', use_ctn=True):
     dets = []
     bboxes = loc_p.exp_()
     scores, labels = cls_p[:, 1:].max(dim=-1)
     scores = scores.sigmoid_()
-    if use_centerness:
+    if use_ctn:
         centerness = ctn_p.sigmoid_()
         scores = scores.mul_(centerness)
 
@@ -137,8 +167,8 @@ def center_based_inference(
     scores = scores.cpu()
     bboxes = bboxes.cpu()
 
-    if nms == 'nms':
-        indices = nms_cpu(bboxes, scores, iou_threshold)
+    if nms_method == 'nms':
+        indices = nms(bboxes, scores, iou_threshold)
         scores = scores[indices]
         labels = labels[indices]
         bboxes = bboxes[indices]
@@ -147,10 +177,8 @@ def center_based_inference(
         else:
             indices = range(scores.size(0))
     else:
-        if soft_nms_threshold is None:
-            soft_nms_threshold = conf_threshold
         indices = soft_nms_cpu(
-            bboxes, scores, iou_threshold, topk, conf_threshold=soft_nms_threshold)
+            bboxes, scores, iou_threshold, topk, min_score=conf_threshold)
     bboxes = BBox.convert(
         bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
     for ind in indices:
@@ -176,7 +204,7 @@ def flatten(xs):
 class FCOSInference:
 
     def __init__(self, size, mlvl_centers, conf_threshold=0.05, iou_threshold=0.5, topk=100, nms='nms',
-                 soft_nms_threshold=None, use_centerness=True):
+                 soft_nms_threshold=None, use_ctn=True):
         self.size = size
         self.centers = flatten(mlvl_centers)
         self.conf_threshold = conf_threshold
@@ -184,7 +212,7 @@ class FCOSInference:
         self.topk = topk
         self.nms = nms
         self.soft_nms_threshold = soft_nms_threshold
-        self.use_centerness = use_centerness
+        self.use_ctn = use_ctn
 
     def __call__(self, loc_p, cls_p, ctn_p):
         image_dets = []
@@ -193,7 +221,7 @@ class FCOSInference:
             dets = center_based_inference(
                 self.size, loc_p[i], cls_p[i], ctn_p[i], self.centers,
                 self.conf_threshold, self.iou_threshold,
-                self.topk, self.nms, self.soft_nms_threshold, self.use_centerness
+                self.topk, self.nms, self.soft_nms_threshold, self.use_ctn
             )
             image_dets.append(dets)
         return image_dets

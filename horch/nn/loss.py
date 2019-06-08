@@ -8,6 +8,16 @@ def inverse_sigmoid(x):
     return math.log(x / (1-x))
 
 
+def focal_loss(input, target, weight=None, ignore_index=None, gamma=2, reduction='mean'):
+    logpt = -F.cross_entropy(input, target, weight=weight, ignore_index=ignore_index, reduction='none')
+    pt = torch.exp(logpt)
+    loss = -((1 - pt) ** gamma) * logpt
+    if reduction == 'mean':
+        return loss.mean()
+    else:
+        return loss.sum()
+
+
 def focal_loss2(input, target, gamma=2, beta=1, alpha=0.25, eps=1e-6, reduction='mean'):
     xt = gamma * input + beta * (2 * target - 1)
     eps = inverse_sigmoid(1-eps)
@@ -41,3 +51,25 @@ def iou_loss(prediction, ground_truth, reduction='mean'):
         return loss.mean()
     else:
         raise ValueError("reduction must be mean or sum")
+
+
+def loc_kl_loss(loc_p, log_var_p, loc_t, reduction='sum'):
+    r"""
+    Parameters
+    ----------
+    loc_p : torch.Tensor
+        (N, 4)
+    log_var_p : torch.Tensor
+        (N, 4)
+    loc_t : torch.Tensor
+        (N, 4)
+    reduction : str
+        `sum` or `mean`
+    """
+    loc_e = (loc_t - loc_p).abs()
+    loss = (torch.pow(loc_e, 2) / 2).masked_fill(loc_e > 1, 0) + (loc_e - 1/2).masked_fill(loc_e <= 1, 0)
+    loss = loss * torch.exp(-log_var_p) + log_var_p / 2
+    if reduction == 'sum':
+        return loss.sum()
+    else:
+        return loss.mean()

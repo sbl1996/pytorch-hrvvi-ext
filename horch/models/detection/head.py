@@ -1,12 +1,10 @@
 from math import log
 
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from horch.models.modules import Conv2d, DWConv2d, get_norm_layer
-from horch.models.utils import get_loc_cls_preds, _concat
-from horch.common import _tuple
+from horch.models.utils import weight_init_normal, bias_init_constant, get_last_conv
+from horch.common import _tuple, _concat, inverse_sigmoid
 
 
 def to_pred(p, c: int):
@@ -24,10 +22,12 @@ class ThunderRCNNHead(nn.Module):
     Light head only for R-CNN, not for one-stage detector.
     """
 
-    def __init__(self, num_classes, in_channels=245, f_channels=256, norm_layer='bn'):
+    def __init__(self, num_classes, f_channels=256):
         super().__init__()
-        self.fc = Conv2d(in_channels, f_channels, kernel_size=1,
-                         norm_layer=norm_layer, activation='default')
+        self.fc1 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer='default', activation='default')
+        self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
+                          norm_layer='default', activation='default')
         self.loc_fc = nn.Linear(f_channels, 4)
         self.cls_fc = nn.Linear(f_channels, num_classes)
 
@@ -49,26 +49,19 @@ class SharedDWConvHead(nn.Module):
     Light head for RPN, not for R-CNN.
     """
 
-    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256, return_features=False,
-                 norm_layer='bn'):
+    def __init__(self, num_anchors, num_classes=2, in_channels=245, f_channels=256):
         super().__init__()
         self.num_classes = num_classes
-        self.return_features = return_features
         self.conv = DWConv2d(
             in_channels, f_channels, kernel_size=5,
-            mid_norm_layer=norm_layer, norm_layer=norm_layer,
+            mid_norm_layer='default', norm_layer='default',
             activation='default')
         self.loc_conv = Conv2d(
             f_channels, num_anchors * 4, kernel_size=1)
         self.cls_conv = Conv2d(
             f_channels, num_anchors * num_classes, kernel_size=1)
 
-        self.cls_conv.apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            nn.init.constant_(m.bias, -log((1 - p) / p))
+        bias_init_constant(self.cls_conv, inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         loc_preds = []
@@ -80,18 +73,16 @@ class SharedDWConvHead(nn.Module):
 
             cls_p = to_pred(self.cls_conv(p), self.num_classes)
             cls_preds.append(cls_p)
-            if self.return_features:
-                return loc_p, cls_p, p
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
 
 
-def _make_head(f_channels, num_layers, out_channels, norm_layer, lite):
+def _make_head(f_channels, num_layers, out_channels, lite):
     layers = []
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
-                             norm_layer=norm_layer, activation='default', depthwise_separable=lite))
+                             norm_layer='default', activation='default', depthwise_separable=lite))
     layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
     return nn.Sequential(*layers)
 
@@ -116,32 +107,34 @@ class RetinaHead(nn.Module):
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
+    concat : bool
+        Whether to concat predictions in `eval` mode.
     """
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
+
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, lite=False, concat=True):
         super().__init__()
         self.num_classes = num_classes
+        self.concat = concat
         self.loc_head = _make_head(
-            f_channels, num_layers, num_anchors * 4, norm_layer=norm_layer, lite=lite)
+            f_channels, num_layers, num_anchors * 4, lite=lite)
         self.cls_head = _make_head(
-            f_channels, num_layers, num_anchors * num_classes, norm_layer=norm_layer, lite=lite)
+            f_channels, num_layers, num_anchors * num_classes, lite=lite)
 
-        self.cls_head[-1].apply(self._init_final_cls_layer)
-
-    def _init_final_cls_layer(self, m, p=0.01):
-        name = type(m).__name__
-        if "Linear" in name or "Conv" in name:
-            if m.bias is not None:
-                nn.init.constant_(m.bias, -log((1 - p) / p))
+        bias_init_constant(self.cls_head[-1], inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         loc_preds = []
         cls_preds = []
         for p in ps:
             loc_p = to_pred(self.loc_head(p), 4)
-            loc_preds.append(loc_p)
+            loc_preds.append(loc_p[..., :4])
 
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p)
+
+        if not self.training and not self.concat:
+            return loc_preds, cls_preds
+
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
@@ -157,7 +150,7 @@ class SSDHead(nn.Module):
         Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
     num_classes : int
         Number of classes.
-    in_channels : tuple of ints
+    in_channels : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
     norm_layer : str
         `bn` for Batch Normalization and `gn` for Group Normalization.
@@ -165,42 +158,44 @@ class SSDHead(nn.Module):
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
+    concat : bool
+        Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, norm_layer='bn', lite=False):
+    def __init__(self, num_anchors, num_classes, in_channels, lite=False, concat=True):
         super().__init__()
         self.num_classes = num_classes
+        self.concat = concat
         num_anchors = _tuple(num_anchors, len(in_channels))
         self.preds = nn.ModuleList([
             nn.Sequential(
-                get_norm_layer(norm_layer, c),
-                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer=norm_layer)
+                get_norm_layer('default', c),
+                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
             )
             for c, n in zip(in_channels, num_anchors)
         ])
 
-    def forward(self, *ps):
-        ps = [pred(p) for p, pred in zip(ps, self.preds)]
-        loc_p, cls_p = get_loc_cls_preds(ps, self.num_classes)
-        return loc_p, cls_p
-
-
-class FCOSHead(RetinaHead):
-    def __init__(self, num_levels, num_classes, f_channels=256, num_layers=4, norm_layer='bn', lite=False):
-        super().__init__(1, num_classes + 1, f_channels, num_layers, norm_layer, lite)
-        start = 1 - (num_levels - 1) * 0.1 / 2
-        scales = [ start + i / 10 for i in range(num_levels) ]
-        self.scales = nn.Parameter(torch.tensor(scales))
+        for p in self.preds:
+            get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
 
     def forward(self, *ps):
+        b = ps[0].size(0)
+
+        preds = [pred(p) for p, pred in zip(ps, self.preds)]
+
         loc_preds = []
         cls_preds = []
-        for i,p in enumerate(ps):
-            loc_p = to_pred(self.loc_head(p), 4)
-            loc_preds.append(loc_p * self.scales[i])
-
-            cls_p = to_pred(self.cls_head(p), self.num_classes)
+        for p in preds:
+            p = p.permute(0, 3, 2, 1).contiguous().view(b, -1, 4 + self.num_classes)
+            loc_preds.append(p[..., :4])
+            cls_p = p[..., 4:]
+            if cls_p.size(-1) == 1:
+                cls_p = cls_p[..., 0]
             cls_preds.append(cls_p)
+
+        if not self.training and not self.concat:
+            return loc_preds, cls_preds
+
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p

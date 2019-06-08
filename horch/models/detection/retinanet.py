@@ -11,7 +11,7 @@ from horch.models.detection.enhance import FPN
 
 class RetinaNet(nn.Module):
 
-    def __init__(self, backbone, num_classes=10, num_anchors=3, f_channels=256, extra_levels=(6,7), norm_layer='gn', num_head_layers=4):
+    def __init__(self, backbone, num_classes=10, num_anchors=3, f_channels=256, extra_levels=(6,7), num_head_layers=4):
         super().__init__()
         assert tuple(backbone.feature_levels) == (3, 4, 5), "Feature levels of backbone must be (3,4,5)"
         self.num_classes = num_classes
@@ -21,19 +21,19 @@ class RetinaNet(nn.Module):
         if 6 in extra_levels:
             self.layer6 = Conv2d(
                 backbone_channels[-1], f_channels, kernel_size=3, stride=2,
-                norm_layer=norm_layer)
+                norm_layer='default')
         if 7 in extra_levels:
             assert 6 in extra_levels
             self.layer7 = nn.Sequential(
                 get_activation('default'),
                 Conv2d(f_channels, f_channels, kernel_size=3, stride=2,
-                       norm_layer=norm_layer)
+                       norm_layer='default')
             )
 
-        self.fpn = FPN(backbone, f_channels, norm_layer=norm_layer)
+        self.fpn = FPN(backbone, f_channels, norm_layer='default')
 
         self.head = RetinaHead(
-            f_channels, num_anchors, num_classes, norm_layer=norm_layer, num_layers=num_head_layers)
+            f_channels, num_anchors, num_classes, num_layers=num_head_layers)
 
     def forward(self, x):
         c3, c4, c5 = self.backbone(x)

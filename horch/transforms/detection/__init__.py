@@ -38,6 +38,8 @@ class RandomExpand(JointTransform):
         expand_image.paste(img, (int(left), int(top)))
 
         new_anns = HF.move(anns, left, top)
+        if len(new_anns) == 0:
+            return img, anns
         return expand_image, new_anns
 
     def __repr__(self):
@@ -79,9 +81,11 @@ class RandomSampleCrop(JointTransform):
             return img, anns
         else:
             anns, l, t, w, h = returns
-            img = img.crop([l, t, l + w, t + h])
-            anns = HF.crop(anns, l, t, w, h)
-            return img, anns
+            new_img = img.crop([l, t, l + w, t + h])
+            new_anns = HF.crop(anns, l, t, w, h)
+            if len(new_anns) == 0:
+                return img, anns
+            return new_img, new_anns
 
 
 class RandomResizedCrop(JointTransform):
@@ -176,7 +180,6 @@ class RandomResizedCrop(JointTransform):
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
         new_anns = HF.resized_crop(anns, j, i, w, h, self.size, self.min_area_frac)
         if len(new_anns) == 0:
-            # print("Fail")
             return img, anns
         img = VF.resized_crop(img, i, j, h, w, self.size[::-1], self.interpolation)
         return img, new_anns
