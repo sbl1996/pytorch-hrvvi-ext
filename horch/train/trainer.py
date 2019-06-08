@@ -345,19 +345,11 @@ class Trainer:
     def epochs(self):
         return self._epochs
 
-<<<<<<< HEAD
-    def evaluate(self, test_loader, metrics=None):
-        if metrics is None:
-            metrics = self.evaluate_metrics
-        evaluator = create_supervised_evaluator(
-            self.model, metrics, self._device)
-=======
     def evaluate(self, test_loader, evaluate_metrics=None):
         if evaluate_metrics is None:
             evaluate_metrics = self.test_metrics
         evaluator = create_supervised_evaluator(
             self.model, evaluate_metrics, self.device)
->>>>>>> dev
         return evaluator.run(test_loader).metrics
 
     def set_lr(self, lr):
