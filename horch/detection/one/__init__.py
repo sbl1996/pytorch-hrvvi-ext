@@ -35,8 +35,9 @@ class AnchorGenerator:
         self.caches = defaultdict(dict)
 
     def calculate(self, grid_sizes, device, dtype):
+        anchor_sizes = self.anchor_sizes.to(device=device, dtype=dtype)
         mlvl_anchors = generate_mlvl_anchors(
-            grid_sizes, self.anchor_sizes, device, dtype)
+            grid_sizes, anchor_sizes, device, dtype)
         if self.flatten:
             mlvl_anchors = flatten(mlvl_anchors)
         if self.with_ltrb:
