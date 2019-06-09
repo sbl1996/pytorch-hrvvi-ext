@@ -218,7 +218,7 @@ from horch.detection import generate_mlvl_anchors,  find_priors_coco
 from horch.detection.one import MatchAnchors
 
 from horch.models.utils import summary
-from horch.models.detection.backbone import SNet
+from horch.models.backbone import SNet
 from horch.models.detection.refinedet import RefineLoss, AnchorRefineInference, RefineDet
 
 # Describe the dataset
@@ -340,7 +340,7 @@ from horch.detection import get_locations
 
 from horch.models.utils import summary
 from horch.models.detection import OneStageDetector
-from horch.models.detection.backbone import ShuffleNetV2
+from horch.models.backbone import ShuffleNetV2
 from horch.models.detection.enhance import stacked_fpn
 from horch.models.detection.head import RetinaHead
 from horch.models.detection.fovea import FoveaLoss, FoveaInference, FoveaTransform, get_mlvl_centers
