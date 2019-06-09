@@ -25,10 +25,11 @@ def flatten(xs):
 
 
 class AnchorGenerator:
-    def __init__(self, anchor_sizes, flatten=True, cache=True):
+    def __init__(self, anchor_sizes, flatten=True, with_ltrb=True, cache=True):
         super().__init__()
         self.anchor_sizes = anchor_sizes
         self.flatten = flatten
+        self.with_ltrb = with_ltrb
         self.cache = cache
         self.caches = {}
 
@@ -37,19 +38,25 @@ class AnchorGenerator:
             grid_sizes = tuple(grid_sizes)
         if self.cache:
             if grid_sizes in self.caches:
-                mlvl_anchors, mlvl_anchors_ltrb = self.caches[grid_sizes]
+                mlvl_anchors = self.caches[grid_sizes]
             else:
                 mlvl_anchors = generate_mlvl_anchors(
                     grid_sizes, self.anchor_sizes, device, dtype)
-                mlvl_anchors = flatten(mlvl_anchors)
-                mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
-                self.caches[grid_sizes] = (mlvl_anchors, mlvl_anchors_ltrb)
+                if self.flatten:
+                    mlvl_anchors = flatten(mlvl_anchors)
+                if self.with_ltrb:
+                    mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
+                    mlvl_anchors = (mlvl_anchors, mlvl_anchors_ltrb)
+                self.caches[grid_sizes] = mlvl_anchors
         else:
             mlvl_anchors = generate_mlvl_anchors(
                 grid_sizes, self.anchor_sizes, device, dtype)
-            mlvl_anchors = flatten(mlvl_anchors)
-            mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
-        return mlvl_anchors, mlvl_anchors_ltrb
+            if self.flatten:
+                mlvl_anchors = flatten(mlvl_anchors)
+            if self.with_ltrb:
+                mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
+                mlvl_anchors = (mlvl_anchors, mlvl_anchors_ltrb)
+        return mlvl_anchors
 
 
 def coords_to_target(gt_box, anchors):
@@ -143,7 +150,7 @@ class AnchorMatcher:
 
     Parameters
     ----------
-    anchors : torch.Tensor or List[torch.Tensor]
+    generator : AnchorGenerator
         List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
     pos_thresh : float
         IOU threshold of positive anchors.
@@ -153,6 +160,8 @@ class AnchorMatcher:
     """
 
     def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'], debug=False):
+        assert generator.flatten
+        assert generator.with_ltrb
         self.generator = generator
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
@@ -190,26 +199,31 @@ def target_to_coords(loc_t, anchors):
     return loc_t
 
 
-def flatten_loc_cls_preds(loc_preds, cls_preds):
+def flatten_preds(*preds):
     r"""
     Parameters
     ----------
-    loc_preds :
-        [(b, w, h, ?a, 4)]
-    cls_preds :
-        [(b, w, h, ?a, ?c)]
+    preds :
+        [[(b, w, h, ?a, 4)]]
     """
-    b = loc_preds[0].size(0)
-    loc_p = torch.cat([
-        p.view(b, -1, 4) for p in loc_preds], dim=1)
-    if len(loc_preds[0].size()) == len(cls_preds[0].size()):
-        c = cls_preds[0].size(-1)
-        cls_p = torch.cat([
-            p.view(b, -1, c) for p in cls_preds], dim=1)
-    else:
-        cls_p = torch.cat([
-            p.view(b, -1) for p in cls_preds], dim=1)
-    return loc_p, cls_p
+    b = preds[0][0].size(0)
+    preds_flat = []
+    for ps in preds:
+        p = torch.cat([p.view(b, -1, p.size(-1)) for p in ps], dim=1)
+        preds_flat.append(p.squeeze(-1))
+    return preds_flat
+    #
+    # b = loc_preds[0].size(0)
+    # loc_p = torch.cat([
+    #     p.view(b, -1, 4) for p in loc_preds], dim=1)
+    # if len(loc_preds[0].size()) == len(cls_preds[0].size()):
+    #     c = cls_preds[0].size(-1)
+    #     cls_p = torch.cat([
+    #         p.view(b, -1, c) for p in cls_preds], dim=1)
+    # else:
+    #     cls_p = torch.cat([
+    #         p.view(b, -1) for p in cls_preds], dim=1)
+    # return loc_p, cls_p
 
 
 class MultiBoxLoss(nn.Module):
@@ -223,7 +237,7 @@ class MultiBoxLoss(nn.Module):
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
         if not torch.is_tensor(loc_p):
-            loc_p, cls_p = flatten_loc_cls_preds(loc_p, cls_p)
+            loc_p, cls_p = flatten_preds(loc_p, cls_p)
         # print(loc_p.shape)
         # print(cls_p.shape)
         # print(loc_t.shape)
@@ -289,6 +303,62 @@ class MultiBoxLoss(nn.Module):
         return loss
 
 
+
+@curry
+def anchor_based_inference(
+        loc_p, cls_p, anchors, conf_threshold=0.01,
+        iou_threshold=0.5, topk=100,
+        conf_strategy='softmax', nms_method='soft', min_score=None):
+    bboxes = loc_p.view(-1, 4)
+    logits = cls_p.view(-1, cls_p.size(-1))
+    if conf_strategy == 'softmax':
+        scores = torch.softmax(logits, dim=1)
+    else:
+        scores = torch.sigmoid_(logits)
+    scores, labels = torch.max(scores[:, 1:], dim=1)
+
+    if conf_threshold > 0:
+        pos = scores > conf_threshold
+        scores = scores[pos]
+        labels = labels[pos]
+        bboxes = bboxes[pos]
+        anchors = anchors[pos]
+
+    bboxes = target_to_coords(bboxes, anchors)
+
+    bboxes = BBox.convert(
+        bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
+    scores = scores.cpu()
+
+    if nms_method == 'soft':
+        min_score = min_score or conf_threshold
+        indices = soft_nms_cpu(
+            bboxes, scores, iou_threshold, topk, min_score=min_score)
+    else:
+        indices = nms(bboxes, scores, iou_threshold)
+        scores = scores[indices]
+        labels = labels[indices]
+        bboxes = bboxes[indices]
+        if scores.size(0) > topk:
+            indices = scores.topk(topk)[1]
+        else:
+            indices = range(scores.size(0))
+
+    bboxes = BBox.convert(
+        bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
+
+    dets = []
+    for ind in indices:
+        det = {
+            'image_id': -1,
+            'category_id': labels[ind].item() + 1,
+            'bbox': bboxes[ind].tolist(),
+            'score': scores[ind].item(),
+        }
+        dets.append(det)
+    return dets
+
+
 class KLFocalLoss(nn.Module):
 
     def __init__(self, p=0.01, prefix=""):
@@ -341,6 +411,8 @@ class AnchorBasedInference:
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
                  conf_strategy='softmax', nms='soft', min_score=None):
+        assert generator.flatten
+        assert generator.with_ltrb
         self.generator = generator
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
@@ -354,7 +426,7 @@ class AnchorBasedInference:
     def __call__(self, loc_preds, cls_preds):
         grid_sizes = [p.size()[1:3] for p in loc_preds]
         anchors = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)[0]
-        loc_p, cls_p = flatten_loc_cls_preds(loc_preds, cls_preds)
+        loc_p, cls_p = flatten_preds(loc_preds, cls_preds)
         batch_size = loc_p.size(0)
         image_dets = [
             self.inference_single(loc_p[i], cls_p[i], anchors)
@@ -363,52 +435,8 @@ class AnchorBasedInference:
         return image_dets
 
     def inference_single(self, loc_p, cls_p, anchors):
-        bboxes = loc_p.view(-1, 4)
-        logits = cls_p.view(-1, cls_p.size(-1)).squeeze(-1)
-        if self.conf_strategy == 'softmax':
-            scores = torch.softmax(logits, dim=1)
-        else:
-            scores = torch.sigmoid_(logits)
-        scores, labels = torch.max(scores[:, 1:], dim=1)
-
-        if self.conf_threshold > 0:
-            pos = scores > self.conf_threshold
-            scores = scores[pos]
-            labels = labels[pos]
-            bboxes = bboxes[pos]
-            anchors = anchors[pos]
-
-        bboxes = target_to_coords(bboxes, anchors)
-
-        bboxes = BBox.convert(
-            bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True).cpu()
-        scores = scores.cpu()
-
-        if self.nms == 'soft':
-            min_score = self.min_score or self.conf_threshold
-            indices = soft_nms_cpu(
-                bboxes, scores, self.iou_threshold, self.topk, min_score=min_score)
-        else:
-            indices = nms(bboxes, scores, self.iou_threshold)
-            scores = scores[indices]
-            labels = labels[indices]
-            bboxes = bboxes[indices]
-            if scores.size(0) > self.topk:
-                indices = scores.topk(self.topk)[1]
-            else:
-                indices = range(scores.size(0))
-
-        bboxes = BBox.convert(
-            bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
-
-        dets = []
-        for ind in indices:
-            det = {
-                'image_id': -1,
-                'category_id': labels[ind].item() + 1,
-                'bbox': bboxes[ind].tolist(),
-                'score': scores[ind].item(),
-            }
-            dets.append(det)
-        return dets
-
+        return anchor_based_inference(
+            loc_p, cls_p, anchors, self.conf_threshold,
+            self.iou_threshold, self.topk,
+            self.conf_strategy, self.nms, self.min_score
+        )

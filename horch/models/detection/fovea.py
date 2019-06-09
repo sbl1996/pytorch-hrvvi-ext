@@ -6,23 +6,8 @@ import torch.nn.functional as F
 
 from horch.common import one_hot, _tuple, _concat
 from horch.detection import soft_nms_cpu, BBox, nms
-from horch.detection.one import flatten_loc_cls_preds
+from horch.detection.one import flatten_preds
 from horch.nn.loss import focal_loss2
-
-
-#
-#
-# def get_mlvl_centers(locations):
-#     mlvl_centers = []
-#     for location in locations:
-#         lx, ly = _tuple(location, 2)
-#         centers = torch.zeros(lx, ly, 2)
-#         centers[..., 0] = torch.arange(
-#             lx, dtype=torch.float).view(lx, 1).expand(lx, ly) + 0.5
-#         centers[..., 1] = torch.arange(
-#             ly, dtype=torch.float).view(1, ly).expand(lx, ly) + 0.5
-#         mlvl_centers.append(centers)
-#     return mlvl_centers
 
 
 def get_fovea(cx, cy, w, h, shrunk=0.3):
@@ -40,71 +25,11 @@ DEFAULT_AREA_THRESHOLDS = tuple(
 )
 
 
-#
-# class FoveaTransform:
-#
-#     def __init__(self, mlvl_centers, levels=(3, 4, 5, 6, 7),
-#                  thresholds=DEFAULT_AREA_THRESHOLDS,
-#                  shrunk_pos=0.3, shrunk_neg=0.4, get_label=lambda x: x["category_id"]):
-#         self.mlvl_centers = mlvl_centers
-#         self.levels = levels
-#         self.thresholds = thresholds
-#         self.shrunk_pos = shrunk_pos
-#         self.shrunk_neg = shrunk_neg
-#         self.get_label = get_label
-#
-#     def __call__(self, img, anns):
-#         loc_targets = []
-#         cls_targets = []
-#         ignores = []
-#         for centers in self.mlvl_centers:
-#             lx, ly = centers.size()[:2]
-#             loc_targets.append(torch.zeros(lx, ly, 4))
-#             cls_targets.append(torch.zeros(lx, ly, dtype=torch.long))
-#             ignores.append(torch.zeros(lx, ly, dtype=torch.uint8))
-#
-#         for ann in anns:
-#             label = self.get_label(ann)
-#             l, t, w, h = ann['bbox']
-#             area = w * h
-#             r = l + w
-#             b = t + h
-#             for level, centers, threshold, loc_t, cls_t, ignore in zip(
-#                     self.levels, self.mlvl_centers, self.thresholds, loc_targets, cls_targets, ignores):
-#                 lo, hi = threshold
-#                 if area <= lo or area >= hi:
-#                     continue
-#
-#                 l_, t_, r_, b_, w_, h_ = [c / (2 ** level) for c in [l, t, r, b, w, h]]
-#                 cx_ = l_ + 0.5 * w_
-#                 cy_ = t_ + 0.5 * h_
-#
-#                 l_pos, t_pos, r_pos, b_pos = get_fovea(cx_, cy_, w_, h_, self.shrunk_pos)
-#                 l_neg, t_neg, r_neg, b_neg = get_fovea(cx_, cy_, w_, h_, self.shrunk_neg)
-#
-#                 cx = centers[..., 0]
-#                 cy = centers[..., 1]
-#                 pos = (l_pos < cx) & (cx < r_pos) & (t_pos < cy) & (cy < b_pos)
-#                 ignore |= (l_neg < cx) & (cx < r_neg) & (t_neg < cy) & (cy < b_neg)
-#                 if not pos.any():
-#                     continue
-#                 ts = (torch.stack([cx - l_, cy - t_, r_ - cx, b_ - cy], dim=-1) / 4).log_()
-#                 loc_t[pos] = ts[pos]
-#                 cls_t[pos] = label
-#
-#         loc_t = torch.cat([t.view(-1, 4) for t in loc_targets], dim=0)
-#         cls_t = torch.cat([t.view(-1) for t in cls_targets], dim=0)
-#         ignore = torch.cat([t.view(-1) for t in ignores], dim=0)
-#         ignore = ignore & (cls_t == 0)
-#
-#         return img, [loc_t, cls_t, ignore]
-#
-
 def get_mlvl_centers(grid_sizes, device='cpu', dtype=torch.float32):
     mlvl_centers = []
     for size in grid_sizes:
         lx, ly = size
-        centers = torch.zeros(lx, ly, 2)
+        centers = torch.zeros(lx, ly, 2, dtype=dtype, device=device)
         centers[..., 0] = torch.arange(
             lx, dtype=dtype, device=device).view(lx, 1).expand(lx, ly) + 0.5
         centers[..., 1] = torch.arange(
@@ -113,7 +38,7 @@ def get_mlvl_centers(grid_sizes, device='cpu', dtype=torch.float32):
     return mlvl_centers
 
 
-class AnchorGenerator:
+class FoveaAnchorGenerator:
     def __init__(self, cache=True):
         super().__init__()
         self.cache = cache
@@ -122,21 +47,16 @@ class AnchorGenerator:
     def __call__(self, grid_sizes, device='cpu', dtype=torch.float32):
         if not isinstance(grid_sizes, tuple):
             grid_sizes = tuple(grid_sizes)
-        if self.cache:
-            if grid_sizes in self.caches:
-                mlvl_centers = self.caches[grid_sizes]
-            else:
-                mlvl_centers = get_mlvl_centers(grid_sizes, device, dtype)
-                self.caches[grid_sizes] = mlvl_centers
+        if self.cache and grid_sizes in self.caches:
+            return self.caches[grid_sizes]
         else:
             mlvl_centers = get_mlvl_centers(grid_sizes, device, dtype)
-        return mlvl_centers
-
-    def retrieve(self, num_anchors):
-        for k, v in self.caches.items():
-            n = sum(map(lambda x: x.numel(), k))
-            if n == num_anchors:
-                return v
+            ret = {
+                "mlvl_centers": mlvl_centers,
+            }
+            if self.cache:
+                self.caches[grid_sizes] = ret
+            return ret
 
 
 class FoveaMatcher:
@@ -144,6 +64,8 @@ class FoveaMatcher:
     def __init__(self, generator, levels=(3, 4, 5, 6, 7),
                  thresholds=DEFAULT_AREA_THRESHOLDS,
                  shrunk_pos=0.3, shrunk_neg=0.4, get_label=lambda x: x["category_id"]):
+        assert isinstance(generator, FoveaAnchorGenerator), \
+            "Generator must be FoveaAnchorGenerator, got %s" % type(generator)
         self.generator = generator
         assert len(levels) == len(thresholds), "Thresholds don't match number of levels."
         self.levels = levels
@@ -200,7 +122,7 @@ class FoveaMatcher:
 
     def __call__(self, features, targets):
         grid_sizes = [f.size()[-2:][::-1] for f in features]
-        mlvl_centers = self.generator(grid_sizes, features[0].device, features[0].dtype)
+        mlvl_centers = self.generator(grid_sizes, features[0].device, features[0].dtype)['mlvl_centers']
         assert len(mlvl_centers) == len(self.levels)
         loc_targets = []
         cls_targets = []
@@ -222,8 +144,7 @@ class FoveaLoss(nn.Module):
         self.p = p
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore):
-        if not torch.is_tensor(loc_p):
-            loc_p, cls_p = flatten_loc_cls_preds(loc_p, cls_p)
+        loc_p, cls_p = flatten_preds(loc_p, cls_p)
         pos = cls_t != 0
         num_pos = pos.sum().item()
         if num_pos == 0:
@@ -321,6 +242,7 @@ class FoveaInference:
 
     def __init__(self, generator, conf_threshold=0.05, iou_threshold=0.5,
                  topk1=1000, nms_method='soft_nms', topk2=100):
+        assert isinstance(generator, FoveaAnchorGenerator)
         self.generator = generator
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
@@ -330,7 +252,7 @@ class FoveaInference:
 
     def __call__(self, loc_preds, cls_preds):
         grid_sizes = [p.size()[1:3] for p in loc_preds]
-        mlvl_centers = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)
+        mlvl_centers = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)['mlvl_centers']
         image_dets = []
         batch_size = loc_preds[0].size(0)
         for i in range(batch_size):

@@ -5,11 +5,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import _tuple, inverse_sigmoid
-from horch.models.utils import get_loc_cls_preds
 from horch.models.detection.head import SSDHead
-from horch.models.modules import Conv2d, get_norm_layer, get_activation, get_attention
+from horch.models.modules import Conv2d, get_activation, get_attention
 
-from horch.detection.one import MultiBoxLoss, anchor_based_inference, flatten
+from horch.detection.one import MultiBoxLoss, anchor_based_inference, flatten_preds
 
 
 class RefineLoss:
@@ -17,7 +16,7 @@ class RefineLoss:
     def __init__(self, neg_threshold=0.01, p=0.01, refine_cls_loss='focal', detach=True, reg='refine'):
         super().__init__()
         self.r_loss = MultiBoxLoss(cls_loss=refine_cls_loss, prefix='refine', p=p)
-        self.d_loss = MultiBoxLoss(cls_loss='softmax', pos_neg_ratio=1 / 3, prefix='detect', p=p)
+        self.d_loss = MultiBoxLoss(cls_loss='softmax', pos_neg_ratio=1/3, prefix='detect', p=p)
         self.neg_threshold = neg_threshold
         self.detach = detach
         self.reg = reg
@@ -33,6 +32,8 @@ class RefineLoss:
         self.d_loss.p = new_p
 
     def __call__(self, r_loc_p, r_cls_p, d_loc_p, d_cls_p, loc_t, cls_t):
+        r_loc_p, r_cls_p, d_loc_p, d_cls_p = flatten_preds(r_loc_p, r_cls_p, d_loc_p, d_cls_p)
+
         pos = cls_t != 0
 
         r_loss = self.r_loss(r_loc_p, r_cls_p, loc_t, pos.long())
@@ -86,11 +87,12 @@ def anchor_refine_inference(
 
 class AnchorRefineInference:
 
-    def __init__(self, anchors, neg_threshold=0.01,
+    def __init__(self, generator, neg_threshold=0.01,
                  iou_threshold=0.5, r_topk=400, d_topk=200,
                  detect_conf_strategy='softmax', detect_conf_threshold=0.01, detect_nms='soft', reg='refine'):
+        assert generator.flatten
+        self.generator = generator
         self.neg_threshold = neg_threshold
-        self.anchors = flatten(anchors)
         self.iou_threshold = iou_threshold
         self.r_topk = r_topk
         self.d_topk = d_topk
@@ -99,17 +101,26 @@ class AnchorRefineInference:
         self.detect_nms = detect_nms
         self.reg = reg
 
-    def __call__(self, r_loc_p, r_cls_p, d_loc_p, d_cls_p, *args):
-        image_dets = []
+    def __call__(self, r_loc_preds, r_cls_preds, d_loc_preds, d_cls_preds, *args):
+        grid_sizes = [p.size()[1:3] for p in r_loc_preds]
+        anchors = self.generator(grid_sizes, r_loc_preds[0].device, r_loc_preds[0].dtype)[0]
+        r_loc_p, r_cls_p, d_loc_p, d_cls_p = flatten_preds(
+            r_loc_preds, r_cls_preds, d_loc_preds, d_cls_preds)
         batch_size = r_loc_p.size(0)
+        image_dets = []
         for i in range(batch_size):
-            dets = anchor_refine_inference(
-                r_loc_p[i], r_cls_p[i], d_loc_p[i], d_cls_p[i], self.anchors,
-                self.neg_threshold, self.iou_threshold,
-                self.r_topk, self.d_topk, self.detect_conf_strategy, self.detect_conf_threshold, self.detect_nms, self.reg
-            )
+            dets = self.inference_single(
+                r_loc_p[i], r_cls_p[i], d_loc_p[i], d_cls_p[i], anchors)
             image_dets.append(dets)
         return image_dets
+
+    def inference_single(self, r_loc_p, r_cls_p, d_loc_p, d_cls_p, anchors):
+        return anchor_refine_inference(
+            r_loc_p, r_cls_p, d_loc_p, d_cls_p, anchors,
+            self.neg_threshold, self.iou_threshold,
+            self.r_topk, self.d_topk, self.detect_conf_strategy,
+            self.detect_conf_threshold, self.detect_nms, self.reg
+        )
 
 
 class Bottleneck(nn.Module):
@@ -175,14 +186,12 @@ class TransferConnection(nn.Module):
 
 
 class RefineDet(nn.Module):
-    def __init__(self, backbone, num_anchors, num_classes, f_channels, inference, extra_levels=None,
+    def __init__(self, in_channels_list, num_anchors, num_classes, f_channels, extra_levels=None,
                  lite=False, attention=None):
         super().__init__()
         self.num_classes = num_classes
-        self.backbone = backbone
-        self._inference = inference
 
-        stages = backbone.out_channels
+        stages = list(in_channels_list)
 
         self.extra_levels = _tuple(extra_levels)
         self.extra_layers = nn.ModuleList([])
@@ -201,29 +210,20 @@ class RefineDet(nn.Module):
                 TransferConnection(c, f_channels, lite=lite, attention=attention)
             )
 
-        self.d_head = SSDHead(num_anchors, num_classes, _tuple(f_channels, 3), lite=lite)
+        self.d_head = SSDHead(num_anchors, num_classes, _tuple(f_channels, len(stages)), lite=lite)
 
-    def forward(self, x):
-        cs = self.backbone(x)
-        cs = [cs] if torch.is_tensor(cs) else list(cs)
+    def forward(self, *cs):
+        cs = list(cs)
         for l in self.extra_layers:
             cs.append(l(cs[-1]))
 
-        r_loc_p, r_cls_p = self.r_head(*cs)
+        r_loc_preds, r_cls_preds = self.r_head(*cs)
 
         dcs = [self.tcbs[0](cs[-1])]
         for c, tcb in zip(reversed(cs[:-1]), self.tcbs[1:]):
             dcs.append(tcb(c, dcs[-1]))
         dcs.reverse()
 
-        d_loc_p, d_cls_p = self.d_head(*dcs)
+        d_loc_preds, d_cls_preds = self.d_head(*dcs)
 
-        return r_loc_p, r_cls_p, d_loc_p, d_cls_p
-
-    def inference(self, x):
-        self.eval()
-        with torch.no_grad():
-            preds = self.forward(x)
-        dets = self._inference(*_tuple(preds))
-        self.train()
-        return dets
+        return r_loc_preds, r_cls_preds, d_loc_preds, d_cls_preds

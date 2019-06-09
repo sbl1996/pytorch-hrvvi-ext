@@ -9,13 +9,8 @@ from horch.common import _tuple, _concat, inverse_sigmoid
 
 def to_pred(p, c: int):
     p = p.permute(0, 3, 2, 1).contiguous()
-    b, w, h, pc = p.size()
-    if c == 1:
-        p = p.view(b, w, h, -1)
-    else:
-        p = p.view(b, w, h, -1, c)
-    if c == pc:
-        p = p.squeeze(3)
+    b, w, h = p.size()[:3]
+    p = p.view(b, w, h, -1, c).squeeze(3)
     return p
 
 
@@ -109,14 +104,11 @@ class RetinaHead(nn.Module):
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
-    concat : bool
-        Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, lite=False, concat=True):
+    def __init__(self, num_anchors, num_classes, f_channels=256, num_layers=4, lite=False):
         super().__init__()
         self.num_classes = num_classes
-        self.concat = concat
         self.loc_head = _make_head(
             f_channels, num_layers, num_anchors * 4, lite=lite)
         self.cls_head = _make_head(
@@ -133,7 +125,6 @@ class RetinaHead(nn.Module):
 
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p)
-
         return loc_preds, cls_preds
 
 

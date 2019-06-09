@@ -30,7 +30,7 @@ class RetinaNet(nn.Module):
                        norm_layer='default')
             )
 
-        self.fpn = FPN(backbone, f_channels, norm_layer='default')
+        self.fpn = FPN(backbone, f_channels)
 
         self.head = RetinaHead(
             f_channels, num_anchors, num_classes, num_layers=num_head_layers)

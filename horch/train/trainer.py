@@ -14,6 +14,7 @@ from tensorboardX import SummaryWriter
 from horch.common import CUDA, detach, _tuple
 from horch.train.metrics import TrainLoss, Loss
 from horch.train._utils import _prepare_batch, set_lr
+from torch.nn.utils import clip_grad_value_
 from torch.utils.data import DataLoader
 from typing import Sequence, Dict
 
@@ -51,7 +52,7 @@ def create_supervised_evaluator(model, metrics=None,
 
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch, targets_as_inputs=False):
+        device=None, prepare_batch=_prepare_batch, targets_as_inputs=False, grad_clip_value=None):
     if metrics is None:
         metrics = {}
     if device:
@@ -69,6 +70,8 @@ def create_supervised_trainer(
             loss = criterion(*_tuple(preds), *targets)
         loss.backward()
         optimizer.step()
+        if grad_clip_value:
+            clip_grad_value_(model.parameters(), grad_clip_value)
         outs = {
             "target": detach(targets),
             "loss": loss.item(),
@@ -174,11 +177,11 @@ class Trainer:
             self.metric_history["val_" + name].append(val)
         print(msg)
 
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=()):
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs)
+            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs, grad_clip_value=grad_clip_value)
         self._attach_timer(engine)
 
         engine.add_event_handler(
