@@ -1,7 +1,8 @@
 import random
+from collections import defaultdict
 
 from horch.common import select, _concat
-from horch.detection import generate_mlvl_anchors
+from horch.detection import generate_mlvl_anchors, get_locations
 from toolz import curry
 from toolz.curried import get
 
@@ -31,32 +32,34 @@ class AnchorGenerator:
         self.flatten = flatten
         self.with_ltrb = with_ltrb
         self.cache = cache
-        self.caches = {}
+        self.caches = defaultdict(dict)
 
-    def __call__(self, grid_sizes, device='cpu', dtype=torch.float32):
+    def calculate(self, grid_sizes, device, dtype):
+        mlvl_anchors = generate_mlvl_anchors(
+            grid_sizes, self.anchor_sizes, device, dtype)
+        if self.flatten:
+            mlvl_anchors = flatten(mlvl_anchors)
+        if self.with_ltrb:
+            mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
+            mlvl_anchors = (mlvl_anchors, mlvl_anchors_ltrb)
+        return mlvl_anchors
+
+    def __call__(self, grid_sizes, device, dtype):
         if not isinstance(grid_sizes, tuple):
             grid_sizes = tuple(grid_sizes)
         if self.cache:
-            if grid_sizes in self.caches:
-                mlvl_anchors = self.caches[grid_sizes]
+            if (device, dtype) in self.caches:
+                caches = self.caches[(device, dtype)]
+                if grid_sizes not in caches:
+                    caches[grid_sizes] = self.calculate(grid_sizes, device, dtype)
             else:
-                mlvl_anchors = generate_mlvl_anchors(
-                    grid_sizes, self.anchor_sizes, device, dtype)
-                if self.flatten:
-                    mlvl_anchors = flatten(mlvl_anchors)
-                if self.with_ltrb:
-                    mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
-                    mlvl_anchors = (mlvl_anchors, mlvl_anchors_ltrb)
-                self.caches[grid_sizes] = mlvl_anchors
+                caches = {
+                    grid_sizes: self.calculate(grid_sizes, device, dtype)
+                }
+                self.caches[(device, dtype)] = caches
+            return caches[grid_sizes]
         else:
-            mlvl_anchors = generate_mlvl_anchors(
-                grid_sizes, self.anchor_sizes, device, dtype)
-            if self.flatten:
-                mlvl_anchors = flatten(mlvl_anchors)
-            if self.with_ltrb:
-                mlvl_anchors_ltrb = BBox.convert(mlvl_anchors, BBox.XYWH, BBox.LTRB)
-                mlvl_anchors = (mlvl_anchors, mlvl_anchors_ltrb)
-        return mlvl_anchors
+            return self.calculate(grid_sizes, device, dtype)
 
 
 def coords_to_target(gt_box, anchors):
@@ -143,6 +146,45 @@ def match_anchors(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
 
     ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
     return loc_t, cls_t, ignore
+
+
+class MatchAnchors:
+    r"""
+
+    Parameters
+    ----------
+    generator : AnchorGenerator
+        List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
+    pos_thresh : float
+        IOU threshold of positive anchors.
+    neg_thresh : float
+        If provided, only non-positive anchors whose ious with all ground truth boxes are
+        lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
+    """
+
+    def __init__(self, generator, strides, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'], debug=False):
+        assert generator.flatten
+        assert generator.with_ltrb
+        self.generator = generator
+        self.strides = strides
+        self.pos_thresh = pos_thresh
+        self.neg_thresh = neg_thresh
+        self.get_label = get_label
+        self.debug = debug
+
+    def __call__(self, x, anns):
+        height, width = x.shape[1:3]
+        grid_sizes = get_locations((width, height), self.strides)
+        grid_sizes = [ torch.Size(s) for s in grid_sizes ]
+        a_xywh, a_ltrb = self.generator(grid_sizes, x.device, x.dtype)
+        loc_t, cls_t, ignore = match_anchors(
+            anns, a_xywh, a_ltrb,
+            self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
+
+        targets = [loc_t, cls_t]
+        if ignore is not None:
+            targets.append(ignore)
+        return x, targets
 
 
 class AnchorMatcher:

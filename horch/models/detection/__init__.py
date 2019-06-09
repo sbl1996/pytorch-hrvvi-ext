@@ -37,8 +37,8 @@ class OneStageDetector(Sequential):
         cs = self.backbone(inputs)
         features = self.fpn(*_tuple(cs))
         outputs = self.head(*_tuple(features))
-        if self.training:
-            assert targets is not None, "Targets must be provided in training."
+        if self.training and targets is not None:
+            # assert targets is not None, "Targets must be provided in training."
             targets = self.matcher(features, targets)
             return (*outputs, *targets)
         else:
