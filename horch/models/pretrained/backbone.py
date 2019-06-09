@@ -136,7 +136,7 @@ class MobileNetV3(nn.Module):
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.feature_levels = feature_levels
-        backbone = mobilenetv3_large(pretrained=pretrained, num_classes=1)
+        backbone = mobilenetv3_large(pretrained=pretrained)
         del backbone.classifier
         features = backbone.features
 

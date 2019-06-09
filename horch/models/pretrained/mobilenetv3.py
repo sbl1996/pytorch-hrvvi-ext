@@ -56,10 +56,10 @@ class SELayer(nn.Module):
         super(SELayer, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
-                nn.Linear(channel, channel // reduction),
-                nn.ReLU(inplace=True),
-                nn.Linear(channel // reduction, channel),
-                h_sigmoid()
+            nn.Linear(channel, channel // reduction),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel),
+            h_sigmoid()
         )
 
     def forward(self, x):
@@ -95,7 +95,8 @@ class InvertedResidual(nn.Module):
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim,
+                          bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
@@ -111,7 +112,8 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim,
+                          bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Sequential(),
@@ -155,14 +157,22 @@ class MobileNetV3(nn.Module):
             h_swish()
         )
         output_channel = _make_divisible(1280 * width_mult, 8) if width_mult > 1.0 else 1280
-        self.classifier = nn.Sequential(
-            nn.Linear(_make_divisible(exp_size * width_mult, 8), output_channel),
-            nn.BatchNorm1d(output_channel) if mode == 'small' else nn.Sequential(),
-            h_swish(),
-            nn.Linear(output_channel, num_classes),
-            nn.BatchNorm1d(num_classes) if mode == 'small' else nn.Sequential(),
-            h_swish() if mode == 'small' else nn.Sequential()
-        )
+        if mode == 'large':
+            self.classifier = nn.Sequential(
+                nn.Sequential(),
+                nn.Linear(_make_divisible(exp_size * width_mult, 8), output_channel),
+                h_swish(),
+                nn.Linear(output_channel, num_classes),
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Linear(_make_divisible(exp_size * width_mult, 8), output_channel),
+                nn.BatchNorm1d(output_channel),
+                h_swish(),
+                nn.Linear(output_channel, num_classes),
+                nn.BatchNorm1d(num_classes),
+                h_swish(),
+            )
 
         self._initialize_weights()
 
@@ -196,16 +206,16 @@ def mobilenetv3_large(pretrained=True, **kwargs):
     """
     cfgs = [
         # k, t, c, SE, NL, s
-        [3,  16,  16, 0, 0, 1],
-        [3,  64,  24, 0, 0, 2],
-        [3,  72,  24, 0, 0, 1],
-        [5,  72,  40, 1, 0, 2],
-        [5, 120,  40, 1, 0, 1],
-        [5, 120,  40, 1, 0, 1],
-        [3, 240,  80, 0, 1, 2],
-        [3, 200,  80, 0, 1, 1],
-        [3, 184,  80, 0, 1, 1],
-        [3, 184,  80, 0, 1, 1],
+        [3, 16, 16, 0, 0, 1],
+        [3, 64, 24, 0, 0, 2],
+        [3, 72, 24, 0, 0, 1],
+        [5, 72, 40, 1, 0, 2],
+        [5, 120, 40, 1, 0, 1],
+        [5, 120, 40, 1, 0, 1],
+        [3, 240, 80, 0, 1, 2],
+        [3, 200, 80, 0, 1, 1],
+        [3, 184, 80, 0, 1, 1],
+        [3, 184, 80, 0, 1, 1],
         [3, 480, 112, 1, 1, 1],
         [3, 672, 112, 1, 1, 1],
         [5, 672, 160, 1, 1, 1],
@@ -214,9 +224,14 @@ def mobilenetv3_large(pretrained=True, **kwargs):
     ]
     net = MobileNetV3(cfgs, mode='large', **kwargs)
     if pretrained:
-        net.load_state_dict(
-            load_state_dict_from_url(
-                "https://github.com/d-li14/mobilenetv3.pytorch/raw/master/pretrained/mobilenetv3-large-657e7b3d.pth"))
+        d = load_state_dict_from_url(
+            "https://github.com/d-li14/mobilenetv3.pytorch/raw/master/pretrained/mobilenetv3-large-657e7b3d.pth",
+            map_location='cpu')
+        d['classifier.3.weight'] = d['classifier.5.weight']
+        d['classifier.3.bias'] = d['classifier.5.bias']
+        del d['classifier.5.weight']
+        del d['classifier.5.bias']
+        net.load_state_dict(d)
     return net
 
 
@@ -226,21 +241,22 @@ def mobilenetv3_small(pretrained=True, **kwargs):
     """
     cfgs = [
         # k, t, c, SE, NL, s
-        [3,  16,  16, 1, 0, 2],
-        [3,  72,  24, 0, 0, 2],
-        [3,  88,  24, 0, 0, 1],
-        [5,  96,  40, 1, 1, 2],
-        [5, 240,  40, 1, 1, 1],
-        [5, 240,  40, 1, 1, 1],
-        [5, 120,  48, 1, 1, 1],
-        [5, 144,  48, 1, 1, 1],
-        [5, 288,  96, 1, 1, 2],
-        [5, 576,  96, 1, 1, 1],
-        [5, 576,  96, 1, 1, 1],
+        [3, 16, 16, 1, 0, 2],
+        [3, 72, 24, 0, 0, 2],
+        [3, 88, 24, 0, 0, 1],
+        [5, 96, 40, 1, 1, 2],
+        [5, 240, 40, 1, 1, 1],
+        [5, 240, 40, 1, 1, 1],
+        [5, 120, 48, 1, 1, 1],
+        [5, 144, 48, 1, 1, 1],
+        [5, 288, 96, 1, 1, 2],
+        [5, 576, 96, 1, 1, 1],
+        [5, 576, 96, 1, 1, 1],
     ]
     net = MobileNetV3(cfgs, mode='small', **kwargs)
     if pretrained:
         net.load_state_dict(
             load_state_dict_from_url(
-                "https://github.com/d-li14/mobilenetv3.pytorch/raw/master/pretrained/mobilenetv3-small-c7eb32fe.pth"))
+                "https://github.com/d-li14/mobilenetv3.pytorch/raw/master/pretrained/mobilenetv3-small-c7eb32fe.pth",
+                map_location='cpu'))
     return net
