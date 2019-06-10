@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 from horch.common import one_hot, inverse_sigmoid
 from horch.models.modules import upsample_concat, Conv2d
 from horch.models.utils import get_last_conv, bias_init_constant
@@ -243,7 +242,7 @@ def match_anchors(anns, mlvl_priors, locations, ignore_thresh=None,
         max_iou, max_ind = ious.view(-1).max(dim=0)
         level, i = divmod(max_ind.item(), priors_per_level)
         if debug:
-            print("[%d,%d]: %.4f" % (level, i, max_iou))
+            print("[%d,%d]: %.4f" % (level, i, max_iou.item()))
         lx, ly = locations[level]
         pw, ph = mlvl_priors[level, i]
         cx, offset_x = divmod(x * lx, 1)
@@ -275,7 +274,7 @@ class YOLOTransform:
 
     def __init__(self, mlvl_anchors, ignore_thresh=0.5, get_label=lambda x: x["category_id"], debug=False):
         self.mlvl_priors = torch.stack([a[0, 0, :, 2:] for a in mlvl_anchors])
-        self.locations = [ tuple(a.size()[:2]) for a in mlvl_anchors ]
+        self.locations = [tuple(a.size()[:2]) for a in mlvl_anchors]
         self.ignore_thresh = ignore_thresh
         self.get_label = get_label
         self.debug = debug

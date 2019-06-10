@@ -101,9 +101,6 @@ class RetinaHead(nn.Module):
         Number of feature channels.
     num_layers : int
         Number of conv layers in each subnet.
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: "bn"
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
@@ -152,9 +149,6 @@ class SSDHead(nn.Module):
         Number of classes.
     in_channels : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: "bn"
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False

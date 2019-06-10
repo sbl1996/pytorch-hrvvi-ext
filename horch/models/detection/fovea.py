@@ -211,8 +211,8 @@ class FoveaInference:
         batch_size = loc_preds[0].size(0)
         for i in range(batch_size):
             dets = fovea_inference(
-                [ p[i] for p in loc_preds ],
-                [ p[i] for p in cls_preds ],
+                [p[i] for p in loc_preds],
+                [p[i] for p in cls_preds],
                 self.mlvl_centers,
                 self.conf_threshold, self.iou_threshold,
                 self.topk1, self.nms_method, self.topk2,

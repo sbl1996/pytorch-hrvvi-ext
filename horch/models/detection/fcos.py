@@ -221,7 +221,7 @@ class FCOSInference:
             dets = center_based_inference(
                 self.size, loc_p[i], cls_p[i], ctn_p[i], self.centers,
                 self.conf_threshold, self.iou_threshold,
-                self.topk, self.nms, self.soft_nms_threshold, self.use_ctn
+                self.topk, self.nms, self.use_ctn
             )
             image_dets.append(dets)
         return image_dets

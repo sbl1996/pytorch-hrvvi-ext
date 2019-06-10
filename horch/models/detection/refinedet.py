@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import _tuple, inverse_sigmoid
-from horch.models.utils import get_loc_cls_preds
 from horch.models.detection.head import SSDHead
 from horch.models.modules import Conv2d, get_norm_layer, get_activation, get_attention
 
@@ -105,8 +104,8 @@ class AnchorRefineInference:
         for i in range(batch_size):
             dets = anchor_refine_inference(
                 r_loc_p[i], r_cls_p[i], d_loc_p[i], d_cls_p[i], self.anchors,
-                self.neg_threshold, self.iou_threshold,
-                self.r_topk, self.d_topk, self.detect_conf_strategy, self.detect_conf_threshold, self.detect_nms, self.reg
+                self.neg_threshold, self.iou_threshold, self.r_topk, self.d_topk,
+                self.detect_conf_strategy, self.detect_conf_threshold, self.detect_nms, self.reg
             )
             image_dets.append(dets)
         return image_dets

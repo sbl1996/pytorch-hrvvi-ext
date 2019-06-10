@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import upsample_add, Conv2d, Sequential, get_norm_layer
+from horch.models.modules import upsample_add, Conv2d, Sequential
 
 
 class TopDown(nn.Module):
@@ -45,13 +45,10 @@ class FPN(nn.Module):
 
     Parameters
     ----------
-    in_channels : sequence of ints
+    in_channels_list : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024)``
     out_channels : int
         Number of output channels.
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: `bn`
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
@@ -59,18 +56,18 @@ class FPN(nn.Module):
         Use bilinear upsampling when `interpolate` and ConvTransposed when `deconv`
         Default: `interpolate`
     """
-    def __init__(self, in_channels, out_channels=256, lite=False, upsample='interpolate'):
+    def __init__(self, in_channels_list, out_channels=256, lite=False, upsample='interpolate'):
         super().__init__()
-        self.lat = Conv2d(in_channels[-1], out_channels, kernel_size=1, norm_layer='default')
+        self.lat = Conv2d(in_channels_list[-1], out_channels, kernel_size=1, norm_layer='default')
         if upsample == 'deconv':
             self.topdowns = nn.ModuleList([
                 DeconvTopDown(c, out_channels, out_channels, lite=lite)
-                for c in in_channels[:-1]
+                for c in in_channels_list[:-1]
             ])
         else:
             self.topdowns = nn.ModuleList([
                 TopDown(c, out_channels, lite=lite)
-                for c in in_channels[:-1]
+                for c in in_channels_list[:-1]
             ])
 
     def forward(self, *cs):
@@ -108,9 +105,6 @@ class FPN2(nn.Module):
         Notice: they must be the same.
     out_channels : int
         Number of output channels.
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: `bn`
     """
     def __init__(self, in_channels, out_channels, lite=False):
         super().__init__()
@@ -163,9 +157,6 @@ def stacked_fpn(num_stacked, in_channels, f_channels=256, lite=False, upsample='
     f_channels : int
         Number of feature (output) channels.
         Default: 256
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: "bn"
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
@@ -175,12 +166,12 @@ def stacked_fpn(num_stacked, in_channels, f_channels=256, lite=False, upsample='
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
     num_levels = len(in_channels)
-    layers = [FPN(in_channels, f_channels, norm_layer='default', lite=lite)]
+    layers = [FPN(in_channels, f_channels, lite=lite)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
-            layers.append(FPN([f_channels] * num_levels, f_channels, norm_layer='default', lite=lite, upsample=upsample))
+            layers.append(FPN([f_channels] * num_levels, f_channels, lite=lite, upsample=upsample))
         else:
-            layers.append(FPN2([f_channels] * num_levels, f_channels, norm_layer='default', lite=lite))
+            layers.append(FPN2([f_channels] * num_levels, f_channels, lite=lite))
     return Sequential(*layers)
 
 

@@ -27,8 +27,9 @@ class SSD(nn.Module):
     r"""
     Note: Feature levels of backbone could be (4,5) or (3,4,5).
     """
+
     def __init__(self, backbone, num_anchors=(4, 6, 6, 6, 6, 4), num_classes=21,
-                 f_channels=256, extra_levels=(6,7,8),
+                 f_channels=256, extra_levels=(6, 7, 8),
                  pad_last=False, lite=False):
         super().__init__()
         extra_levels = _tuple(extra_levels)
