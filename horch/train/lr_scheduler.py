@@ -26,15 +26,12 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         T_mult (int, optional): A factor increases :math:`T_{i}` after a restart. Default: 1.
         eta_min (float, optional): Minimum learning rate. Default: 0.
         last_epoch (int, optional): The index of last epoch. Default: -1.
-        iters_per_epoch (int, optional):
-            Number of iterations per epoch. If provided, it will be used to set
-            weight decay dynamically as :math: `\lambda = \lambda_{norm}\sqrt{\frac{b}{BT}}`.
 
     .. _SGDR\: Stochastic Gradient Descent with Warm Restarts:
         https://arxiv.org/abs/1608.03983
     """
 
-    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, gamma=1.0, last_epoch=-1):
+    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, warmup_eta_min=None, gamma=1.0, last_epoch=-1):
         if T_0 <= 0 or not isinstance(T_0, int):
             raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
         if T_mult < 1 or not isinstance(T_mult, int):
@@ -44,6 +41,7 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         self.T_mult = T_mult
         self.eta_min = eta_min
         self.warmup = warmup
+        self.warmup_eta_min = warmup_eta_min
         self.gamma = gamma
         self._gamma = 1.0
         super().__init__(optimizer, last_epoch)
@@ -53,7 +51,7 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         lrs = []
         for base_lr in self.base_lrs:
             if self.last_epoch < self.warmup:
-                eta_min = base_lr * 0.1
+                eta_min = base_lr * 0.1 if self.warmup_eta_min is None else self.warmup_eta_min
                 # T_cur = self.last_epoch
                 T_cur = self.T_cur + self.warmup
                 T_i = self.warmup
