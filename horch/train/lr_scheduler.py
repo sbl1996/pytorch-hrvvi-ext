@@ -34,8 +34,7 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         https://arxiv.org/abs/1608.03983
     """
 
-    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, gamma=1.0,
-                 decoupled_weight_decay=False, iters_per_epoch=None, last_epoch=-1):
+    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, gamma=1.0, last_epoch=-1):
         if T_0 <= 0 or not isinstance(T_0, int):
             raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
         if T_mult < 1 or not isinstance(T_mult, int):
@@ -45,8 +44,6 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         self.T_mult = T_mult
         self.eta_min = eta_min
         self.warmup = warmup
-        self.decoupled_weight_decay = decoupled_weight_decay
-        self.iters_per_epoch = iters_per_epoch
         self.gamma = gamma
         self._gamma = 1.0
         super().__init__(optimizer, last_epoch)
@@ -109,12 +106,6 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
             self.last_epoch = math.floor(epoch + self.warmup)
         for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
             param_group['lr'] = lr
-            if self.decoupled_weight_decay:
-                defaults = self.optimizer.defaults
-                base_weight_decay = defaults['weight_decay']
-                if self.iters_per_epoch:
-                    base_weight_decay *= math.sqrt(1 / (self.iters_per_epoch * self.T_i))
-                param_group['weight_decay'] = lr / defaults['lr'] * base_weight_decay
 
 
 class CyclicLR(_LRScheduler):
@@ -175,6 +166,8 @@ class CyclicLR(_LRScheduler):
         cycle_momentum (bool): If ``True``, momentum is cycled inversely
             to learning rate between 'base_momentum' and 'max_momentum'.
             Default: True
+        momentum_key (str): momentum for SGD or betas for Adam.
+            Default: 'momentum'
         base_momentum (float or list): Initial momentum which is the
             lower boundary in the cycle for each parameter group.
             Default: 0.8
@@ -217,16 +210,15 @@ class CyclicLR(_LRScheduler):
                  scale_fn=None,
                  scale_mode='cycle',
                  cycle_momentum=True,
+                 momentum_key='momentum',
                  base_momentum=0.8,
                  max_momentum=0.9,
-                 steps_per_epoch=None,
                  last_epoch=-1):
 
         if not isinstance(optimizer, Optimizer):
             raise TypeError('{} is not an Optimizer'.format(
                 type(optimizer).__name__))
         self.optimizer = optimizer
-        self.steps_per_epoch = steps_per_epoch
 
         base_lrs = self._format_param('base_lr', optimizer, base_lr)
         if last_epoch == -1:
@@ -262,15 +254,24 @@ class CyclicLR(_LRScheduler):
             self.scale_mode = scale_mode
 
         self.cycle_momentum = cycle_momentum
+        self.momentum_key = momentum_key
         if cycle_momentum:
-            if 'momentum' not in optimizer.defaults:
+            if momentum_key not in optimizer.defaults:
                 raise ValueError('optimizer must support momentum with `cycle_momentum` option enabled')
 
             base_momentums = self._format_param('base_momentum', optimizer, base_momentum)
             if last_epoch == -1:
                 for momentum, group in zip(base_momentums, optimizer.param_groups):
-                    group['momentum'] = momentum
-            self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+                    if momentum_key in group:
+                        if momentum_key == 'momentum':
+                            group['momentum'] = momentum
+                        elif momentum_key == 'betas':
+                            betas = group['betas']
+                            group['betas'] = betas.__class__([momentum, *betas[1:]])
+            if momentum_key == 'momentum':
+                self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+            elif momentum_key == 'betas':
+                self.base_momentums = list(map(lambda group: group['betas'][0], optimizer.param_groups))
             self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
 
         super(CyclicLR, self).__init__(optimizer, last_epoch)
@@ -301,10 +302,7 @@ class CyclicLR(_LRScheduler):
         If `self.cycle_momentum` is ``True``, this function has a side effect of
         updating the optimizer's momentum.
         """
-        if self.steps_per_epoch and self.last_epoch != -1:
-            last_epoch = int(self.last_epoch * self.steps_per_epoch)
-        else:
-            last_epoch = self.last_epoch
+        last_epoch = self.last_epoch
         cycle = math.floor(1 + last_epoch / self.total_size)
         x = 1. + last_epoch / self.total_size - cycle
         if x <= self.step_ratio:
@@ -331,6 +329,10 @@ class CyclicLR(_LRScheduler):
                     momentum = max_momentum - base_height * self.scale_fn(last_epoch)
                 momentums.append(momentum)
             for param_group, momentum in zip(self.optimizer.param_groups, momentums):
-                param_group['momentum'] = momentum
+                if self.momentum_key == 'momentum':
+                    param_group['momentum'] = momentum
+                elif self.momentum_key == 'betas':
+                    betas = param_group['betas']
+                    param_group['betas'] = betas.__class__([momentum, *betas[1:]])
 
         return lrs
