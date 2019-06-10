@@ -286,7 +286,7 @@ class MultiBoxLoss(nn.Module):
         Probability to print loss.
     cls_loss : str
         Classification loss.
-        Options: ['focal', 'ce']
+        Options: ['focal', 'ce', 'bce']
         Default: 'ce'
     prefix : str
         Prefix of loss.
@@ -295,7 +295,7 @@ class MultiBoxLoss(nn.Module):
     def __init__(self, pos_neg_ratio=None, p=0.01, cls_loss='ce', prefix=""):
         super().__init__()
         assert 0 <= p <= 1
-        assert cls_loss in ['focal', 'ce'], "Classification loss must be one of ['focal', 'ce']"
+        assert cls_loss in ['focal', 'ce', 'bce'], "Classification loss must be one of ['focal', 'ce', 'bce']"
         self.pos_neg_ratio = pos_neg_ratio
         self.p = p
         self.cls_loss = cls_loss
