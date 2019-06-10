@@ -21,9 +21,16 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             summary[m_key]["input_shape"] = list(input[0].size())
             summary[m_key]["input_shape"][0] = batch_size
             if isinstance(output, (list, tuple)):
-                summary[m_key]["output_shape"] = [
-                    [-1] + list(o.size())[1:] for o in output
-                ]
+                if torch.is_tensor(output[0]):
+                    summary[m_key]["output_shape"] = [
+                        [-1] + list(o.size())[1:] for o in output
+                    ]
+                else:
+                    summary[m_key]["output_shape"] = [
+                        [-1] + list(o.size())[1:]
+                        for os in output
+                        for o in os
+                    ]
             else:
                 summary[m_key]["output_shape"] = list(output.size())
                 summary[m_key]["output_shape"][0] = batch_size
