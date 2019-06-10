@@ -139,7 +139,7 @@ class SSDHead(nn.Module):
         Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
     num_classes : int
         Number of classes.
-    in_channels : sequence of ints
+    in_channels_list : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
     norm_layer : str
         `bn` for Batch Normalization and `gn` for Group Normalization.
@@ -147,21 +147,18 @@ class SSDHead(nn.Module):
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
-    concat : bool
-        Whether to concat predictions in `eval` mode.
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels, lite=False, concat=True):
+    def __init__(self, num_anchors, num_classes, in_channels_list, lite=False):
         super().__init__()
         self.num_classes = num_classes
-        self.concat = concat
-        num_anchors = _tuple(num_anchors, len(in_channels))
+        num_anchors = _tuple(num_anchors, len(in_channels_list))
         self.preds = nn.ModuleList([
             nn.Sequential(
                 get_norm_layer('default', c),
                 Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
             )
-            for c, n in zip(in_channels, num_anchors)
+            for c, n in zip(in_channels_list, num_anchors)
         ])
 
         for p in self.preds:

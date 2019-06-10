@@ -255,18 +255,6 @@ def flatten_preds(*preds):
         p = torch.cat([p.view(b, -1, p.size(-1)) for p in ps], dim=1)
         preds_flat.append(p.squeeze(-1))
     return preds_flat
-    #
-    # b = loc_preds[0].size(0)
-    # loc_p = torch.cat([
-    #     p.view(b, -1, 4) for p in loc_preds], dim=1)
-    # if len(loc_preds[0].size()) == len(cls_preds[0].size()):
-    #     c = cls_preds[0].size(-1)
-    #     cls_p = torch.cat([
-    #         p.view(b, -1, c) for p in cls_preds], dim=1)
-    # else:
-    #     cls_p = torch.cat([
-    #         p.view(b, -1) for p in cls_preds], dim=1)
-    # return loc_p, cls_p
 
 
 class MultiBoxLoss(nn.Module):
@@ -323,6 +311,9 @@ class MultiBoxLoss(nn.Module):
                     cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
                 else:
                     cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
+            elif self.cls_loss == 'bce':
+                assert cls_p.size() == cls_t.size()
+                cls_loss = F.binary_cross_entropy_with_logits(cls_p, cls_t.float(), reduction='sum') / num_pos
             else:
                 cls_p = cls_p.view(-1, cls_p.size(-1))
                 cls_t = cls_t.view(-1)

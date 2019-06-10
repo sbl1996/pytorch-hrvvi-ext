@@ -219,12 +219,14 @@ class CyclicLR(_LRScheduler):
                  cycle_momentum=True,
                  base_momentum=0.8,
                  max_momentum=0.9,
+                 steps_per_epoch=None,
                  last_epoch=-1):
 
         if not isinstance(optimizer, Optimizer):
             raise TypeError('{} is not an Optimizer'.format(
                 type(optimizer).__name__))
         self.optimizer = optimizer
+        self.steps_per_epoch = steps_per_epoch
 
         base_lrs = self._format_param('base_lr', optimizer, base_lr)
         if last_epoch == -1:
@@ -268,8 +270,8 @@ class CyclicLR(_LRScheduler):
             if last_epoch == -1:
                 for momentum, group in zip(base_momentums, optimizer.param_groups):
                     group['momentum'] = momentum
-        self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
-        self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
+            self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+            self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
 
         super(CyclicLR, self).__init__(optimizer, last_epoch)
 
@@ -299,8 +301,12 @@ class CyclicLR(_LRScheduler):
         If `self.cycle_momentum` is ``True``, this function has a side effect of
         updating the optimizer's momentum.
         """
-        cycle = math.floor(1 + self.last_epoch / self.total_size)
-        x = 1. + self.last_epoch / self.total_size - cycle
+        if self.steps_per_epoch and self.last_epoch != -1:
+            last_epoch = int(self.last_epoch * self.steps_per_epoch)
+        else:
+            last_epoch = self.last_epoch
+        cycle = math.floor(1 + last_epoch / self.total_size)
+        x = 1. + last_epoch / self.total_size - cycle
         if x <= self.step_ratio:
             scale_factor = x / self.step_ratio
         else:
@@ -312,7 +318,7 @@ class CyclicLR(_LRScheduler):
             if self.scale_mode == 'cycle':
                 lr = base_lr + base_height * self.scale_fn(cycle)
             else:
-                lr = base_lr + base_height * self.scale_fn(self.last_epoch)
+                lr = base_lr + base_height * self.scale_fn(last_epoch)
             lrs.append(lr)
 
         if self.cycle_momentum:
@@ -322,7 +328,7 @@ class CyclicLR(_LRScheduler):
                 if self.scale_mode == 'cycle':
                     momentum = max_momentum - base_height * self.scale_fn(cycle)
                 else:
-                    momentum = max_momentum - base_height * self.scale_fn(self.last_epoch)
+                    momentum = max_momentum - base_height * self.scale_fn(last_epoch)
                 momentums.append(momentum)
             for param_group, momentum in zip(self.optimizer.param_groups, momentums):
                 param_group['momentum'] = momentum

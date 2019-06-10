@@ -132,13 +132,17 @@ class Trainer:
         print("Epoch %d/%d" %
               (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
-    def _lr_scheduler_step(self, engine):
+    def _lr_scheduler_step(self, engine, on_iter=False):
         data_loader = engine.state.dataloader
         iteration = engine.state.iteration - 1
         iters_per_epoch = len(data_loader)
         cur_iter = iteration % iters_per_epoch
         if self.lr_scheduler:
-            self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
+            if on_iter:
+                self.lr_scheduler.step(self.epochs() * iters_per_epoch + cur_iter)
+            else:
+                self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
+
 
     def _attach_timer(self, engine):
         self._timer.attach(engine, start=Events.EPOCH_STARTED)
@@ -177,7 +181,7 @@ class Trainer:
             self.metric_history["val_" + name].append(val)
         print(msg)
 
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None):
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
@@ -185,7 +189,7 @@ class Trainer:
         self._attach_timer(engine)
 
         engine.add_event_handler(
-            Events.ITERATION_STARTED, self._lr_scheduler_step)
+            Events.ITERATION_STARTED, self._lr_scheduler_step, lr_step_on_iter)
 
         engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
 
@@ -230,18 +234,18 @@ class Trainer:
             hist = keyfilter(lambda k: not k.startswith("val_"), hist)
         return hist
 
-    def fit1(self, train_loader, epochs, validate=None, save=None, callbacks=()):
+    def fit1(self, train_loader, epochs, validate=None, save=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
         validate = ValSet.parse(validate, self)
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs)
+            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs, grad_clip_value=grad_clip_value)
         self._attach_timer(engine)
 
         engine.add_event_handler(
             Events.EPOCH_STARTED, self._log_epochs, epochs)
         engine.add_event_handler(
-            Events.ITERATION_STARTED, self._lr_scheduler_step)
+            Events.ITERATION_STARTED, self._lr_scheduler_step, lr_step_on_iter)
 
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, self._increment_epoch)
