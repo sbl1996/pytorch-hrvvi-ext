@@ -3,6 +3,7 @@ from collections import defaultdict
 
 from horch.common import select, _concat
 from horch.detection import generate_mlvl_anchors, get_locations
+from horch.transforms.detection.functional import to_percent_coords
 from toolz import curry
 from toolz.curried import get
 
@@ -15,7 +16,7 @@ from horch.nn.loss import focal_loss2, loc_kl_loss
 
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
-from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
+from horch.detection.nms import nms, soft_nms_cpu
 
 
 def flatten(xs):

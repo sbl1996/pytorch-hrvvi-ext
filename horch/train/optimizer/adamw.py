@@ -105,7 +105,7 @@ class AdamW(Optimizer):
                 step_size.div_(denom).mul_(exp_avg)
 
                 if group['weight_decay'] != 0:
-                    weight_decay = group['initial_lr'] / group['lr'] * group['weight_decay']
+                    weight_decay = group['lr'] / group['initial_lr'] * group['weight_decay']
                     p.data.sub_(weight_decay, p.data)
                 p.data.add_(-step_size)
 
