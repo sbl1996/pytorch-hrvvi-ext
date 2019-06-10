@@ -260,7 +260,7 @@ def flatten_preds(*preds):
 
 class MultiBoxLoss(nn.Module):
 
-    def __init__(self, pos_neg_ratio=None, p=0.01, cls_loss='softmax', prefix=""):
+    def __init__(self, pos_neg_ratio=None, p=0.01, cls_loss='ce', prefix=""):
         super().__init__()
         self.pos_neg_ratio = pos_neg_ratio
         self.p = p

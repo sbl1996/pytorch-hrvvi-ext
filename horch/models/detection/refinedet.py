@@ -64,12 +64,15 @@ class RefineDet(nn.Module):
 
 
 class RefineLoss(nn.Module):
-    def __init__(self, neg_threshold=0.01, refine_cls_loss='focal', detach=True, p=0.01):
+    def __init__(self, neg_threshold=0.01, refine_cls_loss='focal', detect_cls_loss='focal', detach=True, p=0.01):
         super().__init__()
         self.neg_threshold = neg_threshold
         self.detach = detach
         self.r_loss = MultiBoxLoss(p=p, cls_loss=refine_cls_loss, prefix='refine')
-        self.d_loss = MultiBoxLoss(pos_neg_ratio=1 / 3, p=p, cls_loss='softmax', prefix='detect')
+        if detect_cls_loss == 'ce':
+            self.d_loss = MultiBoxLoss(pos_neg_ratio=1 / 3, p=p, cls_loss='ce', prefix='detect')
+        elif detect_cls_loss == 'focal':
+            self.d_loss = MultiBoxLoss(p=p, cls_loss='focal', prefix='detect')
         self.p = p
 
     @property

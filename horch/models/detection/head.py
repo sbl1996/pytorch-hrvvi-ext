@@ -161,8 +161,8 @@ class SSDHead(nn.Module):
             for c, n in zip(in_channels_list, num_anchors)
         ])
 
-        for p in self.preds:
-            get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
+        # for p in self.preds:
+        #     get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         preds = [pred(p) for p, pred in zip(ps, self.preds)]
