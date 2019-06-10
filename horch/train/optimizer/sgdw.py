@@ -102,7 +102,7 @@ class SGDW(Optimizer):
                         d_p = buf
 
                 if weight_decay != 0:
-                    weight_decay = group['initial_lr'] / group['lr'] * weight_decay
+                    weight_decay = group['lr'] / group['initial_lr'] * weight_decay
                     p.data.sub_(weight_decay, p.data)
                 p.data.add_(-group['lr'], d_p)
 

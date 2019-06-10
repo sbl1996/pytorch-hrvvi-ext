@@ -3,9 +3,7 @@ from collections import defaultdict
 
 from horch.common import select, _concat
 from horch.detection import generate_mlvl_anchors, get_locations
-from horch.transforms.detection.functional import to_percent_coords
 from toolz import curry
-from toolz.curried import get
 
 import torch
 import torch.nn as nn
@@ -152,19 +150,33 @@ def match_anchors(anns, a_xywh, a_ltrb, pos_thresh=0.7, neg_thresh=0.3,
 
 class MatchAnchors:
     r"""
+    MatchAnchors is a transform for general object detection that transforms
+    annotations to localization and classification targets.
 
     Parameters
     ----------
     generator : AnchorGenerator
-        List of anchor boxes of shape `(lx, ly, #anchors, 4)`.
+        Generator to generator anchors for difference sizes.
+        Note: flatten and with_lrtb must be True.
+    strides : sequence of ints
+        Strides of difference features levels.
     pos_thresh : float
         IOU threshold of positive anchors.
     neg_thresh : float
         If provided, only non-positive anchors whose ious with all ground truth boxes are
         lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
+
+    Example:
+        >>> train_transform = Compose([
+        >>>     Resize((width, height)),
+        >>>     ToPercentCoords(),
+        >>>     ToTensor(),
+        >>>     MatchAnchors(gen, strides=[8, 16, 32], pos_thresh=0.5, neg_thresh=0.4),
+        >>> ])
     """
 
-    def __init__(self, generator, strides, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'], debug=False):
+    def __init__(self, generator, strides, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'],
+                 debug=False):
         assert generator.flatten
         assert generator.with_ltrb
         self.generator = generator
@@ -177,7 +189,7 @@ class MatchAnchors:
     def __call__(self, x, anns):
         height, width = x.shape[1:3]
         grid_sizes = get_locations((width, height), self.strides)
-        grid_sizes = [ torch.Size(s) for s in grid_sizes ]
+        grid_sizes = [torch.Size(s) for s in grid_sizes]
         a_xywh, a_ltrb = self.generator(grid_sizes, x.device, x.dtype)
         loc_t, cls_t, ignore = match_anchors(
             anns, a_xywh, a_ltrb,
@@ -201,6 +213,11 @@ class AnchorMatcher:
     neg_thresh : float
         If provided, only non-positive anchors whose ious with all ground truth boxes are
         lower than neg_thresh will be considered negative. Other non-positive anchors will be ignored.
+
+    Example:
+        >>> gen = AnchorGenerator(cuda(anchor_sizes))
+        >>> matcher = AnchorMatcher(gen, pos_thresh=0.5)
+        >>> net = OneStageDetector(backbone, fpn, head, matcher, inference)
     """
 
     def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'], debug=False):
@@ -259,9 +276,26 @@ def flatten_preds(*preds):
 
 
 class MultiBoxLoss(nn.Module):
+    r"""
+    Parameters
+    ----------
+    pos_neg_ratio : float
+        Ratio between positive and negative samples used for hard negative mining.
+        Default : None
+    p : float
+        Probability to print loss.
+    cls_loss : str
+        Classification loss.
+        Options: ['focal', 'ce']
+        Default: 'ce'
+    prefix : str
+        Prefix of loss.
+    """
 
     def __init__(self, pos_neg_ratio=None, p=0.01, cls_loss='ce', prefix=""):
         super().__init__()
+        assert 0 <= p <= 1
+        assert cls_loss in ['focal', 'ce'], "Classification loss must be one of ['focal', 'ce']"
         self.pos_neg_ratio = pos_neg_ratio
         self.p = p
         self.cls_loss = cls_loss
@@ -336,7 +370,6 @@ class MultiBoxLoss(nn.Module):
                 print("loc: %.4f | cls: %.4f" %
                       (loc_loss.item(), cls_loss.item()))
         return loss
-
 
 
 @curry
@@ -442,7 +475,23 @@ class KLFocalLoss(nn.Module):
 
 
 class AnchorBasedInference:
-
+    r"""
+    Parameters
+    ----------
+    generator : AnchorGenerator
+    conf_threshold : float
+        Confidence threshold for filtering.
+    iou_threshold : float
+        IoU threshold used in nms.
+    topk : int
+        Top k boxes retained after nms.
+    conf_strategy : str
+        'softmax' for ce loss or 'sigmoid' for focal loss.
+    nms : str
+        'nms' for classical non-max suppression and 'soft' for soft nms.
+    min_score : float
+        Minimal score used in soft nms.
+    """
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
                  conf_strategy='softmax', nms='soft', min_score=None):
