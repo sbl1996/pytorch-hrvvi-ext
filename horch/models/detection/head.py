@@ -98,9 +98,6 @@ class RetinaHead(nn.Module):
         Number of feature channels.
     num_layers : int
         Number of conv layers in each subnet.
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: "bn"
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
@@ -141,15 +138,12 @@ class SSDHead(nn.Module):
         Number of classes.
     in_channels_list : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-    norm_layer : str
-        `bn` for Batch Normalization and `gn` for Group Normalization.
-        Default: "bn"
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels_list, lite=False):
+    def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=True, lite=False):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels_list))
@@ -161,8 +155,9 @@ class SSDHead(nn.Module):
             for c, n in zip(in_channels_list, num_anchors)
         ])
 
-        # for p in self.preds:
-        #     get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
+        if focal_init:
+            for p in self.preds:
+                get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         preds = [pred(p) for p, pred in zip(ps, self.preds)]
