@@ -1,9 +1,10 @@
 from typing import Sequence
 
 import torch
-from horch import Args
+from horch import ProtectedSeq
 from horch.train.trainer import Trainer, ValSet
 from horch.train.gan_trainer import GANTrainer
+from horch.transforms.detection import BoxList
 
 from toolz import curry
 import torch.nn as nn
@@ -27,9 +28,11 @@ def misc_collate(batch):
         if any([torch.is_tensor(t) for t in input[0]]):
             input = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*input)]
         else:
-            input = Args(input)
+            input = ProtectedSeq(input)
     if torch.is_tensor(target[0]):
         target = default_collate(target)
+    elif isinstance(target[0], BoxList):
+        target = ProtectedSeq(target)
     elif isinstance(target[0], Sequence):
         if len(target[0]) == 0:
             target = []
@@ -37,7 +40,7 @@ def misc_collate(batch):
             if any([torch.is_tensor(t) for t in target[0]]):
                 target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
             else:
-                target = Args(target)
+                target = ProtectedSeq(target)
     else:
-        target = Args(target)
+        target = ProtectedSeq(target)
     return input, target

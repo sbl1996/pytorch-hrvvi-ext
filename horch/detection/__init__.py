@@ -7,17 +7,17 @@ import torch
 from torch.utils.data.dataloader import default_collate
 
 
-from horch.common import Args
+from horch.common import ProtectedSeq
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
-from horch.detection.anchor import find_priors_kmeans, find_priors_coco
+from horch.detection.anchor.finder import find_priors_kmeans, find_priors_coco
 from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
 from horch.detection.eval import mAP
 
 __all__ = [
-    "BBox", "nms", "soft_nms_cpu", "misc_target_collate",
+    "BBox", "nms", "soft_nms_cpu",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
-    "get_locations", "calc_anchor_sizes", "generate_anchors",
+    "calc_grid_sizes", "calc_anchor_sizes", "generate_anchors",
     "generate_mlvl_anchors", "generate_anchors_with_priors",
     "find_priors_kmeans", "mAP", "find_priors_coco", "softer_nms_cpu"
 ]
@@ -30,7 +30,7 @@ def _pair(x):
         return x
 
 
-def get_locations(size, strides, pad_threshold=3):
+def calc_grid_sizes(size, strides, pad_threshold=3):
     num_levels = int(np.log2(strides[-1]))
     lx, ly = size
     locations = [(lx, ly)]
@@ -103,11 +103,6 @@ def generate_anchors_with_priors(input_size, stride, priors):
     # # anchors[:, :, :, 2:] = priors
     # return anchors
     pass
-
-def misc_target_collate(batch):
-    input, target = zip(*batch)
-    target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in target]
-    return default_collate(input), Args(target)
 
 
 def draw_bboxes(img, anns, categories=None):

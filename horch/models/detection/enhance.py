@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from horch.models.detection.nasfpn import ReLUConvBN
 
-from horch.models.modules import upsample_add, Conv2d, Sequential, get_norm_layer
+from horch.models.modules import upsample_add, Conv2d, Sequential, get_norm_layer, Pool
 from horch.models.detection.m2det import M2Det
+from horch.models.detection.nasfpn import NASFPN
 
 
 class TopDown(nn.Module):
@@ -38,6 +40,28 @@ class DeconvTopDown(nn.Module):
         p = self.lat(c) + self.deconv(p)
         p = self.conv(p)
         return p
+
+
+class FPNExtraLayers(nn.Module):
+    def __init__(self, extra_layers=(6, 7), f_channels=None, downsample='conv'):
+        super().__init__()
+        self.extra_layers = nn.ModuleList([])
+        for _ in extra_layers:
+            if downsample == 'conv':
+                l = ReLUConvBN(f_channels, f_channels, stride=2)
+            elif downsample == 'maxpool':
+                l = Pool('max', kernel_size=1, stride=2)
+            elif downsample == 'avgpool':
+                l = Pool('avg', kernel_size=1, stride=2)
+            else:
+                raise ValueError("%s as downsampling is invalid." % downsample)
+            self.extra_layers.append(l)
+
+    def forward(self, *cs):
+        ps = list(cs)
+        for l in self.extra_layers:
+            ps.append(l(ps[-1]))
+        return tuple(ps)
 
 
 class FPN(nn.Module):
@@ -147,6 +171,40 @@ class ContextEnhance(nn.Module):
         p_glb = self.lat_glb(c_glb)
         p += p_glb
         return p
+
+
+def stacked_nas_fpn(num_stacked, in_channels_list, extra_layers=(6,7), f_channels=256, lite=False, upsample='interpolate'):
+    r"""
+    Stacked FPN with alternant top down block and bottom up block.
+
+    Parameters
+    ----------
+    num_stacked : int
+        Number of stacked fpns.
+    in_channels_list : sequence of ints
+        Number of input channels of every level, e.g., ``(128,256,512)``
+    extra_layers :
+    f_channels : int
+        Number of feature (output) channels.
+        Default: 256
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    upsample : str
+        Use bilinear upsampling if `interpolate` and ConvTransposed if `deconv`
+        Default: `interpolate`
+    """
+    assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
+    num_levels = len(in_channels_list)
+    layers = [FPN(in_channels_list, f_channels, lite=lite)]
+    for i in range(1, num_stacked):
+        if i % 2 == 0:
+            layers.append(FPN([f_channels] * num_levels, f_channels, lite=lite, upsample=upsample))
+        else:
+            layers.append(FPN2([f_channels] * num_levels, f_channels, lite=lite))
+    m = Sequential(*layers)
+    m.out_channels = [f_channels] * len(in_channels_list)
+    return m
 
 
 def stacked_fpn(num_stacked, in_channels_list, f_channels=256, lite=False, upsample='interpolate'):

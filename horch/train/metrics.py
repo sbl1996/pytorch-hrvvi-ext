@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from PIL import Image
+from horch.transforms.detection.functional import to_absolute_coords
 from toolz import curry
 from toolz.curried import get
 

@@ -6,13 +6,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import one_hot, inverse_sigmoid
+from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.detection.one import flatten, flatten_preds
 from horch.models.detection.head import to_pred
 from horch.models.modules import upsample_concat, Conv2d
 from horch.models.utils import get_last_conv, bias_init_constant
-from horch.nn.loss import focal_loss2, loc_kl_loss
+from horch.nn.loss import focal_loss2
 
-from horch.detection import BBox, soft_nms_cpu, nms, generate_mlvl_anchors
+from horch.detection import BBox, soft_nms_cpu, nms, generate_mlvl_anchors, calc_grid_sizes
 from toolz.curried import get
 
 
@@ -166,7 +167,26 @@ def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
     return loc_t, cls_t, ignore
 
 
-class YOLOMatcher:
+class YOLOMatchAnchors:
+
+    def __init__(self, mlvl_priors, levels, ignore_thresh=0.5, get_label=lambda x: x["category_id"], debug=False):
+        self.mlvl_priors = mlvl_priors
+        self.levels = levels
+        self.strides = [2 ** l for l in levels]
+        self.ignore_thresh = ignore_thresh
+        self.get_label = get_label
+        self.debug = debug
+
+    def __call__(self, x, anns):
+        height, width = x.shape[1:3]
+        grid_sizes = calc_grid_sizes((width, height), self.strides)
+        grid_sizes = [torch.Size(s) for s in grid_sizes]
+        targets = match_anchors(
+            anns, self.mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label, self.debug)
+        return x, targets
+
+
+class YOLOAnchorMatcher:
 
     def __init__(self, mlvl_priors, ignore_thresh=0.5, get_label=lambda x: x["category_id"], debug=False):
         self.mlvl_priors = mlvl_priors
@@ -249,30 +269,21 @@ def get_locations(mlvl_anchors):
     return locations
 
 
-class YOLOAnchorGenerator:
+class YOLOAnchorGenerator(AnchorGeneratorBase):
     def __init__(self, anchor_sizes, cache=True):
-        super().__init__()
+        super().__init__(cache)
         self.anchor_sizes = anchor_sizes
-        self.cache = cache
-        self.caches = {}
 
-    def __call__(self, grid_sizes, device='cpu', dtype=torch.float32):
-        if not isinstance(grid_sizes, tuple):
-            grid_sizes = tuple(grid_sizes)
-        if self.cache and grid_sizes in self.caches:
-            return self.caches[grid_sizes]
-        else:
-            mlvl_anchors = generate_mlvl_anchors(
-                grid_sizes, self.anchor_sizes, device, dtype)
-            locations = get_locations(mlvl_anchors)
-            anchors = flatten(mlvl_anchors)
-            ret = {
-                "anchors": anchors,
-                "locations": locations
-            }
-            if self.cache:
-                self.caches[grid_sizes] = ret
-            return ret
+    def calculate(self, grid_sizes, device, dtype):
+        mlvl_anchors = generate_mlvl_anchors(
+            grid_sizes, self.anchor_sizes, device, dtype)
+        locations = get_locations(mlvl_anchors)
+        anchors = flatten(mlvl_anchors)
+        ret = {
+            "anchors": anchors,
+            "locations": locations
+        }
+        return ret
 
 
 def yolo_inference(

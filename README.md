@@ -336,7 +336,7 @@ from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 
 from horch.transforms.detection import Compose, Resize, ToTensor, ToPercentCoords
 
-from horch.detection import get_locations
+from horch.detection import calc_grid_sizes
 
 from horch.models.utils import summary
 from horch.models.detection import OneStageDetector
@@ -350,7 +350,7 @@ width = 192
 height = 96
 levels = [3, 4, 5]
 strides = [2 ** l for l in levels]
-locations = get_locations((width, height), strides)
+locations = calc_grid_sizes((width, height), strides)
 mlvl_centers = get_mlvl_centers(locations)
 
 area_thresholds = [

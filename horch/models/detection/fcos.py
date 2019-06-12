@@ -5,14 +5,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, _tuple, _concat
-from horch.detection import soft_nms_cpu, BBox, nms
+from horch.common import one_hot, _tuple
+from horch.detection import soft_nms_cpu, BBox, nms, calc_grid_sizes
+from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.detection.one import flatten, flatten_preds
 from horch.models.detection.head import RetinaHead, to_pred
 from horch.transforms.detection.functional import to_percent_coords
 from horch.nn.loss import focal_loss2, iou_loss
-from horch.models.detection import OneStageDetector
-from torch import nn as nn
+
+__all__ = ["FCOSMatchAnchors", "FCOSAnchorGenerator", "FCOSHead", "FCOSMatcher", "FCOSLoss"]
 
 
 class FCOSHead(RetinaHead):
@@ -33,11 +34,11 @@ class FCOSHead(RetinaHead):
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p[..., :-1])
             ctn_preds.append(cls_p[..., -1:])
-        return loc_preds, cls_preds
+        return loc_preds, cls_preds, ctn_preds
 
 
 __all__ = [
-    "get_mlvl_centers", "FCOSInference", "FCOS", "FCOSLoss"
+    "get_mlvl_centers", "FCOSInference", "FCOSLoss"
 ]
 
 
@@ -54,29 +55,20 @@ def get_mlvl_centers(grid_sizes, strides, device='cpu', dtype=torch.float32):
     return mlvl_centers
 
 
-class FCOSAnchorGenerator:
-    def __init__(self, strides, cache=True):
-        super().__init__()
-        self.strides = strides
-        self.cache = cache
-        self.caches = {}
+class FCOSAnchorGenerator(AnchorGeneratorBase):
+    def __init__(self, levels, cache=True):
+        super().__init__(cache)
+        self.levels = levels
+        self.strides = [2 ** l for l in levels]
 
-    def __call__(self, grid_sizes, device='cpu', dtype=torch.float32):
-        if not isinstance(grid_sizes, tuple):
-            grid_sizes = tuple(grid_sizes)
-        if self.cache:
-            if grid_sizes in self.caches:
-                centers = self.caches[grid_sizes]
-            else:
-                mlvl_centers = get_mlvl_centers(grid_sizes, self.strides, device, dtype)
-                centers_flat = flatten(mlvl_centers)
-                centers = (mlvl_centers, centers_flat)
-                self.caches[grid_sizes] = centers
-        else:
-            mlvl_centers = get_mlvl_centers(grid_sizes, self.strides, device, dtype)
-            centers_flat = flatten(mlvl_centers)
-            centers = (mlvl_centers, centers_flat)
-        return centers
+    def calculate(self, grid_sizes, device, dtype):
+        mlvl_centers = get_mlvl_centers(grid_sizes, self.strides, device, dtype)
+        centers_flat = flatten(mlvl_centers)
+        ret = {
+            "centers": mlvl_centers,
+            "flat": centers_flat,
+        }
+        return ret
 
 
 def centerness(loc_t):
@@ -90,6 +82,61 @@ def centerness(loc_t):
     return c
 
 
+def match_anchors(anns, mlvl_centers, thresholds, get_label):
+    loc_targets = []
+    cls_targets = []
+    ctn_targets = []
+    for centers in mlvl_centers:
+        lx, ly = centers.size()[:2]
+        loc_targets.append(centers.new_zeros((lx, ly, 4)))
+        cls_targets.append(centers.new_zeros((lx, ly), dtype=torch.long))
+        ctn_targets.append(centers.new_zeros((lx, ly)))
+
+    for ann in anns:
+        label = get_label(ann)
+        l, t, w, h = ann['bbox']
+        r = l + w
+        b = t + h
+        for centers, threshold, loc_t, cls_t, ctn_t in zip(mlvl_centers, thresholds, loc_targets,
+                                                           cls_targets, ctn_targets):
+            lo, hi = threshold
+            cx = centers[..., 0]
+            cy = centers[..., 1]
+            mask = (l < cx) & (cx < r) & (t < cy) & (cy < b)
+            ts = torch.stack([cx - l, cy - t, r - cx, b - cy], dim=-1)
+            max_t = ts.max(dim=-1)[0]
+            mask &= (max_t >= lo) & (max_t < hi)
+            if not mask.any():
+                continue
+            loc_t[mask] = ts[mask]
+            cls_t[mask] = label
+            ctn_t[mask] = centerness(loc_t[mask])
+
+    loc_t = torch.cat([t.view(-1, 4) for t in loc_targets], dim=0)
+    cls_t = torch.cat([t.view(-1) for t in cls_targets], dim=0)
+    ctn_t = torch.cat([t.view(-1) for t in ctn_targets], dim=0)
+
+    return loc_t, cls_t, ctn_t
+
+
+class FCOSMatchAnchors:
+
+    def __init__(self, generator, thresholds=(0, 64, 128, 256, 512, inf), get_label=lambda x: x["category_id"]):
+        assert len(generator.levels) == len(thresholds) - 1
+        self.generator = generator
+        self.strides = self.generator.strides
+        self.thresholds = list(zip(thresholds[:-1], thresholds[1:]))
+        self.get_label = get_label
+
+    def __call__(self, x, anns):
+        height, width = x.shape[1:3]
+        grid_sizes = calc_grid_sizes((width, height), self.strides)
+        grid_sizes = [torch.Size(s) for s in grid_sizes]
+        mlvl_centers = self.generator(grid_sizes, x.device, x.dtype)["centers"]
+        targets = match_anchors(anns, mlvl_centers, self.thresholds, self.get_label)
+        return x, targets
+
+
 class FCOSMatcher:
 
     def __init__(self, generator, thresholds=(0, 64, 128, 256, 512, inf), get_label=lambda x: x["category_id"]):
@@ -100,13 +147,12 @@ class FCOSMatcher:
     def __call__(self, features, targets):
         batch_size = len(targets)
         grid_sizes = [f.size()[-2:][::-1] for f in features]
-        mlvl_centers = self.generator(grid_sizes, features[0].device, features[0].dtype)[0]
+        mlvl_centers = self.generator(grid_sizes, features[0].device, features[0].dtype)["centers"]
         loc_targets = []
         cls_targets = []
         ctn_targets = []
         for i in range(batch_size):
-            loc_t, cls_t, ctn_t = self.match_single(
-                targets[i], mlvl_centers)
+            loc_t, cls_t, ctn_t = self.match_single(targets[i], mlvl_centers)
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
             ctn_targets.append(ctn_t)
@@ -116,40 +162,7 @@ class FCOSMatcher:
         return loc_t, cls_t, ctn_t
 
     def match_single(self, anns, mlvl_centers):
-        loc_targets = []
-        cls_targets = []
-        ctn_targets = []
-        for centers in mlvl_centers:
-            lx, ly = centers.size()[:2]
-            loc_targets.append(torch.zeros(lx, ly, 4))
-            cls_targets.append(torch.zeros(lx, ly, dtype=torch.long))
-            ctn_targets.append(torch.zeros(lx, ly))
-
-        for ann in anns:
-            label = self.get_label(ann)
-            l, t, w, h = ann['bbox']
-            r = l + w
-            b = t + h
-            for centers, threshold, loc_t, cls_t, ctn_t in zip(mlvl_centers, self.thresholds, loc_targets,
-                                                               cls_targets, ctn_targets):
-                lo, hi = threshold
-                cx = centers[..., 0]
-                cy = centers[..., 1]
-                mask = (l < cx) & (cx < r) & (t < cy) & (cy < b)
-                ts = torch.stack([cx - l, cy - t, r - cx, b - cy], dim=-1)
-                max_t = ts.max(dim=-1)[0]
-                mask &= (max_t >= lo) & (max_t < hi)
-                if not mask.any():
-                    continue
-                loc_t[mask] = ts[mask]
-                cls_t[mask] = label
-                ctn_t[mask] = centerness(loc_t[mask])
-
-        loc_t = torch.cat([t.view(-1, 4) for t in loc_targets], dim=0)
-        cls_t = torch.cat([t.view(-1) for t in cls_targets], dim=0)
-        ctn_t = torch.cat([t.view(-1) for t in ctn_targets], dim=0)
-
-        return loc_t, cls_t, ctn_t
+        return match_anchors(anns, mlvl_centers, self.thresholds, self.get_label)
 
 
 class FCOSLoss(nn.Module):
@@ -190,8 +203,8 @@ def center_based_inference(
     scores, labels = cls_p[:, 1:].max(dim=-1)
     scores = scores.sigmoid_()
     if use_ctn:
-        centerness = ctn_p.sigmoid_()
-        scores = scores.mul_(centerness)
+        ctn_scores = ctn_p.sigmoid_()
+        scores = scores.mul_(ctn_scores)
 
     if conf_threshold > 0:
         mask = scores > conf_threshold
@@ -240,42 +253,28 @@ def center_based_inference(
 
 class FCOSInference:
 
-    def __init__(self, generator, conf_threshold=0.05, iou_threshold=0.5, topk=100, nms='nms',
-                 soft_nms_threshold=None, use_ctn=True):
+    def __init__(self, generator, conf_threshold=0.05, iou_threshold=0.5, topk=100, nms='nms', use_ctn=True):
         self.generator = generator
+        self.levels = self.generator.levels
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.topk = topk
         self.nms = nms
-        self.soft_nms_threshold = soft_nms_threshold
         self.use_ctn = use_ctn
 
     def __call__(self, loc_preds, cls_preds, ctn_preds):
         grid_sizes = [p.size()[1:3] for p in loc_preds]
-        centers_flat = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)[1]
+        centers = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)["flat"]
+        stride = 2 ** self.levels[0]
+        size = tuple(s * stride for s in grid_sizes[0])
         loc_p, cls_p, ctn_p = flatten_preds(loc_preds, cls_preds, ctn_preds)
         batch_size = loc_p.size(0)
+        image_dets = []
         for i in range(batch_size):
             dets = center_based_inference(
-                self.size, loc_p[i], cls_p[i], ctn_p[i], self.centers,
+                size, loc_p[i], cls_p[i], ctn_p[i], centers,
                 self.conf_threshold, self.iou_threshold,
                 self.topk, self.nms, self.use_ctn
-            )
-            image_dets.append(dets)
-        return image_dets
-
-    def __call__(self, loc_preds, cls_preds):
-        grid_sizes = [p.size()[1:3] for p in loc_preds]
-        mlvl_centers = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)
-        image_dets = []
-        batch_size = loc_preds[0].size(0)
-        for i in range(batch_size):
-            dets = fovea_inference(
-                [p[i] for p in loc_preds],
-                [p[i] for p in cls_preds],
-                mlvl_centers,
-                self.conf_threshold, self.iou_threshold,
-                self.topk1, self.nms_method, self.topk2,
             )
             image_dets.append(dets)
         return image_dets

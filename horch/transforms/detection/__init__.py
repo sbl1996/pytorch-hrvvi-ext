@@ -8,8 +8,35 @@ from PIL import Image
 import torchvision.transforms.functional as VF
 from torchvision.transforms import ColorJitter
 
-from horch.transforms import JointTransform, Compose, ToTensor, InputTransform, RandomChoice, RandomApply, UseOriginal
+from horch.transforms import JointTransform, Compose, InputTransform, RandomChoice, RandomApply, UseOriginal
 from horch.transforms.detection import functional as HF
+
+
+class BoxList:
+    def __init__(self, boxes):
+        super().__init__()
+        self.boxes = boxes
+
+    def __len__(self):
+        return len(self.boxes)
+
+    def __getitem__(self, item):
+        return self.boxes[item]
+
+    def __iter__(self):
+        return iter(self.boxes)
+
+    def __repr__(self):
+        return repr(self.boxes)
+
+
+class ToTensor(JointTransform):
+
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, img, anns):
+        return VF.to_tensor(img), BoxList(anns)
 
 
 class RandomExpand(JointTransform):

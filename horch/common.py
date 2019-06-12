@@ -4,7 +4,7 @@ from collections.abc import Sequence, Mapping
 import torch
 
 
-class Args:
+class ProtectedSeq:
 
     def __init__(self, seq):
         self.seq = seq
@@ -38,7 +38,7 @@ def detach(t, clone=True):
             return t.clone().detach()
         else:
             return t.detach()
-    elif isinstance(t, Args):
+    elif isinstance(t, ProtectedSeq):
         return t
     elif isinstance(t, Sequence):
         return t.__class__(detach(x, clone) for x in t)

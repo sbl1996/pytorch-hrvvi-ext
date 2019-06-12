@@ -19,11 +19,12 @@ class Fullset(Dataset):
         input, target = self.dataset[idx]
         return self.transform(input, target)
 
+    def to_coco(self):
+        assert hasattr(self.dataset, "to_coco"), "Dataset don't support to_coco"
+        return self.dataset.to_coco()
+
     def __len__(self):
         return len(self.dataset)
-
-    # def __getattr__(self, attr):
-    #     return getattr(self.dataset, attr)
 
     def __repr__(self):
         return "Fullset(%s)" % self.dataset
@@ -61,9 +62,6 @@ class Subset(Dataset):
         else:
             indices = [self.indices[i] for i in indices]
         return self.dataset.to_coco(indices)
-
-    # def __getattr__(self, attr):
-    #     return getattr(self.dataset, attr)
 
     def __repr__(self):
         fmt_str = 'Subset of ' + self.dataset.__class__.__name__ + '\n'
