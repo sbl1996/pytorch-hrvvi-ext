@@ -171,7 +171,7 @@ class ContextEnhance(nn.Module):
         p_glb = self.lat_glb(c_glb)
         p += p_glb
         return p
-    
+
 
 def stacked_fpn(num_stacked, in_channels_list, f_channels=256, lite=False, upsample='interpolate'):
     r"""
@@ -195,7 +195,7 @@ def stacked_fpn(num_stacked, in_channels_list, f_channels=256, lite=False, upsam
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
     num_levels = len(in_channels_list)
-    layers = [FPN(in_channels_list, f_channels, lite=lite)]
+    layers = [FPN(in_channels_list, f_channels, lite=lite, upsample=upsample)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
             layers.append(FPN([f_channels] * num_levels, f_channels, lite=lite, upsample=upsample))

@@ -166,19 +166,26 @@ class FCOSMatcher:
 
 
 class FCOSLoss(nn.Module):
-    def __init__(self, use_ctn=True, p=0.1):
+    def __init__(self, loc_loss='iou', use_ctn=True, p=0.1):
         super().__init__()
+        self.loc_loss = loc_loss
         self.use_ctn = use_ctn
         self.p = p
 
     def forward(self, loc_p, cls_p, ctn_p, loc_t, cls_t, ctn_t):
         loc_p, cls_p, ctn_p = flatten_preds(loc_p, cls_p, ctn_p)
-        loc_p = loc_p.exp()
         pos = cls_t != 0
         num_pos = pos.sum().item()
         if num_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
-        loc_loss = iou_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+
+        if self.loc_loss == 'iou':
+            loc_p = loc_p.exp() * 4
+            loc_loss = iou_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+        else:
+            loc_t = loc_t.div_(4).log_()
+            loc_loss = F.smooth_l1_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+
         cls_t = one_hot(cls_t, C=cls_p.size(-1))
         cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
         if self.use_ctn:
@@ -199,7 +206,7 @@ def center_based_inference(
         size, loc_p, cls_p, ctn_p, centers, conf_threshold=0.01,
         iou_threshold=0.5, topk=100, nms_method='soft_nms', use_ctn=True):
     dets = []
-    bboxes = loc_p.exp_()
+    bboxes = loc_p.exp_().mul_(4)
     scores, labels = cls_p[:, 1:].max(dim=-1)
     scores = scores.sigmoid_()
     if use_ctn:

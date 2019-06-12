@@ -8,7 +8,7 @@ from horch.common import one_hot, _tuple, _concat
 from horch.detection import soft_nms_cpu, BBox, nms, calc_grid_sizes
 from horch.detection.one import flatten_preds
 from horch.detection.anchor.generator import AnchorGeneratorBase
-from horch.nn.loss import focal_loss2
+from horch.nn.loss import focal_loss2, iou_loss
 
 
 def get_fovea(cx, cy, w, h, shrunk=0.3):
@@ -86,7 +86,8 @@ def match_anchors(anns, mlvl_centers, levels, thresholds, shrunk_pos, shrunk_neg
             ignore |= (l_neg < cx) & (cx < r_neg) & (t_neg < cy) & (cy < b_neg)
             if not pos.any():
                 continue
-            ts = (torch.stack([cx - l_, cy - t_, r_ - cx, b_ - cy], dim=-1) / 4).log_()
+            # ts = (torch.stack([cx - l_, cy - t_, r_ - cx, b_ - cy], dim=-1) / 4).log_()
+            ts = torch.stack([cx - l_, cy - t_, r_ - cx, b_ - cy], dim=-1)
             loc_t[pos] = ts[pos]
             cls_t[pos] = label
 
@@ -164,8 +165,9 @@ class FoveaMatcher:
 
 
 class FoveaLoss(nn.Module):
-    def __init__(self, p=0.1):
+    def __init__(self, loc_loss='smooth_l1', p=0.1):
         super().__init__()
+        self.loc_loss = loc_loss
         self.p = p
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore):
@@ -174,7 +176,13 @@ class FoveaLoss(nn.Module):
         num_pos = pos.sum().item()
         if num_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
-        loc_loss = F.smooth_l1_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+
+        if self.loc_loss == 'smooth_l1':
+            loc_t = loc_t.div_(4).log_()
+            loc_loss = F.smooth_l1_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+        else:
+            loc_p = loc_p.exp() * 4
+            loc_loss = iou_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
 
         cls_t = one_hot(cls_t, C=cls_p.size(-1))
         cls_loss_pos = focal_loss2(cls_p[pos], cls_t[pos], reduction='sum')
