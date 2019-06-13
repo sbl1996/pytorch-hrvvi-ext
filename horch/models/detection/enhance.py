@@ -46,7 +46,7 @@ class FPNExtraLayers(nn.Module):
     def __init__(self, in_channels_list, extra_layers=(6, 7), f_channels=None, downsample='conv', lite=False):
         super().__init__()
         self.extra_layers = nn.ModuleList([])
-        in_channels = in_channels_list[0]
+        in_channels = in_channels_list[-1]
         for _ in extra_layers:
             if downsample == 'conv':
                 l = ReLUConvBN(in_channels, f_channels, stride=2, lite=lite)
@@ -85,9 +85,10 @@ class BasicBlock(nn.Module):
 class SSDExtraLayers(nn.Module):
     def __init__(self, in_channels_list, extra_layers=(6, 7), f_channels=None, no_padding=-1, lite=False):
         super().__init__()
+        in_channels = in_channels_list[-1]
         self.extra_layers = nn.ModuleList([])
         for _ in extra_layers:
-            l = BasicBlock(in_channels_list[0], f_channels, lite=lite)
+            l = BasicBlock(in_channels, f_channels, lite=lite)
             self.extra_layers.append(l)
             in_channels = f_channels
 
