@@ -15,7 +15,7 @@ class TopDown(nn.Module):
             in_channels, f_channels, kernel_size=1,
             norm_layer='default')
         self.conv = Conv2d(
-            f_channels, f_channels, kernel_size=3,
+            f_channels, f_channels, kernel_size=5 if lite else 3,
             norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, c, p):
@@ -33,7 +33,7 @@ class DeconvTopDown(nn.Module):
         self.deconv = Conv2d(in_channels2, f_channels, kernel_size=4, stride=2,
                              norm_layer='default', depthwise_separable=lite, transposed=True)
         self.conv = Conv2d(
-            f_channels, f_channels, kernel_size=3,
+            f_channels, f_channels, kernel_size=5 if lite else 3,
             norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, c, p):
@@ -43,19 +43,62 @@ class DeconvTopDown(nn.Module):
 
 
 class FPNExtraLayers(nn.Module):
-    def __init__(self, extra_layers=(6, 7), f_channels=None, downsample='conv'):
+    def __init__(self, in_channels_list, extra_layers=(6, 7), f_channels=None, downsample='conv', lite=False):
         super().__init__()
         self.extra_layers = nn.ModuleList([])
+        in_channels = in_channels_list[0]
         for _ in extra_layers:
             if downsample == 'conv':
-                l = ReLUConvBN(f_channels, f_channels, stride=2)
+                l = ReLUConvBN(in_channels, f_channels, stride=2, lite=lite)
             elif downsample == 'maxpool':
                 l = Pool('max', kernel_size=1, stride=2)
             elif downsample == 'avgpool':
                 l = Pool('avg', kernel_size=1, stride=2)
             else:
                 raise ValueError("%s as downsampling is invalid." % downsample)
+            in_channels = f_channels
             self.extra_layers.append(l)
+        self.out_channels = in_channels_list + (f_channels * len(extra_layers))
+
+    def forward(self, *cs):
+        ps = list(cs)
+        for l in self.extra_layers:
+            ps.append(l(ps[-1]))
+        return tuple(ps)
+
+
+class BasicBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=2, lite=False):
+        super().__init__()
+        self.conv1 = Conv2d(in_channels, out_channels // 2, kernel_size=1,
+                            norm_layer='default', activation='default')
+        padding = 1 if stride == 2 else 0
+        self.conv2 = Conv2d(out_channels // 2, out_channels, kernel_size=3, stride=2, padding=padding,
+                            norm_layer='default', activation='default', depthwise_separable=lite)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
+
+
+class SSDExtraLayers(nn.Module):
+    def __init__(self, in_channels_list, extra_layers=(6, 7), f_channels=None, no_padding=-1, lite=False):
+        super().__init__()
+        self.extra_layers = nn.ModuleList([])
+        for _ in extra_layers:
+            l = BasicBlock(in_channels_list[0], f_channels, lite=lite)
+            self.extra_layers.append(l)
+            in_channels = f_channels
+
+        for i in range(no_padding, 0):
+            l = self.extra_layers[i].conv2[0]
+            if lite:
+                l = l[0]
+            l.stride = (1, 1)
+            l.padding = (0, 0)
+
+        self.out_channels = in_channels_list + (f_channels * len(extra_layers))
 
     def forward(self, *cs):
         ps = list(cs)
