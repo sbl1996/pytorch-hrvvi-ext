@@ -58,7 +58,7 @@ class FPNExtraLayers(nn.Module):
                 raise ValueError("%s as downsampling is invalid." % downsample)
             in_channels = f_channels
             self.extra_layers.append(l)
-        self.out_channels = in_channels_list + (f_channels * len(extra_layers))
+        self.out_channels = in_channels_list + [f_channels] * len(extra_layers)
 
     def forward(self, *cs):
         ps = list(cs)
@@ -98,7 +98,7 @@ class SSDExtraLayers(nn.Module):
             l.stride = (1, 1)
             l.padding = (0, 0)
 
-        self.out_channels = in_channels_list + (f_channels * len(extra_layers))
+        self.out_channels = in_channels_list + [f_channels] * len(extra_layers)
 
     def forward(self, *cs):
         ps = list(cs)
