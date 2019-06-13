@@ -43,10 +43,9 @@ class DeconvTopDown(nn.Module):
 
 
 class FPNExtraLayers(nn.Module):
-    def __init__(self, in_channels_list, extra_layers=(6, 7), f_channels=None, downsample='conv', lite=False):
+    def __init__(self, in_channels, extra_layers=(6, 7), f_channels=None, downsample='conv', lite=False):
         super().__init__()
         self.extra_layers = nn.ModuleList([])
-        in_channels = in_channels_list[-1]
         for _ in extra_layers:
             if downsample == 'conv':
                 l = ReLUConvBN(in_channels, f_channels, stride=2, lite=lite)
@@ -58,12 +57,12 @@ class FPNExtraLayers(nn.Module):
                 raise ValueError("%s as downsampling is invalid." % downsample)
             in_channels = f_channels
             self.extra_layers.append(l)
-        self.out_channels = in_channels_list + [f_channels] * len(extra_layers)
 
-    def forward(self, *cs):
-        ps = list(cs)
+    def forward(self, p):
+        ps = []
         for l in self.extra_layers:
-            ps.append(l(ps[-1]))
+            p = l(p)
+            ps.append(p)
         return tuple(ps)
 
 
@@ -118,6 +117,8 @@ class FPN(nn.Module):
         Number of input channels of every level, e.g., ``(256,512,1024)``
     f_channels : int
         Number of output channels.
+    extra_layers : tuple of ints
+        Extra layers to add, e.g., ``(6, 7)``
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
@@ -126,9 +127,12 @@ class FPN(nn.Module):
         Default: `interpolate`
     """
 
-    def __init__(self, in_channels_list, f_channels=256, lite=False, upsample='interpolate'):
+    def __init__(self, in_channels_list, f_channels=256, extra_layers=(), downsample='conv', lite=False, upsample='interpolate'):
         super().__init__()
         self.lat = Conv2d(in_channels_list[-1], f_channels, kernel_size=1, norm_layer='default')
+        self.extra_layers = extra_layers
+        if extra_layers:
+            self.extras = FPNExtraLayers(f_channels, extra_layers, f_channels, downsample=downsample, lite=lite)
         if upsample == 'deconv':
             self.topdowns = nn.ModuleList([
                 DeconvTopDown(c, f_channels, f_channels, lite=lite)
@@ -139,10 +143,13 @@ class FPN(nn.Module):
                 TopDown(c, f_channels, lite=lite)
                 for c in in_channels_list[:-1]
             ])
-        self.out_channels = [f_channels] * len(in_channels_list)
+        self.out_channels = [f_channels] * (len(in_channels_list) + len(extra_layers))
 
     def forward(self, *cs):
-        ps = (self.lat(cs[-1]),)
+        p = self.lat(cs[-1])
+        ps = (p,)
+        if self.extra_layers:
+            ps = ps + self.extras(p)
         for c, topdown in zip(reversed(cs[:-1]), reversed(self.topdowns)):
             p = topdown(c, ps[0])
             ps = (p,) + ps
@@ -217,7 +224,7 @@ class ContextEnhance(nn.Module):
         return p
 
 
-def stacked_fpn(num_stacked, in_channels_list, f_channels=256, lite=False, upsample='interpolate'):
+def stacked_fpn(num_stacked, in_channels_list, extra_layers=(), f_channels=256, lite=False, upsample='interpolate'):
     r"""
     Stacked FPN with alternant top down block and bottom up block.
 
@@ -227,6 +234,8 @@ def stacked_fpn(num_stacked, in_channels_list, f_channels=256, lite=False, upsam
         Number of stacked fpns.
     in_channels_list : sequence of ints
         Number of input channels of every level, e.g., ``(128,256,512)``
+    extra_layers : tuple of ints
+        Extra layers to add, e.g., ``(6, 7)``
     f_channels : int
         Number of feature (output) channels.
         Default: 256
@@ -238,15 +247,45 @@ def stacked_fpn(num_stacked, in_channels_list, f_channels=256, lite=False, upsam
         Default: `interpolate`
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
-    num_levels = len(in_channels_list)
-    layers = [FPN(in_channels_list, f_channels, lite=lite, upsample=upsample)]
+    layers = [FPN(in_channels_list, f_channels, extra_layers, lite=lite, upsample=upsample)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
-            layers.append(FPN([f_channels] * num_levels, f_channels, lite=lite, upsample=upsample))
+            layers.append(FPN(layers[-1].out_channels, f_channels, lite=lite, upsample=upsample))
         else:
-            layers.append(FPN2([f_channels] * num_levels, f_channels, lite=lite))
+            layers.append(FPN2(layers[-1].out_channels, f_channels, lite=lite))
     m = Sequential(*layers)
-    m.out_channels = [f_channels] * len(in_channels_list)
+    m.out_channels = m[-1].out_channels
+    return m
+
+
+def stacked_nas_fpn(num_stacked, in_channels_list, extra_layers=(), f_channels=256, lite=False, upsample='interpolate'):
+    r"""
+    Stacked FPN with alternant top down block and bottom up block.
+
+    Parameters
+    ----------
+    num_stacked : int
+        Number of stacked fpns.
+    in_channels_list : sequence of ints
+        Number of input channels of every level, e.g., ``(128,256,512)``
+    extra_layers : tuple of ints
+        Extra layers to add, e.g., ``(6, 7)``
+    f_channels : int
+        Number of feature (output) channels.
+        Default: 256
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    upsample : str
+        Use bilinear upsampling if `interpolate` and ConvTransposed if `deconv`
+        Default: `interpolate`
+    """
+    assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
+    layers = [FPN(in_channels_list, f_channels, extra_layers, downsample='maxpool', lite=lite, upsample=upsample)]
+    for i in range(1, num_stacked):
+        layers.append(NASFPN(f_channels))
+    m = Sequential(*layers)
+    m.out_channels = m[-1].out_channels
     return m
 
 

@@ -1,12 +1,13 @@
+import bisect
+import copy
+import json
 import os
 import re
-import sys
-from copy import deepcopy
-from collections import OrderedDict
 from pathlib import Path
 
 import xmltodict
 from PIL import Image
+from toolz.curried import groupby
 from torch.utils.data import Dataset
 from torchvision.datasets.utils import download_url, check_integrity
 
@@ -19,7 +20,8 @@ DATASET_YEAR_DICT = {
         'url': 'http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar',
         'filename': 'VOCtrainval_11-May-2012.tar',
         'md5': '6cd6e144f989b92b3379bac3b3de84fd',
-        'base_dir': 'VOCdevkit/VOC2012'
+        'base_dir': 'VOCdevkit/VOC2012',
+        "ann_file_url": "https://drive.google.com/open?id=1v98GB2D7oc6OoP8NdIHayZbt-8V6Fc5Q",
     },
     '2011': {
         'url': 'http://host.robots.ox.ac.uk/pascal/VOC/voc2011/VOCtrainval_25-May-2011.tar',
@@ -49,7 +51,8 @@ DATASET_YEAR_DICT = {
         'url': 'http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar',
         'filename': 'VOCtrainval_06-Nov-2007.tar',
         'md5': 'c52e279531787c972589f7e41ab4ae64',
-        'base_dir': 'VOCdevkit/VOC2007'
+        'base_dir': 'VOCdevkit/VOC2007',
+        "ann_file_url": "https://drive.google.com/open?id=1dwgWLM4qxe5aT3o46y0Jz10DKmh17w6W",
     }
 }
 
@@ -58,7 +61,8 @@ TEST_DATASET_YEAR_DICT = {
         'url': 'http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar',
         'filename': 'VOCtest_06-Nov-2007.tar',
         'md5': 'b6e924de25625d8de591ea690078ad9f',
-        'base_dir': 'VOCdevkit/VOC2007'
+        'base_dir': 'VOCdevkit/VOC2007',
+        "ann_file_url": "https://drive.google.com/open?id=1BGSle9xH6B_voeUE4Mp0YYYFmKZfxu0B",
     }
 }
 
@@ -97,7 +101,7 @@ class VOCDetection(Dataset):
     Args:
         root (string): Root directory of the VOC Dataset.
         year (string, optional): The dataset year, supports years 2007 to 2012.
-        image_set (string, optional): Select the image_set to use, ``train``, ``trainval`` or ``val`` or ``test``
+        image_set (string, optional): Select the image_set to use, ``trainval`` or ``test``
         download (bool, optional): If true, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
@@ -109,7 +113,7 @@ class VOCDetection(Dataset):
     def __init__(self,
                  root,
                  year='2012',
-                 image_set='train',
+                 image_set='trainval',
                  download=False,
                  transform=None):
         self.root = Path(root).expanduser().absolute()
@@ -122,134 +126,81 @@ class VOCDetection(Dataset):
         self.url = dataset_dict[year]['url']
         self.filename = dataset_dict[year]['filename']
         self.md5 = dataset_dict[year]['md5']
-        self.transform = transform
 
         base_dir = dataset_dict[year]['base_dir']
         self.voc_root = self.root / base_dir
-        image_dir = self.voc_root / 'JPEGImages'
-        annotation_dir = self.voc_root / 'Annotations'
+        self.image_dir = self.voc_root / 'JPEGImages'
+        self.ann_file_url = dataset_dict[year]['ann_file_url']
+        self.ann_file = self.voc_root / ("%s%s.json" % (image_set, year))
 
         if download:
             self.download()
 
-        splits_dir = self.voc_root / 'ImageSets' / "Main"
+        from hpycocotools.coco import COCO
+        with open(self.ann_file, 'r') as f:
+            self.data = json.load(f)
 
-        split_f = splits_dir / (image_set + '.txt')
-
-        if not split_f.exists():
-            raise ValueError(
-                'Wrong image_set entered! Please use image_set="train" '
-                'or image_set="trainval" or image_set="val" or a valid '
-                'image_set from the VOC ImageSets/Main folder.')
-
-        with open(split_f, "r") as f:
-            self.file_names = [x.strip() for x in f.readlines()]
-
-        self.images = [image_dir / (x + ".jpg") for x in self.file_names]
-        self.annotations = [annotation_dir /
-                            (x + ".xml") for x in self.file_names]
-        assert (len(self.images) == len(self.annotations))
+        self.coco = COCO(self.data, verbose=False)
+        self.ids = list(self.coco.imgs.keys())
+        self.transform = transform
 
     def to_coco(self, indices=None):
         if indices is None:
-            indices = range(len(self))
-        categories = []
-        for i, c in enumerate(VOC_CATEGORIES[1:]):
-            categories.append({
-                'supercategory': 'object',
-                'id': i + 1,
-                'name': c
-            })
-        images = []
-        annotations = []
-        ann_id = 0
-        for i in indices:
-            info = self.parse_voc_xml(self.annotations[i])
-            anns = info['annotations']
-            img = {
-                "file_name": (self.file_names[i] + ".jpg"),
-                "height": info['height'],
-                "width": info['width'],
-                "id": i,
-            }
-            images.append(img)
-            for ann in anns:
-                ann = deepcopy(ann)
-                w, h = ann['bbox'][2:]
-                ann['area'] = w * h
-                ann['iscrowd'] = 0
-                ann['image_id'] = i
-                ann['id'] = ann_id
-                ann_id += 1
-                annotations.append(ann)
-        dataset = {
-            'categories': categories,
-            'images': images,
-            'annotations': annotations,
+            return self.data
+        ids = [self.ids[i] for i in indices]
+        images = self.coco.loadImgs(ids)
+        ann_ids = self.coco.getAnnIds(ids)
+        annotations = self.coco.loadAnns(ann_ids)
+        return {
+            **self.data,
+            "images": images,
+            "annotations": annotations,
         }
-        return dataset
 
     def __getitem__(self, index):
         """
         Args:
             index (int): Index
-
         Returns:
-            tuple: (image, target) where target is a dictionary of the XML tree.
+            tuple: Tuple (image, target). target is the object returned by ``coco.loadAnns``.
         """
-        img = Image.open(self.images[index])
-        anns = self.parse_voc_xml(self.annotations[index])['annotations']
-        for ann in anns:
-            ann['image_id'] = index
+        coco = self.coco
+        img_id = self.ids[index]
+        ann_ids = coco.getAnnIds(imgIds=img_id)
+        target = coco.loadAnns(ann_ids)
 
+        path = coco.loadImgs(img_id)[0]['file_name']
+
+        img = Image.open(os.path.join(self.image_dir, path)).convert('RGB')
         if self.transform is not None:
-            img, anns = self.transform(img, anns)
+            img, target = self.transform(img, target)
 
-        return img, anns
+        return img, target
 
     def __len__(self):
-        return len(self.images)
+        return len(self.ids)
 
     def download(self):
         import tarfile
-        if self.voc_root.is_dir():
-            print("Dataset found. Skip download or extract")
+        if self.voc_root.is_dir() and self.ann_file.exists():
+            print("Dataset found. Skip download or extract.")
             return
 
-        download_url(self.url, self.root, self.filename, self.md5)
+        if not self.voc_root.is_dir():
+            download_url(self.url, self.root, self.filename, self.md5)
+            with tarfile.open(self.root / self.filename, "r") as tar:
+                tar.extractall(path=self.root)
 
-        with tarfile.open(self.root / self.filename, "r") as tar:
-            tar.extractall(path=self.root)
-
-    def parse_object(self, obj):
-        x1 = int(obj['bndbox']['xmin'])
-        y1 = int(obj['bndbox']['ymin'])
-        x2 = int(obj['bndbox']['xmax'])
-        y2 = int(obj['bndbox']['ymax'])
-        w = x2 - x1
-        h = y2 - y1
-        bbox = [x1, y1, w, h]
-        return {
-            'category_id': VOC_CATEGORY_TO_IDX[obj['name']],
-            'bbox': bbox
-        }
-
-    def parse_voc_xml(self, path):
-        with open(path, "rb") as f:
-            d = xmltodict.parse(f)
-        info = d['annotation']
-        objects = info['object']
-        size = info['size']
-        if isinstance(objects, OrderedDict):
-            objects = [objects]
-        return {
-            'width': int(size['width']),
-            'height': int(size['height']),
-            'annotations': [self.parse_object(obj) for obj in objects],
-        }
+        if not self.ann_file.exists():
+            google_drive_match = re.match(
+                r"https://drive.google.com/open\?id=(.*)", self.ann_file_url)
+            file_id = google_drive_match.group(1)
+            download_google_drive(file_id, self.voc_root, self.ann_file.name)
 
     def __repr__(self):
         fmt_str = 'Dataset ' + self.__class__.__name__ + '\n'
+        fmt_str += '    Year: {}\n'.format(self.year)
+        fmt_str += '    ImageSet: {}\n'.format(self.image_set)
         fmt_str += '    Number of datapoints: {}\n'.format(self.__len__())
         fmt_str += '    Root Location: {}\n'.format(self.root)
         tmp = '    Transforms (if any): '
@@ -366,3 +317,89 @@ class VOCSegmentation(Dataset):
 
     def __len__(self):
         return len(self.images)
+
+
+class VOCDetectionConcat(Dataset):
+    """
+    Dataset to concatenate multiple datasets.
+    Purpose: useful to assemble different existing datasets, possibly
+    large-scale datasets as the concatenation operation is done in an
+    on-the-fly manner.
+
+    Arguments:
+        datasets (sequence): List of datasets to be concatenated
+    """
+
+    @staticmethod
+    def cumsum(sequence):
+        r, s = [], 0
+        for e in sequence:
+            l = len(e)
+            r.append(l + s)
+            s += l
+        return r
+
+    def __init__(self, datasets):
+        super().__init__()
+        assert len(datasets) > 0, 'datasets should not be an empty iterable'
+        self.datasets = list(datasets)
+        self.cumulative_sizes = self.cumsum(self.datasets)
+        self._data = merge_coco(datasets)
+        self._img_anns = groupby(lambda x: x['image_id'], self._data['annotations'])
+
+    def __len__(self):
+        return self.cumulative_sizes[-1]
+
+    def __getitem__(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError("absolute value of index should not exceed dataset length")
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        img = self.datasets[dataset_idx][sample_idx][0]
+        anns = self._img_anns[idx]
+        return img, anns
+
+    def to_coco(self):
+        return copy.deepcopy(self._data)
+
+
+def merge_coco(datasets):
+    all_annotations = [ds.to_coco() for ds in datasets]
+    for i in range(len(all_annotations) - 1):
+        assert all_annotations[i]['categories'] == all_annotations[i + 1]['categories']
+    images = all_annotations[0]['images']
+    annotations = all_annotations[0]['annotations']
+
+    image_id = images[-1]['id'] + 1
+    ann_id = annotations[-1]['id'] + 1
+    for d in all_annotations[1:]:
+        d_images = d['images']
+        n = len(d_images)
+        assert [img['id'] for img in d_images] == list(range(n))
+        img_anns = groupby(lambda x: x['image_id'], d['annotations'])
+        for i in range(n):
+            img = d_images[i]
+            anns = img_anns[img['id']]
+            img = {
+                **img,
+                'id': image_id,
+            }
+            for ann in anns:
+                annotations.append({
+                    **ann,
+                    'id': ann_id,
+                    'image_id': image_id
+                })
+                ann_id += 1
+            image_id += 1
+            images.append(img)
+    return {
+        **all_annotations[0],
+        'images': images,
+        'annotations': annotations
+    }

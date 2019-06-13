@@ -111,6 +111,8 @@ class RetinaHead(nn.Module):
         self.cls_head = _make_head(
             f_channels, num_layers, num_anchors * num_classes, lite=lite)
 
+        weight_init_normal(self.loc_head, 0, 0.01)
+        weight_init_normal(self.cls_head, 0, 0.01)
         bias_init_constant(self.cls_head[-1], inverse_sigmoid(0.01))
 
     def forward(self, *ps):
@@ -123,7 +125,6 @@ class RetinaHead(nn.Module):
             cls_p = to_pred(self.cls_head(p), self.num_classes)
             cls_preds.append(cls_p)
         return loc_preds, cls_preds
-
 
 
 class SSDHead(nn.Module):
@@ -147,25 +148,31 @@ class SSDHead(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels_list))
-        self.preds = nn.ModuleList([
+        self.loc_heads = nn.ModuleList([
             nn.Sequential(
                 get_norm_layer('default', c),
-                Conv2d(c, n * (num_classes + 4), kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
+                Conv2d(c, n * 4, kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
+            )
+            for c, n in zip(in_channels_list, num_anchors)
+        ])
+        self.cls_heads = nn.ModuleList([
+            nn.Sequential(
+                get_norm_layer('default', c),
+                Conv2d(c, n * num_classes, kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
             )
             for c, n in zip(in_channels_list, num_anchors)
         ])
 
         if focal_init:
-            for p in self.preds:
-                get_last_conv(p).bias.data[4:].fill_(inverse_sigmoid(0.01))
+            for p in self.cls_heads:
+                get_last_conv(p).bias.data.fill_(inverse_sigmoid(0.01))
 
     def forward(self, *ps):
-        preds = [pred(p) for p, pred in zip(ps, self.preds)]
         loc_preds = []
         cls_preds = []
-        for p in preds:
-            p = to_pred(p, 4 + self.num_classes)
-            loc_preds.append(p[..., :4])
-            cls_preds.append(p[..., 4:])
-
+        for p, loc_head, cls_head in zip(ps, self.loc_heads, self.cls_heads):
+            loc_p = to_pred(loc_head(p), 4)
+            cls_p = to_pred(cls_head(p), self.num_classes)
+            loc_preds.append(loc_p)
+            cls_preds.append(cls_p)
         return loc_preds, cls_preds

@@ -1,7 +1,7 @@
 from torchvision.datasets.utils import check_integrity
 
 
-def download_google_drive(file_id, root, filename, md5):
+def download_google_drive(file_id, root, filename, md5=None):
     fpath = root / filename
 
     root.mkdir(exist_ok=True)

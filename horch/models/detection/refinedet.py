@@ -51,7 +51,7 @@ class RefineDet(nn.Module):
         self.tcbs.append(
             TransferConnection(in_channels_list[-1], f_channels, last=True, lite=lite)
         )
-        self.d_head = SSDHead(num_anchors, num_classes, [f_channels] * len(in_channels_list), lite=lite)
+        self.d_head = SSDHead(num_anchors, num_classes, [f_channels] * len(in_channels_list), lite=lite, focal_init=False)
 
     def forward(self, *cs):
         r_loc_preds, r_cls_preds = self.r_head(*cs)
