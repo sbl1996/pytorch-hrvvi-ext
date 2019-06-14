@@ -121,3 +121,11 @@ def bias_init_constant(module, val):
             if m.bias is not None:
                 nn.init.constant_(m.bias, val)
     module.apply(f)
+
+
+def set_bn_momentum(module, val):
+    def f(m):
+        name = type(m).__name__
+        if "BatchNorm" in name:
+            m.momentum = val
+    module.apply(f)

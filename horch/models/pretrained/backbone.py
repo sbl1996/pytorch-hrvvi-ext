@@ -7,6 +7,7 @@ from pytorchcv.model_provider import get_model as ptcv_get_model
 
 from horch.models.pretrained.mobilenetv3 import mobilenetv3_large
 from horch.models.utils import get_out_channels, calc_out_channels
+from pytorchcv.models.efficientnet import efficientnet_b0b
 
 
 class ShuffleNetV2(nn.Module):
@@ -123,42 +124,60 @@ class MobileNetV2(nn.Module):
         return backbone_forward(self, x)
 
 
-class MobileNetV3(nn.Module):
-    r"""MobileNetV3: Searching for MobileNetV3
+class EfficientNet(nn.Module):
+    r"""EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks
 
-    Args:
-        feature_levels (list of int): features of which layers to output
-            Default: (3, 4, 5)
+    Parameters
+    ----------
+    version : str
+        b0, b1, b2, b3, b4, b5, b6, b7 are avaliable.
+        Default: b0
+    feature_levels (sequence of int): features of which layers to output
+        Default: (3, 4, 5)
     """
 
-    def __init__(self, feature_levels=(3, 4, 5), pretrained=True, **kwargs):
+    def __init__(self, version='b0', feature_levels=(3, 4, 5), pretrained=True, **kwargs):
         super().__init__()
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.feature_levels = feature_levels
-        backbone = mobilenetv3_large(pretrained=pretrained)
-        del backbone.classifier
+        name = 'efficientnet_%sb' % version
+        backbone = ptcv_get_model(name, pretrained=pretrained)
+        del backbone.output
         features = backbone.features
 
-        self.layer1 = features[:2]
+        self.layer1 = nn.Sequential(
+            features.init_block,
+            features.stage1,
+            features.stage2.unit1.conv1,
+        )
         self.layer2 = nn.Sequential(
-            features[2:4],
-            features[4].conv[:3],
+            features.stage2.unit1.conv2,
+            features.stage2.unit1.se,
+            features.stage2.unit1.conv3,
+            features.stage2[1:],
+            features.stage3.unit1.conv1,
         )
         self.layer3 = nn.Sequential(
-            features[4].conv[3:],
-            *features[5:7],
-            features[7].conv[:3],
+            features.stage3.unit1.conv2,
+            features.stage3.unit1.se,
+            features.stage3.unit1.conv3,
+            features.stage3[1:],
+            features.stage4.unit1.conv1,
         )
         self.layer4 = nn.Sequential(
-            features[7].conv[3:],
-            *features[8:13],
-            features[13].conv[:3],
+            features.stage4.unit1.conv2,
+            features.stage4.unit1.se,
+            features.stage4.unit1.conv3,
+            features.stage4[1:],
+            features.stage5.unit1.conv1,
         )
         self.layer5 = nn.Sequential(
-            features[13].conv[3:],
-            *features[14:],
-            backbone.conv
+            features.stage5.unit1.conv2,
+            features.stage5.unit1.se,
+            features.stage5.unit1.conv3,
+            features.stage5[1:],
+            features.final_block
         )
 
         self.out_channels = [
@@ -325,6 +344,53 @@ class Backbone(nn.Module):
             self.layer5 = net.stage4
         self.out_channels = [
             calc_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
+class MobileNetV3(nn.Module):
+    r"""MobileNetV3: Searching for MobileNetV3
+
+    Args:
+        feature_levels (list of int): features of which layers to output
+            Default: (3, 4, 5)
+    """
+
+    def __init__(self, feature_levels=(3, 4, 5), pretrained=True, **kwargs):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+        backbone = mobilenetv3_large(pretrained=pretrained)
+        del backbone.classifier
+        features = backbone.features
+
+        self.layer1 = features[:2]
+        self.layer2 = nn.Sequential(
+            features[2:4],
+            features[4].conv[:3],
+        )
+        self.layer3 = nn.Sequential(
+            features[4].conv[3:],
+            *features[5:7],
+            features[7].conv[:3],
+        )
+        self.layer4 = nn.Sequential(
+            features[7].conv[3:],
+            *features[8:13],
+            features[13].conv[:3],
+        )
+        self.layer5 = nn.Sequential(
+            features[13].conv[3:],
+            *features[14:],
+            backbone.conv
+        )
+
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
             for i in feature_levels
         ]
 
