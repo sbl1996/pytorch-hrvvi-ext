@@ -6,8 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data.dataloader import default_collate
 
-
-from horch.common import ProtectedSeq
+from horch.common import ProtectedSeq, _tuple
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
 from horch.detection.anchor.finder import find_priors_kmeans, find_priors_coco
@@ -47,27 +46,47 @@ def calc_grid_sizes(size, strides, pad_threshold=3):
     return locations[-len(strides):]
 
 
-def calc_anchor_sizes(size, aspect_ratios, scales=(1,), dtype=torch.float32):
-    w, h = _pair(size)
+def calc_anchor_sizes(
+        length,
+        aspect_ratios=(1 / 2, 1 / 1, 2 / 1),
+        scales=tuple(2 ** p for p in [0, 1 / 3, 2 / 3]),
+        device='cpu', dtype=torch.float32):
+    w, h = _tuple(length, 2)
     sw = [w * sqrt(ars) * s for ars in aspect_ratios for s in scales]
     sh = [h / sqrt(ars) * s for ars in aspect_ratios for s in scales]
-    return torch.tensor([sw, sh], dtype=dtype).transpose(1, 0)
+    return torch.tensor([sw, sh], device=device, dtype=dtype).transpose(1, 0)
+
+
+def calc_mlvl_anchor_sizes(
+        lengths=(32, 64, 128, 256, 512),
+        aspect_ratios=(1 / 2, 1 / 1, 2 / 1),
+        scales=tuple(2 ** p for p in [0, 1 / 3, 2 / 3]),
+        device='cpu', dtype=torch.float32):
+    mlvl_anchors_sizes = [
+        calc_anchor_sizes(length, aspect_ratios, scales, device, dtype)
+        for length in lengths
+    ]
+    return torch.stack(mlvl_anchors_sizes)
+
 
 #
-# def generate_mlvl_anchors(input_size, strides, anchor_sizes):
+#
+# def generate_mlvl_anchors(levels=(), lengths=(32, 64, 128, 256, 512), aspect_ratios=(1/2, 1/1, 2/1), scales=):
 #     width, height = input_size
-#     locations = get_locations(input_size, strides)
-#     anchors_of_level = []
-#     for (lx, ly), sizes in zip(locations, anchor_sizes):
-#         anchors = torch.zeros(lx, ly, len(sizes), 4)
+#     strides = [ 2 ** l for l in levels ]
+#     aspect_ratios = torch.tensor(aspect_ratios)
+#     locations = calc_grid_sizes(input_size, strides)
+#     mlvl_anchors = []
+#     for (lx, ly), scale, stride in zip(locations, lengths, strides):
+#         anchors = torch.zeros(lx, ly, len(aspect_ratios), 4)
 #         anchors[:, :, :, 0] = (torch.arange(
-#             lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(sizes)) + 0.5) / lx
+#             lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(aspect_ratios)) + 0.5) / lx
 #         anchors[:, :, :, 1] = (torch.arange(
-#             ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(sizes)) + 0.5) / ly
-#         anchors[:, :, :, 2] = sizes[:, 0] / width
-#         anchors[:, :, :, 3] = sizes[:, 1] / height
-#         anchors_of_level.append(anchors)
-#     return anchors_of_level
+#             ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(aspect_ratios)) + 0.5) / ly
+#         anchors[:, :, :, 2] = (stride * aspect_ratios).view(-1) / width
+#         anchors[:, :, :, 3] = (stride / aspect_ratios).view(-1) / height
+#         mlvl_anchors.append(anchors)
+#     return mlvl_anchors
 
 
 def generate_anchors(input_size, stride=16, aspect_ratios=(1 / 2, 1 / 1, 2 / 1), scales=(32, 64, 128, 256, 512)):
@@ -142,4 +161,3 @@ def generate_mlvl_anchors(grid_sizes, anchor_sizes, device='cpu', dtype=torch.fl
         anchors[:, :, :, 3] = sizes[:, 1]
         mlvl_anchors.append(anchors)
     return mlvl_anchors
-

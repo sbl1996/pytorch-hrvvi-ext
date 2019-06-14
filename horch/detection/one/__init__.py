@@ -48,8 +48,8 @@ class AnchorGenerator(AnchorGeneratorBase):
 
 
 def coords_to_target(gt_box, anchors):
-    box_txty = (gt_box[..., :2] - anchors[..., :2]) / anchors[..., 2:]
-    box_twth = (gt_box[..., 2:] / anchors[..., 2:]).log_()
+    box_txty = (gt_box[..., :2] - anchors[..., :2]) / anchors[..., 2:] / 0.1
+    box_twth = (gt_box[..., 2:] / anchors[..., 2:]).log_() / 0.2
     return torch.cat((box_txty, box_twth), dim=-1)
 
 
@@ -64,8 +64,8 @@ def coords_to_target2(bboxes, anchors):
     """
     bboxes = bboxes[:, None, :]
     anchors = anchors[None, :, :]
-    txty = (bboxes[..., :2] - anchors[..., :2]) / anchors[..., 2:]
-    twth = (bboxes[..., 2:] / anchors[..., 2:]).log_()
+    txty = (bboxes[..., :2] - anchors[..., :2]) / anchors[..., 2:] / 0.1
+    twth = (bboxes[..., 2:] / anchors[..., 2:]).log_() / 0.2
     return torch.cat((txty, twth), dim=-1)
 
 
@@ -242,8 +242,8 @@ class AnchorMatcher:
 
 
 def target_to_coords(loc_t, anchors):
-    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
+    loc_t[..., :2].mul_(0.1).mul_(anchors[:, 2:]).add_(anchors[:, :2])
+    loc_t[..., 2:].mul_(0.2).exp_().mul_(anchors[:, 2:])
     return loc_t
 
 
