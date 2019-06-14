@@ -39,6 +39,16 @@ class ToTensor(JointTransform):
         return VF.to_tensor(img), BoxList(anns)
 
 
+class SubtractMeans(JointTransform):
+    def __init__(self, mean=(123, 117, 104)):
+        super().__init__()
+        self.mean = mean
+
+    def __call__(self, img, anns):
+        img -= img.new_tensor(self.mean).view(-1, 1, 1) / 255
+        return img, anns
+
+
 class RandomExpand(JointTransform):
     """
     Expand the given PIL Image to random size.
@@ -51,9 +61,10 @@ class RandomExpand(JointTransform):
         Range of expand ratio.
     """
 
-    def __init__(self, ratios=(1, 4)):
+    def __init__(self, ratios=(1, 4), mean=0):
         super().__init__()
         self.ratios = ratios
+        self.mean = mean
 
     def __call__(self, img, anns):
         width, height = img.size
@@ -61,7 +72,7 @@ class RandomExpand(JointTransform):
         left = random.uniform(0, width * ratio - width)
         top = random.uniform(0, height * ratio - height)
         expand_image = Image.new(
-            img.mode, (int(width * ratio), int(height * ratio)))
+            img.mode, (int(width * ratio), int(height * ratio)), self.mean)
         expand_image.paste(img, (int(left), int(top)))
 
         new_anns = HF.move(anns, left, top)
@@ -350,7 +361,7 @@ class RandomVerticalFlip(JointTransform):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-def SSDTransform(size, color_jitter=True, scale=(0.1, 1), expand=(1, 4), min_area_frac=0.25):
+def SSDTransform(size, mean=0, color_jitter=True, scale=(0.1, 1), expand=(1, 4), min_area_frac=0.25):
     transforms = []
     if color_jitter:
         transforms.append(
@@ -363,7 +374,7 @@ def SSDTransform(size, color_jitter=True, scale=(0.1, 1), expand=(1, 4), min_are
         )
     transforms += [
         RandomApply([
-            RandomExpand(expand),
+            RandomExpand(expand, mean=mean),
         ]),
         RandomChoice([
             UseOriginal(),
