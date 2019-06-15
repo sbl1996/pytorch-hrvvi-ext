@@ -291,7 +291,7 @@ class CyclicLR(_LRScheduler):
         return 1 / (2. ** (x - 1))
 
     def _exp_range_scale_fn(self, x):
-        return self.gamma**(x)
+        return self.gamma ** (x)
 
     def get_lr(self):
         """Calculates the learning rate at batch index. This function treats
@@ -333,4 +333,55 @@ class CyclicLR(_LRScheduler):
                     betas = param_group['betas']
                     param_group['betas'] = betas.__class__([momentum, *betas[1:]])
 
+        return lrs
+
+
+class CyclicStepLR(_LRScheduler):
+    '''
+    CLass that defines cyclic learning rate that decays the learning rate linearly till the end of cycle and then restarts
+    at the maximum value.
+    '''
+
+    def __init__(self, optimizer, base_lr=0.1, max_lr=0.5, step_size_up=1, step_size_down=4, steps=(
+            50, 100, 130, 160, 190, 220, 250, 280), gamma=0.5, last_epoch=-1):
+        assert len(steps) > 1, 'Please specify step intervals.'
+        self.optimizer = optimizer
+
+        base_lrs = self._format_param('base_lr', optimizer, base_lr)
+        if last_epoch == -1:
+            for lr, group in zip(base_lrs, optimizer.param_groups):
+                group['lr'] = lr
+
+        self.max_lrs = self._format_param('max_lr', optimizer, max_lr)
+
+        self.step_size_up = step_size_up
+        self.step_size_down = step_size_down
+        self.cycle_len = self.step_size_up + self.step_size_down
+        self.steps = steps
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def _format_param(self, name, optimizer, param):
+        if isinstance(param, (list, tuple)):
+            if len(param) != len(optimizer.param_groups):
+                raise ValueError("expected {} values for {}, got {}".format(
+                    len(optimizer.param_groups), name, len(param)))
+            return param
+        else:
+            return [param] * len(optimizer.param_groups)
+
+    def get_lr(self):
+        step = len([ s for s in self.steps if s <= self.last_epoch  ])
+        gamma = self.gamma ** step
+        epoch = self.last_epoch % self.cycle_len
+
+        lrs = []
+        for base_lr, max_lr in zip(self.base_lrs, self.max_lrs):
+            min_lr = base_lr * gamma
+            max_lr = max_lr * gamma
+            if epoch < self.step_size_up:
+                lr = min_lr + epoch / self.step_size_up * (max_lr - min_lr)
+            else:
+                lr = min_lr + (self.cycle_len - epoch) / self.step_size_down * (max_lr - min_lr)
+            lrs.append(lr)
         return lrs

@@ -341,18 +341,20 @@ class Compose:
     def __init__(self, transforms):
         i = 0
         ts = []
-        for i, t in enumerate(transforms):
+        for t in transforms:
             if isinstance(t, Sequence):
                 ts.extend(t)
+                i += 1
             elif isinstance(t, BasicTransform):
                 ts.append(t)
+                i += 1
             else:
                 break
         self.transforms = A.Compose(
             ts,
             bbox_params={'format': 'coco', 'min_area': 0, 'min_visibility': 0.25,
                          'label_fields': ['category_id', 'id', 'image_id', 'parea', 'area', 'iscrowd']})
-        self.post_transforms = transforms[i + 1:]
+        self.post_transforms = transforms[i:]
 
     def __call__(self, img, anns):
         keys = set(k for d in anns for k in d.keys())
