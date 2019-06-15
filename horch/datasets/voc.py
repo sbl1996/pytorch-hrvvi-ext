@@ -5,8 +5,10 @@ import os
 import re
 from pathlib import Path
 
+import cv2
 import xmltodict
 from PIL import Image
+from horch.datasets import get_backend
 from toolz.curried import groupby
 from torch.utils.data import Dataset
 from torchvision.datasets.utils import download_url, check_integrity
@@ -167,15 +169,19 @@ class VOCDetection(Dataset):
         coco = self.coco
         img_id = self.ids[index]
         ann_ids = coco.getAnnIds(imgIds=img_id)
-        target = coco.loadAnns(ann_ids)
+        anns = coco.loadAnns(ann_ids)
 
         path = coco.loadImgs(img_id)[0]['file_name']
 
-        img = Image.open(os.path.join(self.image_dir, path)).convert('RGB')
-        if self.transform is not None:
-            img, target = self.transform(img, target)
+        if get_backend() == 0:
+            img = Image.open(self.image_dir / path).convert('RGB')
+        else:
+            img = cv2.imread(str(self.image_dir / path))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        return img, target
+        if self.transform is not None:
+            img, anns = self.transform(img, anns)
+        return img, anns
 
     def __len__(self):
         return len(self.ids)
@@ -360,6 +366,7 @@ class VOCDetectionConcat(Dataset):
             sample_idx = idx
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+
         img = self.datasets[dataset_idx][sample_idx][0]
         anns = self._img_anns[idx]
         return img, anns

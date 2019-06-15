@@ -8,6 +8,24 @@ from torch.utils.data import Dataset
 from torchvision.transforms import Compose
 from horch.transforms import InputTransform
 
+BACKENDS = {
+    'PIL': 0,
+    'cv2': 1,
+}
+__BACKEND__ = 0
+
+
+def get_backend():
+    global __BACKEND__
+    return __BACKEND__
+
+
+def set_backend(name):
+    assert name in BACKENDS, "%s is not a valid backend, %s are supported." % (name, list(BACKENDS.keys()))
+    global __BACKEND__
+    __BACKEND__ = BACKENDS[name]
+
+
 from horch.datasets.captcha import Captcha, CaptchaDetectionOnline, CaptchaOnline, CaptchaSegmentationOnline
 from horch.datasets.coco import CocoDetection
 from horch.datasets.voc import VOCDetection, VOCSegmentation
