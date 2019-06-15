@@ -7,7 +7,6 @@ from pytorchcv.model_provider import get_model as ptcv_get_model
 
 from horch.models.pretrained.mobilenetv3 import mobilenetv3_large
 from horch.models.utils import get_out_channels, calc_out_channels
-from pytorchcv.models.efficientnet import efficientnet_b0b
 
 
 class ShuffleNetV2(nn.Module):

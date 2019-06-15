@@ -149,17 +149,13 @@ class SSDHead(nn.Module):
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels_list))
         self.loc_heads = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer('default', c),
-                Conv2d(c, n * 4, kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
-            )
+            Conv2d(c, n * 4, kernel_size=3,
+                   depthwise_separable=lite, mid_norm_layer='default')
             for c, n in zip(in_channels_list, num_anchors)
         ])
         self.cls_heads = nn.ModuleList([
-            nn.Sequential(
-                get_norm_layer('default', c),
-                Conv2d(c, n * num_classes, kernel_size=3, depthwise_separable=lite, mid_norm_layer='default')
-            )
+            Conv2d(c, n * num_classes, kernel_size=3,
+                   depthwise_separable=lite, mid_norm_layer='default')
             for c, n in zip(in_channels_list, num_anchors)
         ])
 
