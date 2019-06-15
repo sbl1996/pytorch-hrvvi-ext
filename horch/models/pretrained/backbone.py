@@ -189,6 +189,67 @@ class EfficientNet(nn.Module):
         return backbone_forward(self, x)
 
 
+class ProxylessNAS(nn.Module):
+    r"""EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks
+
+    Parameters
+    ----------
+    version : str
+        gpu, cpu, mobile or mobile14
+        Default: mobile
+    feature_levels (sequence of int): features of which layers to output
+        Default: (3, 4, 5)
+    """
+
+    def __init__(self, version='mobile', feature_levels=(3, 4, 5), pretrained=True, **kwargs):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+        name = 'proxylessnas_%s' % version
+        backbone = ptcv_get_model(name, pretrained=pretrained)
+        del backbone.output
+        features = backbone.features
+
+        self.layer1 = nn.Sequential(
+            features.init_block,
+            features.stage1,
+            features.stage2.unit1.body.bc_conv,
+        )
+        self.layer2 = nn.Sequential(
+            features.stage2.unit1.body.dw_conv,
+            features.stage2.unit1.body.pw_conv,
+            features.stage2[1:],
+            features.stage3.unit1.body.bc_conv,
+        )
+        self.layer3 = nn.Sequential(
+            features.stage3.unit1.body.dw_conv,
+            features.stage3.unit1.body.pw_conv,
+            features.stage3[1:],
+            features.stage4.unit1.body.bc_conv,
+        )
+        self.layer4 = nn.Sequential(
+            features.stage4.unit1.body.dw_conv,
+            features.stage4.unit1.body.pw_conv,
+            features.stage4[1:],
+            features.stage5.unit1.body.bc_conv,
+        )
+        self.layer5 = nn.Sequential(
+            features.stage5.unit1.body.dw_conv,
+            features.stage5.unit1.body.pw_conv,
+            features.stage5[1:],
+            features.final_block
+        )
+
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
 class SqueezeNet(nn.Module):
     r"""SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB models size
 
