@@ -203,7 +203,7 @@ class CyclicLR(_LRScheduler):
                  max_lr,
                  step_size_up=2000,
                  step_size_down=None,
-                 mode='triangular',
+                 mode='auto',
                  gamma=1.,
                  scale_fn=None,
                  scale_mode='cycle',
@@ -230,10 +230,15 @@ class CyclicLR(_LRScheduler):
         self.total_size = step_size_up + step_size_down
         self.step_ratio = step_size_up / self.total_size
 
-        if mode not in ['triangular', 'triangular2', 'exp_range'] \
+        if mode not in ['triangular', 'triangular2', 'exp_range', 'auto'] \
                 and scale_fn is None:
             raise ValueError('mode is invalid and scale_fn is None')
 
+        if mode == 'auto':
+            if max_lr / base_lr >= 10:
+                mode = 'exp'
+            else:
+                mode = 'triangular'
         self.mode = mode
         self.gamma = gamma
 
