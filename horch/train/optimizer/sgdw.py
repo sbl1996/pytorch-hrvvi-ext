@@ -80,7 +80,6 @@ class SGDW(Optimizer):
             loss = closure()
 
         for group in self.param_groups:
-            weight_decay = group['weight_decay']
             momentum = group['momentum']
             dampening = group['dampening']
             nesterov = group['nesterov']
@@ -101,8 +100,8 @@ class SGDW(Optimizer):
                     else:
                         d_p = buf
 
-                if weight_decay != 0:
-                    weight_decay = group['lr'] / group['initial_lr'] * weight_decay
+                if group['weight_decay'] != 0:
+                    weight_decay = group['lr'] / group['initial_lr'] * group['weight_decay']
                     p.data.sub_(weight_decay, p.data)
                 p.data.add_(-group['lr'], d_p)
 

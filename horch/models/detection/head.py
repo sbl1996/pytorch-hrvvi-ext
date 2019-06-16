@@ -80,7 +80,8 @@ def _make_head(f_channels, num_layers, out_channels, lite):
     for i in range(num_layers):
         layers.append(Conv2d(f_channels, f_channels, kernel_size=3,
                              norm_layer='default', activation='default', depthwise_separable=lite))
-    layers.append(Conv2d(f_channels, out_channels, kernel_size=3))
+    layers.append(Conv2d(f_channels, out_channels, kernel_size=3,
+                         mid_norm_layer='default', depthwise_separable=lite))
     return nn.Sequential(*layers)
 
 

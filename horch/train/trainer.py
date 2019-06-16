@@ -66,8 +66,8 @@ def create_supervised_trainer(
             outputs = model(*inputs, *targets)
             loss = criterion(*_tuple(outputs))
         else:
-            preds = model(*inputs)
-            loss = criterion(*_tuple(preds), *targets)
+            preds = _tuple(model(*inputs))
+            loss = criterion(*preds, *targets)
         loss.backward()
         optimizer.step()
         if grad_clip_value:
@@ -423,3 +423,6 @@ class ValSets:
     def log_results(self):
         for v in self.vals:
             v.log_results()
+
+def print_lr(trainer):
+    print(trainer.optimizer.param_groups[0]['lr'])

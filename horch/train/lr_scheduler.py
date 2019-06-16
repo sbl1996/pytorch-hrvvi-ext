@@ -272,7 +272,7 @@ class CyclicLR(_LRScheduler):
                 self.base_momentums = list(map(lambda group: group['betas'][0], optimizer.param_groups))
             self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
 
-        super(CyclicLR, self).__init__(optimizer, last_epoch)
+        super().__init__(optimizer, last_epoch)
 
     def _format_param(self, name, optimizer, param):
         """Return correctly formatted lr/momentum for each param group."""
@@ -337,13 +337,13 @@ class CyclicLR(_LRScheduler):
 
 
 class CyclicStepLR(_LRScheduler):
-    '''
-    CLass that defines cyclic learning rate that decays the learning rate linearly till the end of cycle and then restarts
+    r"""
+    Class that defines cyclic learning rate that decays the learning rate linearly till the end of cycle and then restarts
     at the maximum value.
-    '''
+    """
 
     def __init__(self, optimizer, base_lr=0.1, max_lr=0.5, step_size_up=1, step_size_down=4, steps=(
-            50, 100, 130, 160, 190, 220, 250, 280), gamma=0.5, last_epoch=-1):
+            50, 100, 130, 160, 190, 220, 250, 280), gamma=0.5, step_mode='linear', last_epoch=-1):
         assert len(steps) > 1, 'Please specify step intervals.'
         self.optimizer = optimizer
 
@@ -359,6 +359,8 @@ class CyclicStepLR(_LRScheduler):
         self.cycle_len = self.step_size_up + self.step_size_down
         self.steps = steps
         self.gamma = gamma
+        assert step_mode in ['linear', 'exp']
+        self.step_mode = step_mode
         super().__init__(optimizer, last_epoch)
 
     def _format_param(self, name, optimizer, param):
@@ -371,7 +373,7 @@ class CyclicStepLR(_LRScheduler):
             return [param] * len(optimizer.param_groups)
 
     def get_lr(self):
-        step = len([ s for s in self.steps if s <= self.last_epoch  ])
+        step = len([s for s in self.steps if s <= self.last_epoch])
         gamma = self.gamma ** step
         epoch = self.last_epoch % self.cycle_len
 
@@ -380,8 +382,14 @@ class CyclicStepLR(_LRScheduler):
             min_lr = base_lr * gamma
             max_lr = max_lr * gamma
             if epoch < self.step_size_up:
-                lr = min_lr + epoch / self.step_size_up * (max_lr - min_lr)
+                if self.step_mode == 'linear':
+                    lr = min_lr + epoch / self.step_size_up * (max_lr - min_lr)
+                elif self.step_mode == 'exp':
+                    lr = min_lr * ((max_lr / min_lr) ** (epoch / self.step_size_up))
             else:
-                lr = min_lr + (self.cycle_len - epoch) / self.step_size_down * (max_lr - min_lr)
+                if self.step_mode == 'linear':
+                    lr = min_lr + (self.cycle_len - epoch) / self.step_size_down * (max_lr - min_lr)
+                elif self.step_mode == 'exp':
+                    lr = min_lr * ((max_lr / min_lr) ** ((self.cycle_len - epoch) / self.step_size_down))
             lrs.append(lr)
         return lrs
