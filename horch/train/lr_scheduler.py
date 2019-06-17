@@ -236,7 +236,7 @@ class CyclicLR(_LRScheduler):
 
         if mode == 'auto':
             if max_lr / base_lr >= 10:
-                mode = 'exp'
+                mode = 'exp_range'
             else:
                 mode = 'triangular'
         self.mode = mode
