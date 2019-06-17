@@ -181,7 +181,7 @@ class SSDHead(nn.Module):
 
 class ConvHead(nn.Module):
     r"""
-    Head of SSD.
+    Simplest SSD-style head with just 1x1 convs.
 
     Parameters
     ----------
@@ -191,9 +191,8 @@ class ConvHead(nn.Module):
         Number of classes.
     in_channels_list : sequence of ints
         Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
-    lite : bool
-        Whether to replace conv3x3 with depthwise seperable conv.
-        Default: False
+    focal_init : bool
+        Whether to initialize the last layer of cls_head according to Focal Loss.
     """
 
     def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=False):
