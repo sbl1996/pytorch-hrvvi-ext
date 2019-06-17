@@ -51,8 +51,7 @@ class SharedDWConvHead(nn.Module):
         self.num_classes = num_classes
         self.conv = DWConv2d(
             in_channels, f_channels, kernel_size=5,
-            mid_norm_layer='default', norm_layer='default',
-            activation='default')
+            norm_layer='default', activation='default')
         self.loc_conv = Conv2d(
             f_channels, num_anchors * 4, kernel_size=1)
         self.cls_conv = Conv2d(
@@ -145,17 +144,18 @@ class SSDHead(nn.Module):
         Default: False
     """
 
-    def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=False, lite=False):
+    def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=False, lite=False, large_kernel=False):
         super().__init__()
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels_list))
+        kernel_size = 5 if (lite and large_kernel) else 3
         self.loc_heads = nn.ModuleList([
-            Conv2d(c, n * 4, kernel_size=3,
+            Conv2d(c, n * 4, kernel_size=kernel_size,
                    depthwise_separable=lite, mid_norm_layer='default')
             for c, n in zip(in_channels_list, num_anchors)
         ])
         self.cls_heads = nn.ModuleList([
-            Conv2d(c, n * num_classes, kernel_size=3,
+            Conv2d(c, n * num_classes, kernel_size=kernel_size,
                    depthwise_separable=lite, mid_norm_layer='default')
             for c, n in zip(in_channels_list, num_anchors)
         ])

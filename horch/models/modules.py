@@ -326,7 +326,6 @@ class SELayerM(nn.Module):
         return x * s
 
 
-@curry
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
              padding='same', bias=True, mid_norm_layer='default',
