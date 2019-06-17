@@ -400,7 +400,7 @@ class CyclicStepLR(_LRScheduler):
         return lrs
 
 
-class OneCyclicLR(_LRScheduler):
+class OneCyclePolicy(_LRScheduler):
     """Sets the learning rate of each parameter group according to
     cyclical learning rate policy (CLR). The policy cycles the learning
     rate between two boundaries with a constant frequency, as detailed in
@@ -412,82 +412,65 @@ class OneCyclicLR(_LRScheduler):
     `step` should be called after a batch has been used for training.
 
     This class has three built-in policies, as put forth in the paper:
-    "triangular":
-        A basic triangular cycle w/ no amplitude scaling.
-    "triangular2":
-        A basic triangular cycle that scales initial amplitude by half each cycle.
-    "exp_range":
-        A cycle that scales initial amplitude by gamma**(cycle iterations) at each
-        cycle iteration.
+    "linear":
+        Learning rates cycle between two boundaries linearly.
+    "exp":
+        Learning rates cycle between two boundaries exponentially.
 
     This implementation was adapted from the github repo: `bckenstler/CLR`_
 
-    Args:
-        optimizer (Optimizer): Wrapped optimizer.
-        base_lr (float or list): Initial learning rate which is the
-            lower boundary in the cycle for each parameter group.
-        max_lr (float or list): Upper learning rate boundaries in the cycle
-            for each parameter group. Functionally,
-            it defines the cycle amplitude (max_lr - base_lr).
-            The lr at any cycle is the sum of base_lr
-            and some scaling of the amplitude; therefore
-            max_lr may not actually be reached depending on
-            scaling function.
-        step_size_up (int): Number of training iterations in the
-            increasing half of a cycle. Default: 2000
-        step_size_down (int): Number of training iterations in the
-            decreasing half of a cycle. If step_size_down is None,
-            it is set to step_size_up. Default: None
-        mode (str): One of {triangular, triangular2, exp_range}.
-            Values correspond to policies detailed above.
-            If scale_fn is not None, this argument is ignored.
-            Default: 'triangular'
-        gamma (float): Constant in 'exp_range' scaling function:
-            gamma**(cycle iterations)
-            Default: 1.0
-        scale_fn (function): Custom scaling policy defined by a single
-            argument lambda function, where
-            0 <= scale_fn(x) <= 1 for all x >= 0.
-            If specified, then 'mode' is ignored.
-            Default: None
-        scale_mode (str): {'cycle', 'iterations'}.
-            Defines whether scale_fn is evaluated on
-            cycle number or cycle iterations (training
-            iterations since start of cycle).
-            Default: 'cycle'
-        cycle_momentum (bool): If ``True``, momentum is cycled inversely
-            to learning rate between 'base_momentum' and 'max_momentum'.
-            Default: True
-        momentum_key (str): momentum for SGD or betas for Adam.
-            Default: 'momentum'
-        base_momentum (float or list): Initial momentum which is the
-            lower boundary in the cycle for each parameter group.
-            Default: 0.8
-        max_momentum (float or list): Upper momentum boundaries in the cycle
-            for each parameter group. Functionally,
-            it defines the cycle amplitude (max_momentum - base_momentum).
-            The momentum at any cycle is the difference of max_momentum
-            and some scaling of the amplitude; therefore
-            base_momentum may not actually be reached depending on
-            scaling function. Default: 0.9
-        last_epoch (int): The index of the last batch. This parameter is used when
-            resuming a training job. Since `step()` should be invoked after each
-            batch instead of after each epoch, this number represents the total
-            number of *batches* computed, not the total number of epochs computed.
-            When last_epoch=-1, the schedule is started from the beginning.
-            Default: -1
-
-    Example:
-        >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
-        >>> scheduler = torch.optim.CyclicLR(optimizer)
-        >>> data_loader = torch.utils.data.DataLoader(...)
-        >>> for epoch in range(10):
-        >>>     for batch in data_loader:
-        >>>         train_batch(...)
-        >>>         scheduler.step()
+    Parameters
+    ----------
+    optimizer : Optimizer
+        Wrapped optimizer.
+    base_lr : float or list
+        Initial learning rate which is the lower boundary in the cycle for each parameter group.
+    max_lr : float or list
+        Upper learning rate boundaries in the cycle
+        for each parameter group. Functionally,
+        it defines the cycle amplitude (max_lr - base_lr).
+        The lr at any cycle is the sum of base_lr
+        and some scaling of the amplitude; therefore
+        max_lr may not actually be reached depending on
+        scaling function.
+    step_size : int
+        Number of training iterations in the
+        increasing half and decreasing half of a cycle.
+    mode (str): One of {linear, exp}.
+        Values correspond to policies detailed above.
+        Default: 'linear'
+    end_step_size : int
+        Number of iterations in the end stage after the cycle.
+    gamma : float
+        Number of scale factor in the end stage
+        when lr will decrease from base_lr to base_lr * gamma.
+        Default: 0.01
+    cycle_momentum : bool
+        If ``True``, momentum is cycled inversely
+        to learning rate between 'base_momentum' and 'max_momentum'.
+        Default: True
+    base_momentum : float or list
+        Initial momentum which is the
+        lower boundary in the cycle for each parameter group.
+        Default: 0.8
+    max_momentum : float or list
+        Upper momentum boundaries in the cycle for each parameter group.
+        Functionally, it defines the cycle amplitude (max_momentum - base_momentum).
+        The momentum at any cycle is the difference of max_momentum
+        and some scaling of the amplitude; therefore
+        base_momentum may not actually be reached depending on
+        scaling function. Default: 0.9
+    last_epoch : int
+        The index of the last batch. This parameter is used when
+        resuming a training job. Since `step()` should be invoked after each
+        batch instead of after each epoch, this number represents the total
+        number of *batches* computed, not the total number of epochs computed.
+        When last_epoch=-1, the schedule is started from the beginning.
+        Default: -1
 
 
     .. _Cyclical Learning Rates for Training Neural Networks: https://arxiv.org/abs/1506.01186
+    .. _Super Convegence: https://arxiv.org/abs/708.07120
     .. _bckenstler/CLR: https://github.com/bckenstler/CLR
     """
 
@@ -497,7 +480,7 @@ class OneCyclicLR(_LRScheduler):
                  max_lr,
                  step_size,
                  mode='linear',
-                 end_steps=1,
+                 end_step_size=1,
                  gamma=0.01,
                  cycle_momentum=True,
                  base_momentum=0.85,
@@ -524,7 +507,7 @@ class OneCyclicLR(_LRScheduler):
             raise ValueError('mode is invalid.')
 
         self.mode = mode
-        self.end_steps = end_steps
+        self.end_steps = end_step_size
         self.gamma = gamma
 
         self.cycle_momentum = cycle_momentum

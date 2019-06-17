@@ -28,7 +28,7 @@ def set_backend(name):
 
 from horch.datasets.captcha import Captcha, CaptchaDetectionOnline, CaptchaOnline, CaptchaSegmentationOnline
 from horch.datasets.coco import CocoDetection
-from horch.datasets.voc import VOCDetection, VOCSegmentation
+from horch.datasets.voc import VOCDetection, VOCSegmentation, VOCDetectionConcat
 from horch.datasets.svhn import SVHNDetection
 
 

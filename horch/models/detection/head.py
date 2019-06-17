@@ -177,3 +177,48 @@ class SSDHead(nn.Module):
             loc_preds.append(loc_p)
             cls_preds.append(cls_p)
         return loc_preds, cls_preds
+
+
+class ConvHead(nn.Module):
+    r"""
+    Head of SSD.
+
+    Parameters
+    ----------
+    num_anchors : int or tuple of ints
+        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
+    num_classes : int
+        Number of classes.
+    in_channels_list : sequence of ints
+        Number of input channels of every level, e.g., ``(256,512,1024,256,256,128)``
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    """
+
+    def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=False):
+        super().__init__()
+        self.num_classes = num_classes
+        num_anchors = _tuple(num_anchors, len(in_channels_list))
+        self.loc_heads = nn.ModuleList([
+            Conv2d(c, n * 4, kernel_size=1)
+            for c, n in zip(in_channels_list, num_anchors)
+        ])
+        self.cls_heads = nn.ModuleList([
+            Conv2d(c, n * num_classes, kernel_size=1)
+            for c, n in zip(in_channels_list, num_anchors)
+        ])
+
+        if focal_init:
+            for p in self.cls_heads:
+                get_last_conv(p).bias.data.fill_(inverse_sigmoid(0.01))
+
+    def forward(self, *ps):
+        loc_preds = []
+        cls_preds = []
+        for p, loc_head, cls_head in zip(ps, self.loc_heads, self.cls_heads):
+            loc_p = to_pred(loc_head(p), 4)
+            cls_p = to_pred(cls_head(p), self.num_classes)
+            loc_preds.append(loc_p)
+            cls_preds.append(cls_p)
+        return loc_preds, cls_preds
