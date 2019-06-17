@@ -113,7 +113,11 @@ class RetinaHead(nn.Module):
 
         weight_init_normal(self.loc_head, 0, 0.01)
         weight_init_normal(self.cls_head, 0, 0.01)
-        bias_init_constant(self.cls_head[-1], inverse_sigmoid(0.01))
+
+        fc = self.cls_head[-1]
+        if lite:
+            fc = fc[-1]
+        bias_init_constant(fc, inverse_sigmoid(0.01))
 
     def forward(self, *ps):
         loc_preds = []
