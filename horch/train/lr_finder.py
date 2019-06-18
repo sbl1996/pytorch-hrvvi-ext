@@ -73,7 +73,8 @@ class LRFinder(object):
         self,
         train_loader,
         val_loader=None,
-        end_lr=10,
+        base_lr=1e-7,
+        max_lr=10,
         num_iter=100,
         step_mode="exp",
         smooth_f=0.05,
@@ -88,7 +89,8 @@ class LRFinder(object):
                 evaluated after each iteration on that dataset and the evaluation loss
                 is used. Note that in this mode the test takes significantly longer but
                 generally produces more precise results. Default: None.
-            end_lr (float, optional): the maximum learning rate to test. Default: 10.
+            base_lr (float, optional): the minimum learning rate to test. Default: 1e-7.
+            max_lr (float, optional): the maximum learning rate to test. Default: 10.
             num_iter (int, optional): the number of iterations over which the test
                 occurs. Default: 100.
             step_mode (str, optional): one of the available learning rate policies,
@@ -108,15 +110,10 @@ class LRFinder(object):
         self.model.to(self.device)
 
         # Initialize the proper learning rate policy
-        if step_mode.lower() == "exp":
-            lr_schedule = ExponentialLR(self.optimizer, end_lr, num_iter)
-        elif step_mode.lower() == "linear":
-            lr_schedule = LinearLR(self.optimizer, end_lr, num_iter)
-        else:
-            raise ValueError("expected one of (exp, linear), got {}".format(step_mode))
+        lr_scheduler = CyclicalLR(self.optimizer, base_lr, max_lr, num_iter=num_iter, mode=step_mode.lower())
 
         if smooth_f < 0 or smooth_f >= 1:
-            raise ValueError("smooth_f is outside the range [0, 1[")
+            raise ValueError("smooth_f is outside the range [0, 1]")
 
         # Create an iterator to get data batch by batch
         iterator = iter(train_loader)
@@ -134,8 +131,8 @@ class LRFinder(object):
                 loss = self._validate(val_loader)
 
             # Update the learning rate
-            lr_schedule.step()
-            self.history["lr"].append(lr_schedule.get_lr()[0])
+            lr_scheduler.step()
+            self.history["lr"].append(lr_scheduler.get_lr()[0])
 
             # Track the best loss and smooth it if smooth_f is specified
             if iteration == 0:
@@ -230,54 +227,58 @@ class LRFinder(object):
         plt.show()
 
 
-class LinearLR(_LRScheduler):
+class CyclicalLR(_LRScheduler):
     """Linearly increases the learning rate between two boundaries over a number of
     iterations.
 
     Arguments:
         optimizer (torch.optim.Optimizer): wrapped optimizer.
-        end_lr (float, optional): the initial learning rate which is the lower
+        base_lr (float, optional): the initial learning rate which is the lower
+            boundary of the test. Default: 10.
+        max_lr (float, optional): the initial learning rate which is the lower
             boundary of the test. Default: 10.
         num_iter (int, optional): the number of iterations over which the test
             occurs. Default: 100.
+        mode (str): linear or exp
         last_epoch (int): the index of last epoch. Default: -1.
 
     """
 
-    def __init__(self, optimizer, end_lr, num_iter, last_epoch=-1):
-        self.end_lr = end_lr
+    def __init__(self, optimizer, base_lr, max_lr, num_iter, mode='linear', last_epoch=-1):
+        self.optimizer = optimizer
+
+        base_lrs = self._format_param('base_lr', optimizer, base_lr)
+        if last_epoch == -1:
+            for lr, group in zip(base_lrs, optimizer.param_groups):
+                group['lr'] = lr
+
+        self.max_lrs = self._format_param('max_lr', optimizer, max_lr)
+
         self.num_iter = num_iter
-        super(LinearLR, self).__init__(optimizer, last_epoch)
+        self.mode = mode
+        super().__init__(optimizer, last_epoch)
+
+    def _format_param(self, name, optimizer, param):
+        """Return correctly formatted lr/momentum for each param group."""
+        if isinstance(param, (list, tuple)):
+            if len(param) != len(optimizer.param_groups):
+                raise ValueError("expected {} values for {}, got {}".format(
+                    len(optimizer.param_groups), name, len(param)))
+            return param
+        else:
+            return [param] * len(optimizer.param_groups)
 
     def get_lr(self):
         curr_iter = self.last_epoch + 1
         r = curr_iter / self.num_iter
-        return [base_lr + r * (self.end_lr - base_lr) for base_lr in self.base_lrs]
-
-
-class ExponentialLR(_LRScheduler):
-    """Exponentially increases the learning rate between two boundaries over a number of
-    iterations.
-
-    Arguments:
-        optimizer (torch.optim.Optimizer): wrapped optimizer.
-        end_lr (float, optional): the initial learning rate which is the lower
-            boundary of the test. Default: 10.
-        num_iter (int, optional): the number of iterations over which the test
-            occurs. Default: 100.
-        last_epoch (int): the index of last epoch. Default: -1.
-
-    """
-
-    def __init__(self, optimizer, end_lr, num_iter, last_epoch=-1):
-        self.end_lr = end_lr
-        self.num_iter = num_iter
-        super(ExponentialLR, self).__init__(optimizer, last_epoch)
-
-    def get_lr(self):
-        curr_iter = self.last_epoch + 1
-        r = curr_iter / self.num_iter
-        return [base_lr * (self.end_lr / base_lr) ** r for base_lr in self.base_lrs]
+        lrs = []
+        for base_lr, max_lr in zip(self.base_lrs, self.max_lrs):
+            if self.mode == 'linear':
+                lr = base_lr + r * (max_lr - base_lr)
+            else:
+                lr = base_lr * ((max_lr / base_lr) ** r)
+            lrs.append(lr)
+        return lrs
 
 
 class StateCacher(object):
