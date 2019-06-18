@@ -485,7 +485,7 @@ class OneCyclePolicy(_LRScheduler):
                  cycle_momentum=True,
                  base_momentum=0.85,
                  max_momentum=0.95,
-                 cycle_wd=True,
+                 cycle_wd=False,
                  last_epoch=-1):
 
         if not isinstance(optimizer, Optimizer):
