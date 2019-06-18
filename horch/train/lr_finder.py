@@ -188,7 +188,7 @@ class LRFinder(object):
                 if torch.is_tensor(outputs):
                     outputs = (outputs,)
                 loss = self.criterion(*outputs, *targets)
-                running_loss += loss.item() * inputs.size(0)
+                running_loss += loss.item() * inputs[0].size(0)
 
         return running_loss / len(data_loader.dataset)
 

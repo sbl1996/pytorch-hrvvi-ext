@@ -485,6 +485,7 @@ class OneCyclePolicy(_LRScheduler):
                  cycle_momentum=True,
                  base_momentum=0.85,
                  max_momentum=0.95,
+                 cycle_wd=True,
                  last_epoch=-1):
 
         if not isinstance(optimizer, Optimizer):
@@ -510,17 +511,25 @@ class OneCyclePolicy(_LRScheduler):
         self.end_steps = end_step_size
         self.gamma = gamma
 
+        self.cycle_wd = cycle_wd
         self.cycle_momentum = cycle_momentum
         if cycle_momentum:
-            if 'momentum' not in optimizer.defaults:
+            if 'momentum' in optimizer.defaults:
+                self.momentum_key = 'momentum'
+            elif 'betas' in optimizer.defaults:
+                self.momentum_key = 'betas'
+            else:
                 raise ValueError('optimizer must support momentum with `cycle_momentum` option enabled')
 
             base_momentums = self._format_param('base_momentum', optimizer, base_momentum)
             if last_epoch == -1:
                 for momentum, group in zip(base_momentums, optimizer.param_groups):
-                    if 'momentum' in group:
-                        group['momentum'] = momentum
-            self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+                    self.set_momentum(group, momentum)
+
+            if self.momentum_key == 'momentum':
+                self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+            elif self.momentum_key == 'betas':
+                self.base_momentums = list(map(lambda group: group['betas'][0], optimizer.param_groups))
             self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
 
         super().__init__(optimizer, last_epoch)
@@ -535,6 +544,13 @@ class OneCyclePolicy(_LRScheduler):
         else:
             return [param] * len(optimizer.param_groups)
 
+    def set_momentum(self, param_group, momentum):
+        if self.momentum_key == 'momentum':
+            param_group['momentum'] = momentum
+        elif self.momentum_key == 'betas':
+            betas = param_group['betas']
+            param_group['betas'] = betas.__class__([momentum, *betas[1:]])
+
     def get_lr(self):
         """Calculates the learning rate at batch index. This function treats
         `self.last_epoch` as the last batch index.
@@ -543,14 +559,25 @@ class OneCyclePolicy(_LRScheduler):
         updating the optimizer's momentum.
         """
         last_epoch = self.last_epoch
+        lrs = []
+        init_lr = self.optimizer.defaults['lr']
+        wd = self.optimizer.defaults['weight_decay']
 
         if last_epoch >= self.total_size + self.end_steps:
-            lrs = [base_lr * self.gamma for base_lr in self.base_lrs]
+            for base_lr, param_group in zip(self.base_lrs, self.optimizer.param_groups):
+                lr = base_lr * self.gamma
+                lrs.append(lr)
+                if self.cycle_wd and wd != 0:
+                    param_group['weight_decay'] = init_lr * wd / base_lr
+
+            if self.cycle_momentum:
+                for param_group, max_momentum in zip(self.optimizer.param_groups, self.max_momentums):
+                    self.set_momentum(param_group, max_momentum)
+
         elif last_epoch >= self.total_size:
             epoch = last_epoch - self.total_size
             scale_factor = 1 - epoch / self.end_steps
-            lrs = []
-            for base_lr in self.base_lrs:
+            for base_lr, param_group in zip(self.base_lrs, self.optimizer.param_groups):
                 max_lr = base_lr
                 min_lr = base_lr * self.gamma
                 if self.mode == 'linear':
@@ -558,10 +585,13 @@ class OneCyclePolicy(_LRScheduler):
                 else:
                     lr = min_lr * ((max_lr / min_lr) ** scale_factor)
                 lrs.append(lr)
+                if self.cycle_wd and wd != 0:
+                    param_group['weight_decay'] = init_lr * wd / base_lr
 
             if self.cycle_momentum:
                 for param_group, max_momentum in zip(self.optimizer.param_groups, self.max_momentums):
-                    param_group['momentum'] = max_momentum
+                    self.set_momentum(param_group, max_momentum)
+
         else:
             cycle = math.floor(1 + last_epoch / self.total_size)
             x = 1. + last_epoch / self.total_size - cycle
@@ -570,13 +600,14 @@ class OneCyclePolicy(_LRScheduler):
             else:
                 scale_factor = (x - 1) / (self.step_ratio - 1)
 
-            lrs = []
-            for base_lr, max_lr in zip(self.base_lrs, self.max_lrs):
+            for base_lr, max_lr, param_group in zip(self.base_lrs, self.max_lrs, self.optimizer.param_groups):
                 if self.mode == 'linear':
                     lr = base_lr + (max_lr - base_lr) * scale_factor
                 else:
                     lr = base_lr * ((max_lr / base_lr) ** scale_factor)
                 lrs.append(lr)
+                if self.cycle_wd and wd != 0:
+                    param_group['weight_decay'] = init_lr * wd / lr
 
             if self.cycle_momentum:
                 momentums = []
@@ -587,6 +618,6 @@ class OneCyclePolicy(_LRScheduler):
                         momentum = base_momentum * ((max_momentum / base_momentum) ** scale_factor)
                     momentums.append(momentum)
                 for param_group, momentum in zip(self.optimizer.param_groups, momentums):
-                    param_group['momentum'] = momentum
+                    self.set_momentum(param_group, momentum)
 
         return lrs

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from horch.common import _tuple
 from horch.models.defaults import get_default_activation, get_default_norm_layer
+from torch import nn as nn
 
 
 def hardsigmoid(x, inplace=False):
@@ -549,3 +550,33 @@ class DropBlockScheduled(nn.Module):
             self.dropblock.drop_prob += self.step_size
 
         self.i += 1
+
+
+class MBConv(nn.Module):
+    def __init__(self, in_channels, channels, out_channels, kernel_size, stride=1, se_ratio=1 / 16):
+        super().__init__()
+
+        self.conv = nn.Sequential()
+        self.conv.add_module("bn", get_norm_layer('default', in_channels))
+        if in_channels != channels:
+            self.conv.add_module("expand", Conv2d(in_channels, channels, kernel_size=1,
+                                                  norm_layer='default', activation='default'))
+
+        self.conv.add_module("dwconv", Conv2d(channels, channels, kernel_size, stride=stride, groups=channels,
+                                              norm_layer='default', activation='default'))
+
+        if se_ratio:
+            assert 0 < se_ratio < 1
+            self.conv.add_module("se", SEModule(channels, reduction=int(1 / se_ratio)))
+
+        if out_channels is not None:
+            self.conv.add_module("project", Conv2d(channels, out_channels, kernel_size=1,
+                                                   norm_layer='default'))
+        self.use_res_connect = stride == 1 and in_channels == out_channels
+
+    def forward(self, x):
+        identity = x
+        x = self.conv(x)
+        if self.use_res_connect:
+            x += identity
+        return x

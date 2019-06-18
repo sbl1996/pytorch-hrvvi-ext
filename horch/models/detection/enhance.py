@@ -1,10 +1,8 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.models.detection.nasfpn import ReLUConvBN
 
-from horch.models.modules import upsample_add, Conv2d, Sequential, get_norm_layer, Pool, upsample_concat, SEModule
-from horch.models.detection.m2det import M2Det
+from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat, MBConv
 from horch.models.detection.nasfpn import NASFPN
 
 
@@ -330,43 +328,6 @@ class IDA2(nn.Module):
             return self.deep(*xs)
         else:
             return xs[0]
-
-
-class MBConv(nn.Module):
-    def __init__(self, in_channels, channels, out_channels, kernel_size, se_ratio=1/16):
-        super().__init__()
-
-        if in_channels != channels:
-            self.expand = Conv2d(in_channels, channels, kernel_size=1,
-                                 norm_layer='default', activation='default')
-        else:
-            self.expand = nn.Identity()
-
-        self.dwconv = Conv2d(channels, channels, kernel_size, stride=1, groups=channels,
-                             norm_layer='default',
-                             activation='default')
-
-        self.has_se = se_ratio is not None and 0 < se_ratio < 1
-        if self.has_se:
-            self.se = SEModule(channels, reduction=int(1/se_ratio))
-
-        if out_channels is not None:
-            self.project = Conv2d(channels, out_channels, kernel_size=1,
-                                  norm_layer='default')
-        else:
-            self.project = nn.Identity()
-        self.use_res_connect = in_channels == out_channels
-
-    def forward(self, x):
-        identity = x
-        x = self.expand(x)
-        x = self.dwconv(x)
-        if self.has_se:
-            x = self.se(x)
-        x = self.project(x)
-        if self.use_res_connect:
-            x += identity
-        return x
 
 
 class YOLOFPN(nn.Module):
