@@ -42,6 +42,8 @@ def calc_grid_sizes(size, strides, pad_threshold=3):
             ly -= 2
         else:
             ly = (ly - 1) // 2 + 1
+        lx = max(lx, 1)
+        ly = max(ly, 1)
         locations.append((lx, ly))
     return locations[-len(strides):]
 
