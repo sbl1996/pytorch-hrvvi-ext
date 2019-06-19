@@ -74,7 +74,7 @@ class SharedDWConvHead(nn.Module):
         return loc_p, cls_p
 
 
-class RetinaMBHead(nn.Module):
+class RetinaLiteHead(nn.Module):
     r"""
     Head of RetinaNet.
 
@@ -102,13 +102,13 @@ class RetinaMBHead(nn.Module):
         ])
         self.num_classes = num_classes
         self.loc_head = self._make_head(
-            f_channels, num_layers, num_anchors * 4)
+            num_layers, f_channels, num_anchors * 4)
         self.cls_head = self._make_head(
-            f_channels, num_layers, num_anchors * num_classes)
+            num_layers, f_channels, num_anchors * num_classes)
 
         bias_init_constant(self.cls_head[-1][1], inverse_sigmoid(0.01))
 
-    def _make_head(self, f_channels, out_channels, num_layers):
+    def _make_head(self, num_layers, f_channels, out_channels):
         layers = []
         for i in range(num_layers):
             layers.append(MBConv(f_channels, f_channels * self.expand_ratio, f_channels, kernel_size=5))
