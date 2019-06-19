@@ -121,7 +121,8 @@ class RetinaLiteHead(nn.Module):
     def forward(self, *ps):
         loc_preds = []
         cls_preds = []
-        for p in ps:
+        for p, proj in zip(ps, self.projects):
+            p = proj(p)
             loc_p = to_pred(self.loc_head(p), 4)
             loc_preds.append(loc_p)
 
