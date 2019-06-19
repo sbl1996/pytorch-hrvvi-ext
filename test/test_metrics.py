@@ -1,7 +1,8 @@
 import numpy as np
 
 from horch.detection import BBox
-from horch.train.metrics import mAP
+from horch.detection.eval import mean_average_precision
+from toolz.curried import groupby
 
 
 def test_mAP():
@@ -32,11 +33,11 @@ def test_mAP():
         (7, 0, [33, 116, 37, 49], .95),
     ]
     detections = [BBox(
-        image_name=d[0],
-        class_id=d[1],
-        box=d[2],
-        confidence=d[3],
-        box_format=BBox.LTWH,
+        image_id=d[0],
+        category_id=d[1],
+        bbox=d[2],
+        score=d[3],
+        format=BBox.LTWH,
     ) for d in detections]
 
     ground_truths = [
@@ -57,10 +58,21 @@ def test_mAP():
         (7, 0, [58, 67, 50, 58]),
     ]
     ground_truths = [BBox(
-        image_name=d[0],
-        class_id=d[1],
-        box=d[2],
-        box_format=BBox.LTWH,
+        image_id=d[0],
+        category_id=d[1],
+        bbox=d[2],
+        score=1.0,
+        format=BBox.LTWH,
     ) for d in ground_truths]
+
+    # np.testing.assert_allclose(
+    #     mean_average_precision(detections, ground_truths, iou_threshold=0.295), 0.2456867)
+
+    image_gts = groupby(lambda x: x.image_id, ground_truths)
+    image_dts = groupby(lambda x: x.image_id, detections)
+    batch_size = len(image_gts)
     np.testing.assert_allclose(
-        mAP(detections, ground_truths, iou_threshold=0.295), 0.2456867)
+        np.mean([
+            mean_average_precision(image_dts[i], image_gts[i], iou_threshold=0.3)
+            for i in image_gts.keys()
+        ]), 0.2456867)

@@ -11,14 +11,14 @@ from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
 from horch.detection.anchor.finder import find_priors_kmeans, find_priors_coco
 from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
-from horch.detection.eval import mAP
+from horch.detection.eval import mean_average_precision
 
 __all__ = [
     "BBox", "nms", "soft_nms_cpu",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
     "calc_grid_sizes", "calc_anchor_sizes", "generate_anchors",
     "generate_mlvl_anchors", "generate_anchors_with_priors",
-    "find_priors_kmeans", "mAP", "find_priors_coco", "softer_nms_cpu"
+    "find_priors_kmeans", "mean_average_precision", "find_priors_coco", "softer_nms_cpu"
 ]
 
 

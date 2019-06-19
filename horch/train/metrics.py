@@ -1,7 +1,4 @@
-from copy import deepcopy
-
 from PIL import Image
-from horch.transforms.detection.functional import to_absolute_coords
 from toolz import curry
 from toolz.curried import get
 
@@ -17,7 +14,8 @@ from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
 from horch.functools import lmap
-from horch.detection import mAP, BBox
+from horch.detection import BBox
+from horch.detection.eval import mean_average_precision
 
 
 class Average(Metric):
@@ -380,14 +378,14 @@ class CocoAveragePrecision(Average):
             for igts in image_gts
         ]
 
-        values = np.array([np.mean([mAP(image_dets[i], image_gts[i],
+        values = np.array([np.mean([mean_average_precision(image_dets[i], image_gts[i],
                                         threshold) for i in range(batch_size)])
                            for threshold in self.iou_threshold])
         values = self.get_value(values)
         return values, batch_size
 
 
-class MeanAveragePrecision(Average):
+class MeanAveragePrecision(Metric):
     r"""
     Args:
 
@@ -398,44 +396,28 @@ class MeanAveragePrecision(Average):
 
     def __init__(self, iou_threshold=0.5):
         self.iou_threshold = iou_threshold
-        super().__init__(self.output_transform)
+        super().__init__()
 
-    def output_transform(self, output):
+    def reset(self):
+        self.dts = []
+        self.gts = []
+
+    def update(self, output):
         target, image_dets, batch_size = get(
             ["target", "preds", "batch_size"], output)
         image_gts = target[0]
 
-        for dets, gts in zip(image_dets, image_gts):
+        for dts, gts in zip(image_dets, image_gts):
             image_id = gts[0]['image_id']
-            for d in dets:
-                d['image_id'] = image_id
+            for d in dts:
+                d = {**d, 'image_id': image_id}
+                self.dts.append(d)
+            self.gts.extend(gts)
 
-        image_dets = [
-            [BBox(**ann, format=BBox.LTWH) for ann in idets]
-            for idets in image_dets
-        ]
-        image_gts = [
-            [BBox(**ann, format=BBox.LTWH) for ann in igts]
-            for igts in image_gts
-        ]
-        values = np.mean([mAP(image_dets[i], image_gts[i],
-                              self.iou_threshold) for i in range(batch_size)])
-        return values, batch_size
+    def compute(self):
+        dts = [BBox(**ann, format=BBox.LTWH) for ann in self.dts]
+        gts = [BBox(**ann, format=BBox.LTWH) for ann in self.gts]
 
+        mAP = mean_average_precision(dts, gts, iou_threshold=self.iou_threshold)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        return mAP
