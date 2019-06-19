@@ -80,7 +80,7 @@ class BasicBlock(nn.Module):
 
 
 class SSDExtraLayers(nn.Module):
-    def __init__(self, in_channels_list, extra_layers=(6, 7), f_channels=None, no_padding=-1, lite=False):
+    def __init__(self, in_channels_list, extra_layers=(6, 7, 8), f_channels=None, no_padding=-1, lite=False):
         super().__init__()
         in_channels = in_channels_list[-1]
         self.extra_layers = nn.ModuleList([])

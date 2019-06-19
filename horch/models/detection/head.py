@@ -2,7 +2,7 @@ from math import log
 
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, DWConv2d, get_norm_layer
+from horch.models.modules import Conv2d, DWConv2d, get_norm_layer, MBConv
 from horch.models.utils import weight_init_normal, bias_init_constant, get_last_conv
 from horch.common import _tuple, _concat, inverse_sigmoid
 
@@ -72,6 +72,62 @@ class SharedDWConvHead(nn.Module):
         loc_p = _concat(loc_preds, dim=1)
         cls_p = _concat(cls_preds, dim=1)
         return loc_p, cls_p
+
+
+class RetinaMBHead(nn.Module):
+    r"""
+    Head of RetinaNet.
+
+    Parameters
+    ----------
+    num_anchors : int or tuple of ints
+        Number of anchors of every level, e.g., ``(4,6,6,6,6,4)`` or ``6``
+    num_classes : int
+        Number of classes.
+    f_channels : int
+        Number of feature channels.
+    num_layers : int
+        Number of conv layers in each subnet.
+    lite : bool
+        Whether to replace conv3x3 with depthwise seperable conv.
+        Default: False
+    """
+
+    def __init__(self, num_anchors, num_classes, in_channels_list, f_channels=256, expand_ratio=4, num_layers=4):
+        super().__init__()
+        self.expand_ratio = expand_ratio
+        self.projects = nn.ModuleList([
+            MBConv(c, c, f_channels, kernel_size=5)
+            for c in in_channels_list
+        ])
+        self.num_classes = num_classes
+        self.loc_head = self._make_head(
+            f_channels, num_layers, num_anchors * 4)
+        self.cls_head = self._make_head(
+            f_channels, num_layers, num_anchors * num_classes)
+
+        bias_init_constant(self.cls_head[-1][1], inverse_sigmoid(0.01))
+
+    def _make_head(self, f_channels, out_channels, num_layers):
+        layers = []
+        for i in range(num_layers):
+            layers.append(MBConv(f_channels, f_channels * self.expand_ratio, f_channels, kernel_size=5))
+        layers.append(nn.Sequential(
+            get_norm_layer('default', f_channels),
+            Conv2d(f_channels, out_channels, kernel_size=1),
+        ))
+        return nn.Sequential(*layers)
+
+    def forward(self, *ps):
+        loc_preds = []
+        cls_preds = []
+        for p in ps:
+            loc_p = to_pred(self.loc_head(p), 4)
+            loc_preds.append(loc_p)
+
+            cls_p = to_pred(self.cls_head(p), self.num_classes)
+            cls_preds.append(cls_p)
+        return loc_preds, cls_preds
 
 
 def _make_head(f_channels, num_layers, out_channels, lite):
@@ -154,13 +210,19 @@ class SSDHead(nn.Module):
         num_anchors = _tuple(num_anchors, len(in_channels_list))
         kernel_size = 5 if (lite and large_kernel) else 3
         self.loc_heads = nn.ModuleList([
-            Conv2d(c, n * 4, kernel_size=kernel_size,
-                   depthwise_separable=lite, mid_norm_layer='default')
+            nn.Sequential(
+                get_norm_layer("default", c),
+                Conv2d(c, n * 4, kernel_size=kernel_size,
+                        depthwise_separable=lite, mid_norm_layer='default')
+            )
             for c, n in zip(in_channels_list, num_anchors)
         ])
         self.cls_heads = nn.ModuleList([
-            Conv2d(c, n * num_classes, kernel_size=kernel_size,
-                   depthwise_separable=lite, mid_norm_layer='default')
+            nn.Sequential(
+                get_norm_layer("default", c),
+                Conv2d(c, n * num_classes, kernel_size=kernel_size,
+                        depthwise_separable=lite, mid_norm_layer='default')
+            )
             for c, n in zip(in_channels_list, num_anchors)
         ])
 
@@ -200,11 +262,17 @@ class ConvHead(nn.Module):
         self.num_classes = num_classes
         num_anchors = _tuple(num_anchors, len(in_channels_list))
         self.loc_heads = nn.ModuleList([
-            Conv2d(c, n * 4, kernel_size=1)
+            nn.Sequential(
+                get_norm_layer("default", c),
+                Conv2d(c, n * 4, kernel_size=1)
+            )
             for c, n in zip(in_channels_list, num_anchors)
         ])
         self.cls_heads = nn.ModuleList([
-            Conv2d(c, n * num_classes, kernel_size=1)
+            nn.Sequential(
+                get_norm_layer("default", c),
+                Conv2d(c, n * num_classes, kernel_size=1)
+            )
             for c, n in zip(in_channels_list, num_anchors)
         ])
 

@@ -130,6 +130,7 @@ def match_anchors(anns, centers, corners, pos_thresh=0.7, neg_thresh=0.3,
     cls_t[indices] = labels
 
     ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
+
     return loc_t, cls_t, ignore
 
 
