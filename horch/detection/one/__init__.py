@@ -53,6 +53,12 @@ def coords_to_target(gt_box, anchors):
     return torch.cat((box_txty, box_twth), dim=-1)
 
 
+def target_to_coords(loc_t, anchors):
+    loc_t[..., :2].mul_(0.1).mul_(anchors[:, 2:]).add_(anchors[:, :2])
+    loc_t[..., 2:].mul_(0.2).exp_().mul_(anchors[:, 2:])
+    return loc_t
+
+
 def coords_to_target2(bboxes, anchors):
     r"""
     Parameters
@@ -69,21 +75,19 @@ def coords_to_target2(bboxes, anchors):
     return torch.cat((txty, twth), dim=-1)
 
 
-def match_anchors2(anns, centers, corners, pos_thresh=0.7, neg_thresh=0.3,
-                   get_label=lambda x: x['category_id'], debug=False):
+def match_anchors2(bboxes, labels, centers, corners, pos_thresh=0.7, neg_thresh=0.3, debug=False):
     num_anchors = len(centers)
-    if len(anns) == 0:
+    if len(bboxes) == 0:
         loc_t = centers.new_zeros(num_anchors, 4)
         cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
         ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8) if neg_thresh else None
         return loc_t, cls_t, ignore
 
-    bboxes = centers.new_tensor([ann['bbox'] for ann in anns])
+    bboxes = centers.new_tensor(bboxes)
     bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = centers.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
+    labels = centers.new_tensor(labels, dtype=torch.long)
 
-    bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
-    ious = iou_mn(bboxes_ltrb, corners)
+    ious = iou_mn(BBox.convert(bboxes, BBox.XYWH, BBox.LTRB), corners)
 
     pos = ious > pos_thresh
     cls_t, indices = (pos.long() * labels[:, None]).max(dim=0)
@@ -97,26 +101,25 @@ def match_anchors2(anns, centers, corners, pos_thresh=0.7, neg_thresh=0.3,
     cls_t[max_indices] = labels
 
     ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
+
     return loc_t, cls_t, ignore
 
 
 @curry
-def match_anchors(anns, centers, corners, pos_thresh=0.7, neg_thresh=0.3,
-                  get_label=lambda x: x['category_id'], debug=False):
+def match_anchors(bboxes, labels, centers, corners, pos_thresh=0.7, neg_thresh=0.3, debug=False):
     num_anchors = len(centers)
     loc_t = centers.new_zeros(num_anchors, 4)
     cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
 
-    if len(anns) == 0:
+    if len(bboxes) == 0:
         ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8) if neg_thresh else None
         return loc_t, cls_t, ignore
 
-    bboxes = loc_t.new_tensor([ann['bbox'] for ann in anns])
+    bboxes = loc_t.new_tensor(bboxes)
     bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = loc_t.new_tensor([get_label(ann) for ann in anns], dtype=torch.long)
+    labels = loc_t.new_tensor(labels, dtype=torch.long)
 
-    bboxes_ltrb = BBox.convert(bboxes, BBox.XYWH, BBox.LTRB)
-    ious = iou_mn(bboxes_ltrb, corners)
+    ious = iou_mn(BBox.convert(bboxes, BBox.XYWH, BBox.LTRB), corners)
 
     pos = ious > pos_thresh
     for ipos, bbox, label in zip(pos, bboxes, labels):
@@ -167,7 +170,7 @@ class MatchAnchors:
         assert generator.with_corners
         self.generator = generator
         self.levels = levels
-        self.strides = [ 2 ** l for l in levels ]
+        self.strides = [2 ** l for l in levels]
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
@@ -178,14 +181,19 @@ class MatchAnchors:
         grid_sizes = calc_grid_sizes((width, height), self.strides)
         grid_sizes = [torch.Size(s) for s in grid_sizes]
         centers, corners = get(["centers", "corners"], self.generator(grid_sizes, x.device, x.dtype))
+        bboxes = []
+        labels = []
+        for ann in anns:
+            bboxes.append(ann['bbox'])
+            labels.append(self.get_label(ann))
         loc_t, cls_t, ignore = match_anchors(
-            anns, centers, corners,
-            self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
+            bboxes, labels, centers, corners,
+            self.pos_thresh, self.neg_thresh, self.debug)
 
-        targets = [loc_t, cls_t]
         if ignore is not None:
-            targets.append(ignore)
-        return x, targets
+            return x, [loc_t, cls_t, ignore]
+        else:
+            return x, [loc_t, cls_t]
 
 
 class AnchorMatcher:
@@ -223,13 +231,18 @@ class AnchorMatcher:
         grid_sizes = [f.size()[-2:][::-1] for f in features]
         centers, corners = get(["centers", "corners"],
                                self.generator(grid_sizes, features[0].device, features[0].dtype))
+        bboxes = []
+        labels = []
+        for anns in box_lists:
+            bboxes.append([ann['bbox'] for ann in anns])
+            labels.append([self.get_label(ann) for ann in anns])
         loc_targets = []
         cls_targets = []
         ignores = []
         for i in range(batch_size):
             loc_t, cls_t, ignore = match_func(
-                box_lists[i], centers, corners,
-                self.pos_thresh, self.neg_thresh, self.get_label, self.debug)
+                bboxes[i], labels[i], centers, corners,
+                self.pos_thresh, self.neg_thresh, self.debug)
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
             ignores.append(ignore)
@@ -240,12 +253,6 @@ class AnchorMatcher:
             return loc_t, cls_t, ignore
         else:
             return loc_t, cls_t
-
-
-def target_to_coords(loc_t, anchors):
-    loc_t[..., :2].mul_(0.1).mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[..., 2:].mul_(0.2).exp_().mul_(anchors[:, 2:])
-    return loc_t
 
 
 def flatten_preds(*preds):
@@ -415,53 +422,6 @@ def anchor_based_inference(
     return BoxList(dets)
 
 
-class KLFocalLoss(nn.Module):
-
-    def __init__(self, p=0.01, prefix=""):
-        super().__init__()
-        self.p = p
-        self.prefix = prefix
-
-    def forward(self, loc_p, cls_p, log_var_p, loc_t, cls_t, ignore=None, *args):
-        pos = cls_t != 0
-        neg = ~pos
-        if ignore is not None:
-            neg = neg & ~ignore
-        num_pos = pos.sum().item()
-        if num_pos == 0:
-            return loc_p.new_tensor(0, requires_grad=True)
-        if loc_p.size()[:-1] == pos.size():
-            loc_p = loc_p[pos]
-            log_var_p = log_var_p[pos]
-        if loc_t.size()[:-1] == pos.size():
-            loc_t = loc_t[pos]
-
-        loc_loss = loc_kl_loss(
-            loc_p, log_var_p, loc_t, reduction='sum') / num_pos
-
-        if cls_p.ndimension() - cls_t.ndimension() == 1:
-            cls_t = one_hot(cls_t, C=cls_p.size(-1))
-        else:
-            cls_t = cls_t.float()
-        if ignore is not None:
-            cls_loss_pos = focal_loss2(cls_p[pos], cls_t[pos], reduction='sum')
-            cls_p_neg = cls_p[neg]
-            cls_loss_neg = focal_loss2(cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
-            cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
-        else:
-            cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
-
-        loss = cls_loss + loc_loss
-        if random.random() < self.p:
-            if self.prefix:
-                print("[%s] loc: %.4f | cls: %.4f" %
-                      (self.prefix, loc_loss.item(), cls_loss.item()))
-            else:
-                print("loc: %.4f | cls: %.4f" %
-                      (loc_loss.item(), cls_loss.item()))
-        return loss
-
-
 class AnchorBasedInference:
     r"""
     Parameters
@@ -480,6 +440,7 @@ class AnchorBasedInference:
     min_score : float
         Minimal score used in soft nms.
     """
+
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
                  conf_strategy='softmax', nms='soft', min_score=None):

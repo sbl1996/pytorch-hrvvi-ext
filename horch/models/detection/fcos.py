@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, _tuple
+from horch.common import one_hot, tuplify
 from horch.detection import soft_nms_cpu, BBox, nms, calc_grid_sizes
 from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.detection.one import flatten, flatten_preds
@@ -45,7 +45,7 @@ __all__ = [
 def get_mlvl_centers(grid_sizes, strides, device='cpu', dtype=torch.float32):
     mlvl_centers = []
     for (lx, ly), stride in zip(grid_sizes, strides):
-        sw, sh = _tuple(stride, 2)
+        sw, sh = tuplify(stride, 2)
         centers = torch.zeros(lx, ly, 2, device=device, dtype=dtype)
         centers[..., 0] = (torch.arange(
             lx, device=device, dtype=dtype).view(lx, 1).expand(lx, ly) * sw + sw // 2)

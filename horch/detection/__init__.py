@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data.dataloader import default_collate
 
-from horch.common import ProtectedSeq, _tuple
+from horch.common import ProtectedSeq, tuplify
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11, iou_b11, iou_1m, iou_mn
 from horch.detection.anchor.finder import find_priors_kmeans, find_priors_coco
@@ -53,7 +53,7 @@ def calc_anchor_sizes(
         aspect_ratios=(1 / 2, 1 / 1, 2 / 1),
         scales=tuple(2 ** p for p in [0, 1 / 3, 2 / 3]),
         device='cpu', dtype=torch.float32):
-    w, h = _tuple(length, 2)
+    w, h = tuplify(length, 2)
     sw = [w * sqrt(ars) * s for ars in aspect_ratios for s in scales]
     sh = [h / sqrt(ars) * s for ars in aspect_ratios for s in scales]
     return torch.tensor([sw, sh], device=device, dtype=dtype).transpose(1, 0)

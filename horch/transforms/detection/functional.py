@@ -6,7 +6,7 @@ import numpy as np
 from toolz import curry
 from toolz.curried import get
 
-from horch.common import _tuple
+from horch.common import tuplify
 
 __all__ = [
     "resize", "resized_crop", "center_crop", "drop_boundary_bboxes",
@@ -152,7 +152,7 @@ def center_crop(anns, size, output_size):
         Desired output size of the crop. If size is an int instead of sequence like (w, h),
         a square crop (size, size) is made.
     """
-    output_size = _tuple(output_size, 2)
+    output_size = tuplify(output_size, 2)
     output_size = tuple(int(x) for x in output_size)
     w, h = size
     th, tw = output_size

@@ -11,7 +11,7 @@ from ignite.engine import Engine, Events
 from ignite.handlers import Timer
 from tensorboardX import SummaryWriter
 
-from horch.common import CUDA, detach, _tuple
+from horch.common import CUDA, detach, tuplify
 from horch.train.metrics import TrainLoss, Loss
 from horch.train._utils import _prepare_batch, set_lr
 from torch.nn.utils import clip_grad_value_
@@ -34,7 +34,7 @@ def create_supervised_evaluator(model, metrics=None,
                 preds = model.inference(*input)
             else:
                 preds = model(*input)
-            preds = _tuple(preds)
+            preds = tuplify(preds)
             output = {
                 "preds": preds,
                 "target": target,
@@ -64,9 +64,9 @@ def create_supervised_trainer(
         inputs, targets = prepare_batch(batch, device=device)
         if targets_as_inputs:
             outputs = model(*inputs, *targets)
-            loss = criterion(*_tuple(outputs))
+            loss = criterion(*tuplify(outputs))
         else:
-            preds = _tuple(model(*inputs))
+            preds = tuplify(model(*inputs))
             loss = criterion(*preds, *targets)
         loss.backward()
         optimizer.step()

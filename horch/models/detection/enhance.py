@@ -1,9 +1,12 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.models.detection.nasfpn import ReLUConvBN
 
-from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat, MBConv
+from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat, MBConv, get_norm_layer, \
+    get_activation
 from horch.models.detection.nasfpn import NASFPN
+from horch.models.detection.dsod import DSOD
 
 
 class TopDown(nn.Module):
@@ -64,30 +67,28 @@ class FPNExtraLayers(nn.Module):
         return tuple(ps)
 
 
-class BasicBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=2, lite=False):
+class BasicBlock(nn.Sequential):
+    def __init__(self, in_channels, out_channels, reduction=2, stride=2, lite=False):
         super().__init__()
-        self.conv1 = Conv2d(in_channels, out_channels // 2, kernel_size=1,
+        self.conv1 = Conv2d(in_channels, out_channels // reduction, kernel_size=1,
                             norm_layer='default', activation='default')
         padding = 1 if stride == 2 else 0
-        self.conv2 = Conv2d(out_channels // 2, out_channels, kernel_size=3, stride=2, padding=padding,
+        self.conv2 = Conv2d(out_channels // reduction, out_channels, kernel_size=3, stride=2, padding=padding,
                             norm_layer='default', activation='default', depthwise_separable=lite)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        return x
 
 
 class SSDExtraLayers(nn.Module):
-    def __init__(self, in_channels_list, extra_layers=(6, 7, 8), f_channels=None, no_padding=-1, lite=False):
+    def __init__(self, in_channels_list, extra_layers=(6, 7, 8), f_channels=256, reduction=2, no_padding=-1, lite=False):
         super().__init__()
-        in_channels = in_channels_list[-1]
-        self.extra_layers = nn.ModuleList([])
-        for _ in extra_layers:
-            l = BasicBlock(in_channels, f_channels, lite=lite)
+        in_channels_list = list(in_channels_list)
+        self.extra_layers = nn.ModuleList([
+            BasicBlock(in_channels_list[-1], f_channels * 2, reduction=reduction, lite=lite)
+        ])
+        in_channels_list.append(f_channels * 2)
+        for _ in extra_layers[1:]:
+            l = BasicBlock(in_channels_list[-1], f_channels,reduction=reduction, lite=lite)
             self.extra_layers.append(l)
-            in_channels = f_channels
+            in_channels_list.append(f_channels)
 
         for i in range(no_padding, 0):
             l = self.extra_layers[i].conv2[0]
@@ -96,13 +97,64 @@ class SSDExtraLayers(nn.Module):
             l.stride = (1, 1)
             l.padding = (0, 0)
 
-        self.out_channels = in_channels_list + [f_channels] * len(extra_layers)
+        self.out_channels = in_channels_list
 
     def forward(self, *cs):
         ps = list(cs)
         for l in self.extra_layers:
             ps.append(l(ps[-1]))
         return tuple(ps)
+
+
+class SSDLiteExtraLayers(nn.Module):
+    def __init__(self, in_channels_list, num_extra_layers=3, f_channels=256, expand_ratio=4, kernel_size=3, no_padding=-1):
+        super().__init__()
+        in_channels = in_channels_list[-1]
+        self.extra_layers = nn.ModuleList([])
+        for _ in range(num_extra_layers):
+            l = MBConv(in_channels, f_channels * expand_ratio, f_channels, kernel_size=kernel_size, stride=2)
+            self.extra_layers.append(l)
+            in_channels = f_channels
+
+        for i in range(no_padding, 0):
+            l = self.extra_layers[i].dwconv[0]
+            l.stride = (1, 1)
+            l.padding = (0, 0)
+
+        self.out_channels = in_channels_list + [f_channels] * num_extra_layers
+
+    def forward(self, *cs):
+        ps = list(cs)
+        for l in self.extra_layers:
+            ps.append(l(ps[-1]))
+        return tuple(ps)
+
+
+class PreActBasicBlock(nn.Sequential):
+    def __init__(self, in_channels, out_channels, reduction=2, stride=2, lite=False):
+        super().__init__()
+        self.bn1 = get_norm_layer("default", in_channels)
+        self.relu1 = get_activation("default")
+        self.conv1 = Conv2d(in_channels, out_channels // reduction, kernel_size=1)
+        self.bn2 = get_norm_layer("default", out_channels // reduction)
+        self.relu2 = get_activation("default")
+        self.conv2 = Conv2d(out_channels // reduction, out_channels, kernel_size=3, stride=2)
+
+
+class DeepSupervision(nn.Module):
+    def __init__(self, in_chanels, channels):
+        super().__init__()
+        self.left = PreActBasicBlock(in_chanels, channels // 2, reduction=1)
+        self.right = nn.Sequential(
+            nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=True),
+            get_norm_layer("default", in_chanels),
+            get_activation("default"),
+            Conv2d(in_chanels, channels // 2, kernel_size=1, norm_layer='default'),
+        )
+
+    def forward(self, x):
+        x = torch.cat([self.left(x), self.right(x)], dim=1)
+        return x
 
 
 class FPN(nn.Module):

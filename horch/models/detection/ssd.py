@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import _tuple
+from horch.common import tuplify
 from horch.models.modules import Conv2d
 from horch.models.detection.head import SSDHead
 
@@ -31,9 +31,9 @@ class SSD(nn.Module):
                  f_channels=256, extra_levels=(6,7,8),
                  pad_last=False, lite=False):
         super().__init__()
-        extra_levels = _tuple(extra_levels)
+        extra_levels = tuplify(extra_levels)
         feature_levels = backbone.feature_levels + extra_levels
-        num_anchors = _tuple(num_anchors, len(feature_levels))
+        num_anchors = tuplify(num_anchors, len(feature_levels))
         self.num_classes = num_classes
         self.backbone = backbone
         self.feature_levels = feature_levels

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import _tuple
+from horch.common import tuplify
 
 from horch.models.modules import Conv2d, get_activation
 from horch.models.detection.head import RetinaHead
@@ -17,7 +17,7 @@ class RetinaNet(nn.Module):
         self.num_classes = num_classes
         self.backbone = backbone
         backbone_channels = backbone.out_channels
-        self.extra_levels = _tuple(extra_levels)
+        self.extra_levels = tuplify(extra_levels)
         if 6 in extra_levels:
             self.layer6 = Conv2d(
                 backbone_channels[-1], f_channels, kernel_size=3, stride=2,

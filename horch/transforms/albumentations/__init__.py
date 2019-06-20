@@ -9,7 +9,7 @@ from albumentations import DualTransform, denormalize_bbox, denormalize_bboxes, 
 from albumentations import BasicTransform
 import albumentations.augmentations.functional as F
 from albumentations.pytorch import ToTensor as AToTensor
-from horch.common import _tuple
+from horch.common import tuplify
 from toolz import first
 
 
@@ -397,5 +397,5 @@ def zip_dict(d, keys):
 
 
 def Resize(size):
-    w, h = _tuple(size, 2)
+    w, h = tuplify(size, 2)
     return A.Resize(h, w)

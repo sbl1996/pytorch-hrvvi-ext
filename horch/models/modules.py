@@ -1,10 +1,12 @@
+from collections import OrderedDict
+
 from toolz import curry
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import _tuple
+from horch.common import tuplify
 from horch.models.defaults import get_default_activation, get_default_norm_layer
 from torch import nn as nn
 
@@ -133,6 +135,26 @@ def get_activation(name):
         return Swish()
     else:
         raise NotImplementedError("No activation named %s" % name)
+
+
+def PreConv2d(in_channels, out_channels,
+              kernel_size, stride=1,
+              padding='same', dilation=1, groups=1, bias=False,
+              norm_layer='default', activation='default'):
+    if padding == 'same':
+        if isinstance(kernel_size, tuple):
+            kh, kw = kernel_size
+            ph = (kh - 1) // 2
+            pw = (kw - 1) // 2
+            padding = (ph, pw)
+        else:
+            padding = (kernel_size - 1) // 2
+    return nn.Sequential(OrderedDict([
+        ("bn", get_norm_layer(norm_layer, in_channels)),
+        ("relu", get_activation(activation)),
+        ("conv", nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
+                           padding=padding, dilation=dilation, groups=groups, bias=bias))
+    ]))
 
 
 def Conv2d(in_channels, out_channels,
@@ -345,7 +367,7 @@ class Sequential(nn.Sequential):
 
     def forward(self, *xs):
         for module in self._modules.values():
-            xs = module(*_tuple(xs))
+            xs = module(*tuplify(xs))
         return xs
     #
     # def inference(self, *xs):
@@ -546,37 +568,39 @@ class DropBlockScheduled(nn.Module):
 
     def step(self):
         idx = self.i.item()  # TODO (drop on restart)
-        if idx > self.start_step and idx < self.start_step + self.nr_steps:
+        if self.start_step < idx < self.start_step + self.nr_steps:
             self.dropblock.drop_prob += self.step_size
 
         self.i += 1
 
 
-class MBConv(nn.Module):
+class MBConv(nn.Sequential):
     def __init__(self, in_channels, channels, out_channels, kernel_size, stride=1, se_ratio=1 / 16):
         super().__init__()
 
-        self.conv = nn.Sequential()
-        self.conv.add_module("bn", get_norm_layer('default', in_channels))
+        self.add_module("bn", get_norm_layer('default', in_channels))
         if in_channels != channels:
-            self.conv.add_module("expand", Conv2d(in_channels, channels, kernel_size=1,
-                                                  norm_layer='default', activation='default'))
+            self.add_module("expand", Conv2d(in_channels, channels, kernel_size=1,
+                                             norm_layer='default', activation='default'))
 
-        self.conv.add_module("dwconv", Conv2d(channels, channels, kernel_size, stride=stride, groups=channels,
-                                              norm_layer='default', activation='default'))
+        self.add_module("dwconv", Conv2d(channels, channels, kernel_size, stride=stride, groups=channels,
+                                         norm_layer='default', activation='default'))
 
         if se_ratio:
             assert 0 < se_ratio < 1
-            self.conv.add_module("se", SEModule(channels, reduction=int(1 / se_ratio)))
+            self.add_module("se", SEModule(channels, reduction=int(1 / se_ratio)))
 
         if out_channels is not None:
-            self.conv.add_module("project", Conv2d(channels, out_channels, kernel_size=1,
-                                                   norm_layer='default'))
+            self.add_module("project", Conv2d(channels, out_channels, kernel_size=1,
+                                              norm_layer='default'))
         self.use_res_connect = stride == 1 and in_channels == out_channels
 
     def forward(self, x):
         identity = x
-        x = self.conv(x)
+        x = super().forward(x)
         if self.use_res_connect:
             x += identity
         return x
+
+def seq(*modules):
+    return nn.Sequential(OrderedDict(modules))

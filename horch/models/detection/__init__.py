@@ -5,7 +5,7 @@ from horch.models.modules import Sequential
 from horch.models.detection.ssd import SSD
 from horch.models.detection.retinanet import RetinaNet
 
-from horch.common import _tuple
+from horch.common import tuplify
 
 
 class OneStageDetector(Sequential):
@@ -35,8 +35,8 @@ class OneStageDetector(Sequential):
 
     def forward(self, inputs, targets=None):
         cs = self.backbone(inputs)
-        features = self.fpn(*_tuple(cs))
-        outputs = self.head(*_tuple(features))
+        features = self.fpn(*tuplify(cs))
+        outputs = self.head(*tuplify(features))
         if self.training and self.matcher:
             assert targets is not None, "Targets must be provided in training."
             targets = self.matcher(features, targets)
@@ -48,16 +48,16 @@ class OneStageDetector(Sequential):
         self.eval()
         with torch.no_grad():
             cs = self.backbone(inputs)
-            features = self.fpn(*_tuple(cs))
-            preds = self.head(*_tuple(features))
+            features = self.fpn(*tuplify(cs))
+            preds = self.head(*tuplify(features))
         if self._inference:
-            preds = self._inference(*_tuple(preds))
+            preds = self._inference(*tuplify(preds))
         self.train()
         return preds
 
 
 def split_levels(levels, split_at=5):
-    levels = _tuple(levels)
+    levels = tuplify(levels)
     lo = levels[0]
     hi = levels[-1]
     assert levels == tuple(range(lo, hi + 1))

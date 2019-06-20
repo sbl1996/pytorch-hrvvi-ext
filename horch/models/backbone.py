@@ -5,6 +5,7 @@ from horch.models.mobilenetv3 import mobilenetv3
 from horch.models.snet import SNet as BSNet
 from horch.models.utils import get_out_channels
 from horch.models.darknet import Darknet as BDarknet
+from horch.models.vovnet import get_vovnet
 
 
 def _check_levels(levels):
@@ -327,6 +328,46 @@ class Darknet(nn.Module):
             backbone.down5,
             backbone.layer5,
         )
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
+class VoVNet(nn.Module):
+
+    def __init__(self, version=27, feature_levels=(3, 4, 5), pretrained=False, no_down=0, **kwargs):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+        assert not pretrained, "Pretrained models are not avaliable now."
+
+        if no_down != 0:
+            assert feature_levels == (3, 4) and no_down == -1
+        backbone = get_vovnet(version)
+        del backbone.output
+        f = backbone.features
+        self.layer1 = f.init_block
+        self.layer2 = f.stage1
+        self.layer3 = f.stage2
+        if no_down == 0:
+            self.layer4 = f.stage3
+            self.layer5 = nn.Sequential(
+                f.stage4,
+                f.post_activ
+            )
+        else:
+            del f.stage4.pool
+            self.layer4 = nn.Sequential(
+                f.stage3,
+                f.stage4,
+                f.post_activ
+            )
+
         self.out_channels = [
             get_out_channels(getattr(self, ("layer%d" % i)))
             for i in feature_levels

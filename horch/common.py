@@ -70,7 +70,7 @@ def cpu(t):
         return t
 
 
-def _tuple(x, n=-1):
+def tuplify(x, n=-1):
     if x is None:
         return ()
     elif torch.is_tensor(x):

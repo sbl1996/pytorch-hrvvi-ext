@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from horch.models.modules import Conv2d, DWConv2d, get_norm_layer, MBConv
 from horch.models.utils import weight_init_normal, bias_init_constant, get_last_conv
-from horch.common import _tuple, _concat, inverse_sigmoid
+from horch.common import tuplify, _concat, inverse_sigmoid
 
 
 def to_pred(p, c: int):
@@ -208,7 +208,7 @@ class SSDHead(nn.Module):
     def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=False, lite=False, large_kernel=False):
         super().__init__()
         self.num_classes = num_classes
-        num_anchors = _tuple(num_anchors, len(in_channels_list))
+        num_anchors = tuplify(num_anchors, len(in_channels_list))
         kernel_size = 5 if (lite and large_kernel) else 3
         self.loc_heads = nn.ModuleList([
             nn.Sequential(
@@ -261,7 +261,7 @@ class ConvHead(nn.Module):
     def __init__(self, num_anchors, num_classes, in_channels_list, focal_init=False):
         super().__init__()
         self.num_classes = num_classes
-        num_anchors = _tuple(num_anchors, len(in_channels_list))
+        num_anchors = tuplify(num_anchors, len(in_channels_list))
         self.loc_heads = nn.ModuleList([
             nn.Sequential(
                 get_norm_layer("default", c),

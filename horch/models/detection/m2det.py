@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horch.common import _tuple
+from horch.common import tuplify
 from horch.models.modules import Conv2d, upsample_add, upsample_concat, SEModule, Identity
 
 
@@ -31,7 +31,7 @@ class TUM(nn.Module):
             self.out.append(Conv2d(f_channels, f_channels // 2, kernel_size=1, stride=1,
                                    norm_layer='default', activation='default'))
             in_channels = f_channels
-        no_padding = _tuple(no_padding, 2)
+        no_padding = tuplify(no_padding, 2)
         for i in range(no_padding[0], 0):
             l = self.down[i][0]
             if lite:

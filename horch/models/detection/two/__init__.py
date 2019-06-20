@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import detach, _tuple, _concat, inverse_sigmoid
+from horch.common import detach, tuplify, _concat, inverse_sigmoid
 from horch.models.utils import bias_init_constant, weight_init_normal
 from horch.models.modules import Sequential, Conv2d
 from horch.models.detection.head import to_pred
@@ -82,35 +82,6 @@ class Box2FCHead(nn.Module):
         return loc_p, cls_p
 
 
-class SofterBox2FCHead(nn.Module):
-
-    def __init__(self, num_classes, in_channels, f_channels=256):
-        super().__init__()
-        self.fc1 = Conv2d(in_channels, f_channels, kernel_size=1,
-                          norm_layer='default', activation='default')
-        self.fc2 = Conv2d(f_channels, f_channels, kernel_size=1,
-                          norm_layer='default', activation='default')
-        self.loc_fc = Conv2d(f_channels, 4, kernel_size=1)
-        weight_init_normal(self.loc_fc, 0, 0.001)
-        self.cls_fc = Conv2d(f_channels, num_classes, kernel_size=1)
-        weight_init_normal(self.cls_fc, 0, 0.01)
-        self.box_std_fc = Conv2d(f_channels, 4, kernel_size=1)
-        weight_init_normal(self.box_std_fc, 0, 0.0001)
-
-    def forward(self, *ps):
-        r"""
-        p : torch.Tensor
-            (batch_size * num_rois, C, 14, 14)
-        """
-        ps = [self.fc1(p.view(p.size(0), -1, 1, 1)) for p in ps]
-        p = torch.stack(ps).max(dim=0)[0]
-        p = self.fc2(p)
-        loc_p = self.loc_fc(p).squeeze()
-        cls_p = self.cls_fc(p).squeeze()
-        log_var_p = self.box_std_fc(p).squeeze()
-        return loc_p, cls_p, log_var_p
-
-
 class RPN(Sequential):
     r"""
     A simple composation of backbone, head, inference and optional fpn.
@@ -128,42 +99,61 @@ class RPN(Sequential):
         Optional feature enhance module from `horch.models.detection.enhance`.
     """
 
-    def __init__(self, backbone, fpn, head, inference=None):
+    def __init__(self, backbone, fpn, head, matcher=None, inference=None):
         super().__init__(inference=inference)
         self.backbone = backbone
         self.fpn = fpn
         self.head = head
+        self.matcher = matcher
+        self._inference = inference
         self._e2e = True
 
-    def region_proposal(self, x):
-        cs = self.backbone(x)
-        ps = self.fpn(*cs)
-        ps = _tuple(ps)
-        loc_p, cls_p = self.head(*ps)
-        rois = self._inference(detach(loc_p), detach(cls_p))
-        if self.training and self._e2e:
-            return ps, rois, loc_p, cls_p
+    def forward(self, inputs, targets=None):
+        cs = self.backbone(inputs)
+        features = self.fpn(*tuplify(cs))
+        outputs = self.head(*tuplify(features))
+        if self.training and self.matcher:
+            assert targets is not None, "Targets must be provided in training."
+            targets = self.matcher(features, targets)
+            return (*outputs, *targets)
         else:
-            return ps, rois
+            return outputs
+
+    def region_proposal(self, inptus, targets):
+        cs = self.backbone(inptus)
+        features = self.fpn(*tuplify(cs))
+        features = tuplify(features)
+        loc_p, cls_p = self.head(*features)
+        rois = self._inference(detach(loc_p), detach(cls_p))
+        if self.training:
+            if self.matcher:
+                assert targets is not None, "Targets must be provided in training."
+                targets = self.matcher(features, targets)
+                return (features, rois, loc_p, cls_p) + targets
+            else:
+                if self._e2e:
+                    return features, rois, loc_p, cls_p
+                else:
+                    return features, rois
+        else:
+            return features, rois
 
 
 class FasterRCNN(nn.Module):
-    def __init__(self, match_anchors, rpn, roi_match, roi_pool, box_head, inference):
+    def __init__(self, rpn, roi_matcher, roi_pool, box_head, inference):
         super().__init__()
-        self.match_anchors = match_anchors
         self.rpn = rpn
-        self.roi_match = roi_match
+        self.roi_matcher = roi_matcher
         self.roi_pool = roi_pool
         self.box_head = box_head
         self._inference = inference
         # self._position_sensitive = "PS" in type(self.roi_pool).__name__
 
     def forward(self, x, image_gts=None):
-        rpn_loc_t, rpn_cls_t, ignore = self.match_anchors(image_gts)
+        ps, rois, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore = \
+            self.rpn.region_proposal(x, image_gts)
 
-        ps, rois, rpn_loc_p, rpn_cls_p = self.rpn.region_proposal(x)
-
-        loc_t, cls_t, rois = self.roi_match(rois, image_gts)
+        loc_t, cls_t, rois = self.roi_matcher(rois, image_gts)
 
         ps = [self.roi_pool(p, rois) for p in ps]
         # if self._position_sensitive:

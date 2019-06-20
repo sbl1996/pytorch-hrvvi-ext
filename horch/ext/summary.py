@@ -40,10 +40,10 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             if module not in visited:
                 params = 0
                 if hasattr(module, "weight") and hasattr(module.weight, "size"):
-                    params += torch.prod(torch.LongTensor(list(module.weight.size())))
+                    params += module.weight.size().numel()
                     summary[m_key]["trainable"] = module.weight.requires_grad
                 if hasattr(module, "bias") and hasattr(module.bias, "size"):
-                    params += torch.prod(torch.LongTensor(list(module.bias.size())))
+                    params += module.bias.size().numel()
                 summary[m_key]["nb_params"] = params
                 visited.add(module)
             else:
@@ -130,7 +130,7 @@ def summary(model, input_size, batch_size=-1, dtype=None):
                            batch_size * 4. / (1024 ** 2.)) for size in input_size])
     total_output_size = abs(2. * total_output * 4. /
                             (1024 ** 2.))  # x2 for gradients
-    total_params_size = abs(total_params.numpy() * 4. / (1024 ** 2.))
+    total_params_size = abs(total_params * 4. / (1024 ** 2.))
     total_size = total_params_size + total_output_size + total_input_size
 
     print("================================================================")
