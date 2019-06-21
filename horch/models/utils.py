@@ -60,8 +60,8 @@ def conv_to_atrous(mod, rate):
     def f(m):
         if 'Conv2d' in type(m).__name__ and m.kernel_size != (1, 1):
             kh, kw = m.kernel_size
-            ph = int(((kh - 1) * (rate - 1) + kh - 1) / 2)
-            pw = int(((kw - 1) * (rate - 1) + kw - 1) / 2)
+            ph = ((kh - 1) * (rate - 1) + kh - 1) // 2
+            pw = ((kw - 1) * (rate - 1) + kw - 1) // 2
             m.padding = (ph, pw)
             m.stride = (1, 1)
             m.dilation = (rate, rate)

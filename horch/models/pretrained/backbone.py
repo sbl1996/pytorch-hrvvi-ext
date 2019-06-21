@@ -630,7 +630,7 @@ class VoVNet(nn.Module):
         57: vovnet57,
     }
 
-    def __init__(self, version=27, feature_levels=(3, 4, 5), pretrained=True, no_down=0, **kwargs):
+    def __init__(self, version=27, feature_levels=(3, 4, 5), pretrained=True, no_down=0, atrous=False, **kwargs):
         super().__init__()
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
@@ -650,7 +650,8 @@ class VoVNet(nn.Module):
 
         if no_down:
             del backbone.stage5.Pooling
-            conv_to_atrous(backbone.stage5, rate=2)
+            if atrous:
+                conv_to_atrous(backbone.stage5, rate=2)
             self.layer4 = nn.Sequential(
                 backbone.stage4,
                 backbone.stage5

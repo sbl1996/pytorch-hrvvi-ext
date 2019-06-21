@@ -1,4 +1,5 @@
 import random
+from collections import defaultdict
 
 from horch.common import select, _concat
 from horch.detection import generate_mlvl_anchors, calc_grid_sizes
@@ -27,14 +28,16 @@ def flatten(xs):
 
 
 class AnchorGenerator(AnchorGeneratorBase):
-    def __init__(self, anchor_sizes, flatten=True, with_corners=True, cache=True):
-        super().__init__(cache)
-        self.anchor_sizes = anchor_sizes
+    def __init__(self, levels, anchors, flatten=True, with_corners=True, cache=True):
+        super().__init__(levels, cache)
+        self.anchor_sizes = anchors
         self.flatten = flatten
         self.with_corners = with_corners
 
-    def calculate(self, grid_sizes, device, dtype):
-        anchor_sizes = self.anchor_sizes.to(device=device, dtype=dtype)
+    def calculate(self, size, grid_sizes, device, dtype):
+        width, height = size
+        anchor_sizes = self.anchor_sizes.to(device=device, dtype=dtype, copy=True)
+        anchor_sizes.div_(anchor_sizes.new_tensor([width, height]))
         mlvl_anchors = generate_mlvl_anchors(
             grid_sizes, anchor_sizes, device, dtype)
         if self.flatten:
@@ -164,13 +167,13 @@ class MatchAnchors:
         >>> ])
     """
 
-    def __init__(self, generator, levels, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'],
+    def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'],
                  debug=False):
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator
-        self.levels = levels
-        self.strides = [2 ** l for l in levels]
+        self.levels = generator.levels
+        self.strides = generator.strides
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
@@ -178,9 +181,7 @@ class MatchAnchors:
 
     def __call__(self, x, anns):
         height, width = x.shape[1:3]
-        grid_sizes = calc_grid_sizes((width, height), self.strides)
-        grid_sizes = [torch.Size(s) for s in grid_sizes]
-        centers, corners = get(["centers", "corners"], self.generator(grid_sizes, x.device, x.dtype))
+        centers, corners = get(["centers", "corners"], self.generator((width, height), x.device, x.dtype))
         bboxes = []
         labels = []
         for ann in anns:
@@ -228,7 +229,7 @@ class AnchorMatcher:
         is_cpu = features[0].device.type == 'cpu'
         match_func = match_anchors if is_cpu else match_anchors2
         batch_size = len(box_lists)
-        grid_sizes = [f.size()[-2:][::-1] for f in features]
+        grid_sizes = tuple(f.size()[-2:][::-1] for f in features)
         centers, corners = get(["centers", "corners"],
                                self.generator(grid_sizes, features[0].device, features[0].dtype))
         bboxes = []

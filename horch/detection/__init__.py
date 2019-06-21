@@ -45,7 +45,7 @@ def calc_grid_sizes(size, strides, pad_threshold=3):
         lx = max(lx, 1)
         ly = max(ly, 1)
         locations.append((lx, ly))
-    return locations[-len(strides):]
+    return tuple(locations[-len(strides):])
 
 
 def calc_anchor_sizes(

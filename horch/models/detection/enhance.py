@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from horch.common import tuplify
 from horch.models.detection.nasfpn import ReLUConvBN
 
 from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat, MBConv, get_norm_layer, \
     get_activation
 from horch.models.detection.nasfpn import NASFPN
 from horch.models.detection.dsod import DSOD
+from horch.models.utils import conv_to_atrous
 
 
 class TopDown(nn.Module):
@@ -68,34 +70,27 @@ class FPNExtraLayers(nn.Module):
 
 
 class BasicBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels, reduction=2, stride=2, lite=False):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.conv1 = Conv2d(in_channels, out_channels // reduction, kernel_size=1,
+        self.conv1 = Conv2d(in_channels, out_channels // 2, kernel_size=1,
                             norm_layer='default', activation='default')
-        padding = 1 if stride == 2 else 0
-        self.conv2 = Conv2d(out_channels // reduction, out_channels, kernel_size=3, stride=2, padding=padding,
-                            norm_layer='default', activation='default', depthwise_separable=lite)
+        self.conv2 = Conv2d(out_channels // 2, out_channels, kernel_size=3, stride=2,
+                            norm_layer='default', activation='default')
 
 
-class SSDExtraLayers(nn.Module):
-    def __init__(self, in_channels_list, extra_layers=(6, 7, 8), f_channels=256, reduction=2, no_padding=-1, lite=False):
+class ExtraLayers(nn.Module):
+    def __init__(self, in_channels_list, num_extra_layers=3, f_channels_list=(512, 256, 256), no_padding=-1, block=BasicBlock, **kwargs):
         super().__init__()
+        f_channels_list = tuplify(f_channels_list, num_extra_layers)
         in_channels_list = list(in_channels_list)
-        self.extra_layers = nn.ModuleList([
-            BasicBlock(in_channels_list[-1], f_channels * 2, reduction=reduction, lite=lite)
-        ])
-        in_channels_list.append(f_channels * 2)
-        for _ in extra_layers[1:]:
-            l = BasicBlock(in_channels_list[-1], f_channels,reduction=reduction, lite=lite)
+        self.extra_layers = nn.ModuleList([])
+        for f_channels in f_channels_list:
+            l = block(in_channels_list[-1], f_channels, **kwargs)
             self.extra_layers.append(l)
             in_channels_list.append(f_channels)
 
         for i in range(no_padding, 0):
-            l = self.extra_layers[i].conv2[0]
-            if lite:
-                l = l[0]
-            l.stride = (1, 1)
-            l.padding = (0, 0)
+            conv_to_atrous(self.extra_layers[i], rate=1)
 
         self.out_channels = in_channels_list
 
@@ -106,55 +101,32 @@ class SSDExtraLayers(nn.Module):
         return tuple(ps)
 
 
-class SSDLiteExtraLayers(nn.Module):
-    def __init__(self, in_channels_list, num_extra_layers=3, f_channels=256, expand_ratio=4, kernel_size=3, no_padding=-1):
-        super().__init__()
-        in_channels = in_channels_list[-1]
-        self.extra_layers = nn.ModuleList([])
-        for _ in range(num_extra_layers):
-            l = MBConv(in_channels, f_channels * expand_ratio, f_channels, kernel_size=kernel_size, stride=2)
-            self.extra_layers.append(l)
-            in_channels = f_channels
-
-        for i in range(no_padding, 0):
-            l = self.extra_layers[i].dwconv[0]
-            l.stride = (1, 1)
-            l.padding = (0, 0)
-
-        self.out_channels = in_channels_list + [f_channels] * num_extra_layers
-
-    def forward(self, *cs):
-        ps = list(cs)
-        for l in self.extra_layers:
-            ps.append(l(ps[-1]))
-        return tuple(ps)
-
-
-class PreActBasicBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels, reduction=2, stride=2, lite=False):
-        super().__init__()
-        self.bn1 = get_norm_layer("default", in_channels)
-        self.relu1 = get_activation("default")
-        self.conv1 = Conv2d(in_channels, out_channels // reduction, kernel_size=1)
-        self.bn2 = get_norm_layer("default", out_channels // reduction)
-        self.relu2 = get_activation("default")
-        self.conv2 = Conv2d(out_channels // reduction, out_channels, kernel_size=3, stride=2)
-
-
-class DeepSupervision(nn.Module):
-    def __init__(self, in_chanels, channels):
-        super().__init__()
-        self.left = PreActBasicBlock(in_chanels, channels // 2, reduction=1)
-        self.right = nn.Sequential(
-            nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=True),
-            get_norm_layer("default", in_chanels),
-            get_activation("default"),
-            Conv2d(in_chanels, channels // 2, kernel_size=1, norm_layer='default'),
+class SSDExtraLayers(ExtraLayers):
+    def __init__(self, in_channels_list, num_extra_layers=3, f_channels_list=(512, 256, 256), no_padding=-1):
+        super().__init__(
+            in_channels_list,
+            num_extra_layers,
+            f_channels_list,
+            no_padding,
+            BasicBlock
         )
 
-    def forward(self, x):
-        x = torch.cat([self.left(x), self.right(x)], dim=1)
-        return x
+
+def mb_conv_block(in_channels, out_channels, expand_ratio=4, kernel_size=3):
+    return MBConv(in_channels, out_channels * expand_ratio, out_channels, kernel_size=kernel_size, stride=2)
+
+
+class SSDLiteExtraLayers(ExtraLayers):
+    def __init__(self, in_channels_list, num_extra_layers=3, f_channels_list=(512, 256, 256), no_padding=-1, kernel_size=3):
+        super().__init__(
+            in_channels_list,
+            num_extra_layers,
+            f_channels_list,
+            no_padding,
+            mb_conv_block,
+            expand_ratio=4,
+            kernel_size=kernel_size
+        )
 
 
 class FPN(nn.Module):
@@ -383,46 +355,40 @@ class IDA2(nn.Module):
 
 
 class YOLOFPN(nn.Module):
-    def __init__(self, in_channels_list, f_channels=256):
+    def __init__(self, in_channels_list, f_channels_list=(256, 512, 1024), kernel_size=5):
         super().__init__()
-        assert len(in_channels_list) == 3
-        channels = in_channels_list
-        self.conv51 = nn.Sequential(
-            MBConv(channels[-1], channels[-1], f_channels, kernel_size=5),
-            MBConv(f_channels, f_channels * 4, f_channels, kernel_size=5),
-        )
-        self.conv52 = MBConv(f_channels, f_channels * 4, None, kernel_size=5)
+        assert len(in_channels_list) == len(f_channels_list)
+        num_levels = len(in_channels_list)
+        self.convs = nn.ModuleList([])
+        self.lats = nn.ModuleList([])
+        self.outs = nn.ModuleList([])
+        for i in range(num_levels):
+            f_channels = f_channels_list[-(i+1)]
+            in_channels = in_channels_list[-(i+1)]
+            if i == 0:
+                self.convs.append(nn.Sequential(
+                    MBConv(in_channels, in_channels, f_channels // 4, kernel_size=kernel_size),
+                    MBConv(f_channels // 4, f_channels, f_channels // 4, kernel_size=kernel_size),
+                ))
+            else:
+                self.lats.append(Conv2d(f_channels_list[-i] // 4, f_channels // 4, kernel_size=1,
+                                        norm_layer='default'))
+                self.convs.append(nn.Sequential(
+                    MBConv(in_channels + f_channels // 4, in_channels + f_channels // 4, f_channels // 4, kernel_size=kernel_size),
+                    MBConv(f_channels // 4, f_channels, f_channels // 4, kernel_size=kernel_size),
+                ))
+            self.outs.append(MBConv(f_channels // 4, f_channels, None, kernel_size=kernel_size))
 
-        self.lat5 = Conv2d(f_channels, f_channels // 2, kernel_size=1,
-                           norm_layer='default')
+        self.out_channels = tuple(f_channels_list)
 
-        self.conv41 = nn.Sequential(
-            MBConv(channels[-2] + f_channels // 2, channels[-2] + f_channels // 2, f_channels // 2, kernel_size=5),
-            MBConv(f_channels // 2, f_channels * 2, f_channels // 2, kernel_size=5),
-        )
-        self.conv42 = MBConv(f_channels // 2, f_channels * 2, None, kernel_size=5)
-
-        self.lat4 = Conv2d(f_channels // 2, f_channels // 4, kernel_size=1,
-                           norm_layer='default')
-
-        self.conv31 = nn.Sequential(
-            MBConv(channels[-3] + f_channels // 4, channels[-3] + f_channels // 4, f_channels // 4, kernel_size=5),
-            MBConv(f_channels // 4, f_channels, f_channels // 4, kernel_size=5),
-        )
-        self.conv32 = MBConv(f_channels // 4, f_channels, None, kernel_size=5)
-
-        self.out_channels = [f_channels, f_channels * 2, f_channels * 4]
-
-    def forward(self, c3, c4, c5):
-        p51 = self.conv51(c5)
-        p52 = self.conv52(p51)
-
-        p41 = upsample_concat(self.lat5(p51), c4)
-        p42 = self.conv41(p41)
-        p43 = self.conv42(p42)
-
-        p31 = upsample_concat(self.lat4(p42), c3)
-        p32 = self.conv31(p31)
-        p33 = self.conv32(p32)
-
-        return p33, p43, p52
+    def forward(self, *cs):
+        ps = []
+        p1 = self.convs[0](cs[-1])
+        p2 = self.outs[0](p1)
+        ps.append(p2)
+        for lat, conv, out, c in zip(self.lats, self.convs[1:], self.outs[1:], reversed(cs[:-1])):
+            c = upsample_concat(lat(p1), c)
+            p1 = conv(c)
+            p2 = out(p1)
+            ps.append(p2)
+        return tuple(reversed(ps))
