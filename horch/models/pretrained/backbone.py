@@ -3,11 +3,12 @@ from difflib import get_close_matches
 import torch.nn as nn
 from horch.models.backbone import _check_levels, backbone_forward
 from horch.models.modules import Sequential
+from horch.models.pretrained.vovnet import vovnet27_slim, vovnet39, vovnet57
 
 from pytorchcv.model_provider import get_model as ptcv_get_model
 
 from horch.models.pretrained.mobilenetv3 import mobilenetv3_large
-from horch.models.utils import get_out_channels, calc_out_channels
+from horch.models.utils import get_out_channels, calc_out_channels, conv_to_atrous
 
 
 class ShuffleNetV2(nn.Module):
@@ -612,6 +613,52 @@ class MobileNetV3(nn.Module):
             *features[14:],
             backbone.conv
         )
+
+        self.out_channels = [
+            get_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
+class VoVNet(nn.Module):
+    version2name = {
+        27: vovnet27_slim,
+        39: vovnet39,
+        57: vovnet57,
+    }
+
+    def __init__(self, version=27, feature_levels=(3, 4, 5), pretrained=True, no_down=0, **kwargs):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+        assert not pretrained, "Pretrained models are not avaliable now."
+
+        if no_down != 0:
+            assert feature_levels == (3, 4) and no_down == -1
+
+        backbone = self.version2name[version](pretrained=pretrained)
+        del backbone.classifier
+        self.layer1 = backbone.stem[:6]
+        self.layer2 = nn.Sequential(
+            backbone.stem[6:],
+            backbone.stage2,
+        )
+        self.layer3 = backbone.stage3
+
+        if no_down:
+            del backbone.stage5.Pooling
+            conv_to_atrous(backbone.stage5, rate=2)
+            self.layer4 = nn.Sequential(
+                backbone.stage4,
+                backbone.stage5
+            )
+        else:
+            self.layer4 = backbone.stage4
+            self.layer5 = backbone.stage5
 
         self.out_channels = [
             get_out_channels(getattr(self, ("layer%d" % i)))

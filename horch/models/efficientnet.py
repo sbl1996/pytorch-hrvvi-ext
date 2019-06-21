@@ -106,9 +106,8 @@ class EfficientNet(nn.Module):
 
         # building stem
         self.features = nn.Sequential()
-        self.features.add_module("init_block",
-                                 Conv2d(3, in_channels, kernel_size=3, stride=2,
-                                        norm_layer='default', activation='swish'))
+        self.features.init_block = Conv2d(3, in_channels, kernel_size=3, stride=2,
+                                          norm_layer='default', activation='swish')
         si = 1
         j = 1
         stage = nn.Sequential()
@@ -223,7 +222,7 @@ def efficientnet_b4(num_classes, **kwargs):
         depth_coef=depth_coef,
         dropout=dropout,
         num_classes=num_classes
-        **kwargs,
+                    ** kwargs,
     )
 
 

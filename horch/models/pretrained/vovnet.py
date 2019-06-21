@@ -9,8 +9,10 @@ __all__ = ['VoVNet', 'vovnet27_slim', 'vovnet39', 'vovnet57']
 
 
 model_urls = {
-    'vovnet39': 'https://www.dropbox.com/s/1lnzsgnixd8gjra/vovnet39_torchvision.pth',
-    'vovnet57': 'https://www.dropbox.com/s/6bfu9gstbwfw31m/vovnet57_torchvision.pth'
+    # 'vovnet39': 'https://www.dropbox.com/s/1lnzsgnixd8gjra/vovnet39_torchvision.pth',
+    'vovnet39': 'https://github.com/sbl1996/pytorch-hrvvi-ext/releases/download/v1.5-alpha/vovnet39-38263637.pth',
+    # 'vovnet57': 'https://www.dropbox.com/s/6bfu9gstbwfw31m/vovnet57_torchvision.pth'
+    'vovnet57': 'https://github.com/sbl1996/pytorch-hrvvi-ext/releases/download/v1.5-alpha/vovnet57-7933b8af.pth'
 }
 
 

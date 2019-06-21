@@ -3,7 +3,7 @@ import torch.nn as nn
 from horch.models.efficientnet import efficientnet, EfficientNet as BEfficientNet
 from horch.models.mobilenetv3 import mobilenetv3
 from horch.models.snet import SNet as BSNet
-from horch.models.utils import get_out_channels
+from horch.models.utils import get_out_channels, conv_to_atrous
 from horch.models.darknet import Darknet as BDarknet
 from horch.models.vovnet import get_vovnet
 
@@ -348,12 +348,14 @@ class VoVNet(nn.Module):
 
         if no_down != 0:
             assert feature_levels == (3, 4) and no_down == -1
+
         backbone = get_vovnet(version)
         del backbone.output
         f = backbone.features
         self.layer1 = f.init_block
         self.layer2 = f.stage1
         self.layer3 = f.stage2
+
         if no_down == 0:
             self.layer4 = f.stage3
             self.layer5 = nn.Sequential(
@@ -361,6 +363,7 @@ class VoVNet(nn.Module):
                 f.post_activ
             )
         else:
+            conv_to_atrous(f.stage4, rate=2)
             del f.stage4.pool
             self.layer4 = nn.Sequential(
                 f.stage3,
