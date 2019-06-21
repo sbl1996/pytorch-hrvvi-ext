@@ -635,7 +635,6 @@ class VoVNet(nn.Module):
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.feature_levels = feature_levels
-        assert not pretrained, "Pretrained models are not avaliable now."
 
         if no_down != 0:
             assert feature_levels == (3, 4) and no_down == -1
