@@ -185,9 +185,15 @@ def _vovnet(arch,
                    block_per_stage, layer_per_block,
                    **kwargs)
     if pretrained:
+        map_location = 'cuda' if torch.cuda.is_available() else 'cpu'
         state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
-        model.load_state_dict(state_dict)
+                                              progress=progress,
+                                              map_location=map_location)
+        d = {}
+        for k, v in state_dict.items():
+            k = k.split('.', 1)[1]
+            d[k] = v
+        model.load_state_dict(d)
     return model
 
 
