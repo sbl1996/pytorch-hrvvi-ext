@@ -2,7 +2,7 @@ from difflib import get_close_matches
 
 import torch.nn as nn
 from horch.models.backbone import _check_levels, backbone_forward
-from horch.models.modules import Sequential
+from horch.models.modules import Sequential, L2Norm
 from horch.models.pretrained.vovnet import vovnet27_slim, vovnet39, vovnet57
 
 from pytorchcv.model_provider import get_model as ptcv_get_model
@@ -670,7 +670,7 @@ class VoVNet(nn.Module):
 
 
 class VGG16(nn.Module):
-    def __init__(self, feature_levels=(3, 4), pretrained=True, **kwargs):
+    def __init__(self, feature_levels=(3, 4), pretrained=True, l2_norm=True, **kwargs):
         super().__init__()
         assert feature_levels == (3, 4)
         assert pretrained, "Only pretrained VGG16 is provided."
@@ -719,10 +719,12 @@ class VGG16(nn.Module):
             f.stage4.unit2,
             f.stage4.unit3,
         )
+        self.l2_norm = L2Norm(512, 20) if l2_norm else nn.Identity()
         self.layer4 = nn.Sequential(
             f.stage4.pool4,
             f.stage5.unit1,
             f.stage5.unit2,
+            f.stage5.unit3,
             f.stage5.pool5,
             nn.Sequential(
                 conv6,
@@ -737,7 +739,9 @@ class VGG16(nn.Module):
         self.out_channels = [512, 1024]
 
     def forward(self, x):
-        return backbone_forward(self, x)
+        c3, c4 = backbone_forward(self, x)
+        c3 = self.l2_norm(c3)
+        return c3, c4
 
 
 def search(name, n=10, cutoff=0.6):

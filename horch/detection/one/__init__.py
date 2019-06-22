@@ -548,7 +548,6 @@ class AnchorBasedInference:
         grid_sizes = [p.size()[1:3] for p in loc_preds]
         anchors = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)["centers"]
         loc_p, cls_p = flatten_preds(loc_preds, cls_preds)
-        print(loc_p.shape)
         batch_size = loc_p.size(0)
         image_dets = [
             self.inference_single(loc_p[i], cls_p[i], anchors)
