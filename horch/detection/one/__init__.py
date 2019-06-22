@@ -51,14 +51,14 @@ class AnchorGenerator(AnchorGeneratorBase):
 
 
 def coords_to_target(gt_box, anchors):
-    box_txty = (gt_box[..., :2] - anchors[..., :2]) / anchors[..., 2:] / 0.1
-    box_twth = (gt_box[..., 2:] / anchors[..., 2:]).log_() / 0.2
+    box_txty = (gt_box[..., :2] - anchors[..., :2]) / anchors[..., 2:]
+    box_twth = (gt_box[..., 2:] / anchors[..., 2:]).log_()
     return torch.cat((box_txty, box_twth), dim=-1)
 
 
 def target_to_coords(loc_t, anchors):
-    loc_t[..., :2].mul_(0.1).mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[..., 2:].mul_(0.2).exp_().mul_(anchors[:, 2:])
+    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
+    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
     return loc_t
 
 
@@ -288,14 +288,20 @@ class MultiBoxLoss(nn.Module):
         Prefix of loss.
     """
 
-    def __init__(self, pos_neg_ratio=None, p=0.01, cls_loss='ce', prefix=""):
+    def __init__(self,
+                 pos_neg_ratio=None,
+                 cls_loss='ce',
+                 loc_t_stds=(0.1, 0.1, 0.2, 0.2),
+                 p=0.01,
+                 prefix=""):
         super().__init__()
         assert 0 <= p <= 1
         assert cls_loss in ['focal', 'ce', 'bce'], "Classification loss must be one of ['focal', 'ce', 'bce']"
         self.pos_neg_ratio = pos_neg_ratio
-        self.p = p
+        self.loc_t_stds = loc_t_stds
         self.cls_loss = cls_loss
         self.prefix = prefix
+        self.p = p
 
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
         if not torch.is_tensor(loc_p):
@@ -316,16 +322,36 @@ class MultiBoxLoss(nn.Module):
             loc_p = loc_p[pos]
         if loc_t.size()[:-1] == pos.size():
             loc_t = loc_t[pos]
+        loc_t = loc_t / loc_t.new_tensor(self.loc_t_stds)
         loc_loss = F.smooth_l1_loss(
             loc_p, loc_t, reduction='sum') / num_pos
 
         # Hard Negative Mining
         if self.pos_neg_ratio:
-            cls_loss_pos = F.cross_entropy(
-                cls_p[pos], cls_t[pos], reduction='sum')
+            if self.cls_loss == 'ce':
+                cls_loss_pos = F.cross_entropy(
+                    cls_p[pos], cls_t[pos], reduction='sum')
 
-            cls_p_neg = cls_p[neg]
-            cls_loss_neg = -F.log_softmax(cls_p_neg, dim=1)[..., 0]
+                cls_p_neg = cls_p[neg]
+                cls_loss_neg = F.cross_entropy(
+                    cls_p_neg,
+                    cls_p_neg.new_zeros(len(cls_p_neg), dtype=torch.long),
+                    reduction='none'
+                )
+                # cls_loss_neg = -F.log_softmax(cls_p_neg, dim=1)[..., 0]
+            elif self.cls_loss == 'bce':
+                cls_p_pos = cls_p[pos]
+                cls_loss_pos = F.binary_cross_entropy_with_logits(
+                    cls_p_pos, torch.ones_like(cls_p_pos), reduction='sum')
+
+                cls_p_neg = cls_p[neg]
+                cls_loss_neg = F.binary_cross_entropy_with_logits(
+                    cls_p_neg,
+                    torch.zeros_like(cls_p_neg),
+                    reduction='none')
+            else:
+                raise ValueError("Invalid cls loss `%s` for hard negative mining" % self.cls_loss)
+
             num_neg = min(int(num_pos / self.pos_neg_ratio), len(cls_loss_neg))
             cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
             cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
@@ -372,8 +398,10 @@ class MultiBoxLoss(nn.Module):
 def anchor_based_inference(
         loc_p, cls_p, anchors, conf_threshold=0.01,
         iou_threshold=0.5, topk=100,
-        conf_strategy='softmax', nms_method='soft', min_score=None):
-    bboxes = loc_p.view(-1, 4)
+        conf_strategy='softmax',
+        nms_method='soft', min_score=None,
+        loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
+    bboxes = loc_p.view(-1, 4) * loc_p.new_tensor(loc_t_stds)
     logits = cls_p.view(-1, cls_p.size(-1))
     if conf_strategy == 'softmax':
         scores = torch.softmax(logits, dim=1)
@@ -444,7 +472,8 @@ class AnchorBasedInference:
 
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
-                 conf_strategy='softmax', nms='soft', min_score=None):
+                 conf_strategy='softmax', nms='soft', min_score=None,
+                 loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator
@@ -456,6 +485,7 @@ class AnchorBasedInference:
         self.conf_strategy = conf_strategy
         self.nms = nms
         self.min_score = min_score
+        self.loc_t_stds = loc_t_stds
 
     def __call__(self, loc_preds, cls_preds):
         grid_sizes = [p.size()[1:3] for p in loc_preds]
@@ -472,5 +502,5 @@ class AnchorBasedInference:
         return anchor_based_inference(
             loc_p, cls_p, anchors, self.conf_threshold,
             self.iou_threshold, self.topk,
-            self.conf_strategy, self.nms, self.min_score
+            self.conf_strategy, self.nms, self.min_score, self.loc_t_stds
         )

@@ -1,13 +1,11 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.common import tuplify
+from horch.models.block import mb_conv_block, MBConv
 from horch.models.detection.nasfpn import ReLUConvBN
 
-from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat, MBConv, get_norm_layer, \
-    get_activation
+from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat
 from horch.models.detection.nasfpn import NASFPN
-from horch.models.detection.dsod import DSOD
 from horch.models.utils import conv_to_atrous
 
 
@@ -110,10 +108,6 @@ class SSDExtraLayers(ExtraLayers):
             no_padding,
             BasicBlock
         )
-
-
-def mb_conv_block(in_channels, out_channels, expand_ratio=4, kernel_size=3):
-    return MBConv(in_channels, out_channels * expand_ratio, out_channels, kernel_size=kernel_size, stride=2)
 
 
 class SSDLiteExtraLayers(ExtraLayers):

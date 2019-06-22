@@ -2,7 +2,8 @@ from math import log
 
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, DWConv2d, get_norm_layer, MBConv
+from horch.models.modules import Conv2d, DWConv2d, get_norm_layer
+from horch.models.block import MBConv
 from horch.models.utils import weight_init_normal, bias_init_constant, get_last_conv
 from horch.common import tuplify, _concat, inverse_sigmoid
 

@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.common import tuplify
-from horch.models.modules import Conv2d, upsample_add, upsample_concat, SEModule, Identity
+from horch.models.modules import Conv2d, upsample_add, upsample_concat, Identity
+from horch.models.attention import SEModule
 
 
 class TUM(nn.Module):

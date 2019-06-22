@@ -1,14 +1,11 @@
 from collections import OrderedDict
 
-from toolz import curry
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import tuplify
 from horch.models.defaults import get_default_activation, get_default_norm_layer
-from torch import nn as nn
 
 
 def hardsigmoid(x, inplace=False):
@@ -100,20 +97,6 @@ def get_norm_layer(name, channels):
         return nn.GroupNorm(num_groups, channels)
     else:
         raise NotImplementedError("No normalization named %s" % name)
-
-
-def get_attention(name, **kwargs):
-    if not name:
-        return Identity()
-    name = name.lower()
-    if name == 'se':
-        return SEModule(**kwargs)
-    elif name == 'sem':
-        return SELayerM(**kwargs)
-    elif name == 'cbam':
-        return CBAM(**kwargs)
-    else:
-        raise NotImplementedError("No attention module named %s" % name)
 
 
 def get_activation(name):
@@ -266,89 +249,6 @@ def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
         raise NotImplementedError("No activation named %s" % name)
 
 
-class SEModule(nn.Module):
-    def __init__(self, in_channels, reduction=8):
-        super().__init__()
-        channels = in_channels // reduction
-        self.pool = nn.AdaptiveAvgPool2d(1)
-        self.layers = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU(True),
-            nn.Linear(channels, in_channels),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x):
-        b, c = x.size()[:2]
-        s = self.pool(x).view(b, c)
-        s = self.layers(s).view(b, c, 1, 1)
-        return x * s
-
-
-class CBAMChannelAttention(nn.Module):
-    def __init__(self, in_channels, reduction=8):
-        super().__init__()
-        channels = in_channels // reduction
-        self.mlp = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU(True),
-            nn.Linear(channels, in_channels),
-        )
-
-    def forward(self, x):
-        b, c = x.size()[:2]
-        aa = F.adaptive_avg_pool2d(x, 1).view(b, c)
-        aa = self.mlp(aa)
-        am = F.adaptive_max_pool2d(x, 1).view(b, c)
-        am = self.mlp(am)
-        a = torch.sigmoid(aa + am).view(b, c, 1, 1)
-        return x * a
-
-
-class CBAMSpatialAttention(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = Conv2d(2, 1, kernel_size=7, norm_layer='bn')
-
-    def forward(self, x):
-        aa = x.mean(dim=1, keepdim=True)
-        am = x.max(dim=1, keepdim=True)[0]
-        a = torch.cat([aa, am], dim=1)
-        a = torch.sigmoid(self.conv(a))
-        return x * a
-
-
-class CBAM(nn.Module):
-    def __init__(self, in_channels, reduction=4):
-        super().__init__()
-        self.channel = CBAMChannelAttention(in_channels, reduction)
-        self.spatial = CBAMSpatialAttention()
-
-    def forward(self, x):
-        x = self.channel(x)
-        x = self.spatial(x)
-        return x
-
-
-class SELayerM(nn.Module):
-    def __init__(self, in_channels, reduction=4):
-        super().__init__()
-        channels = in_channels // reduction
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.layers = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU6(True),
-            nn.Linear(channels, in_channels),
-            HardSigmoid(True),
-        )
-
-    def forward(self, x):
-        b, c = x.size()[:2]
-        s = self.avgpool(x).view(b, c)
-        s = self.layers(s).view(b, c, 1, 1)
-        return x * s
-
-
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
              padding='same', bias=True, mid_norm_layer='default',
@@ -370,6 +270,7 @@ class Sequential(nn.Sequential):
             xs = module(*tuplify(xs))
         return xs
 
+
 class Identity(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -378,220 +279,12 @@ class Identity(nn.Module):
         return x
 
 
-class DropConnect(nn.Module):
-    def __init__(self, p=0.2):
-        super().__init__()
-        assert 0 <= p <= 1, "drop probability has to be between 0 and 1, but got %f" % p
-        self.p = p
-
-    def forward(self, x):
-        if not self.training or self.p == 0:
-            return x
-        keep_prob = 1.0 - self.p
-        batch_size = x.size(0)
-        t = torch.rand(batch_size, 1, 1, 1, dtype=x.dtype, device=x.device) < keep_prob
-        x = (x / keep_prob).masked_fill(t, 0)
-        return x
-
-    def extra_repr(self):
-        return 'p={}'.format(self.p)
-
-
 class Flatten(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
         return x.view(x.size(0), -1)
-
-
-# https://github.com/miguelvr/dropblock/blob/master/dropblock/dropblock.py
-class DropBlock2D(nn.Module):
-    r"""Randomly zeroes 2D spatial blocks of the input tensor.
-
-    As described in the paper
-    `DropBlock: A regularization method for convolutional networks`_ ,
-    dropping whole blocks of feature map allows to remove semantic
-    information as compared to regular dropout.
-
-    Args:
-        drop_prob (float): probability of an element to be dropped.
-        block_size (int): size of the block to drop
-
-    Shape:
-        - Input: `(N, C, H, W)`
-        - Output: `(N, C, H, W)`
-
-    .. _DropBlock: A regularization method for convolutional networks:
-       https://arxiv.org/abs/1810.12890
-
-    """
-
-    def __init__(self, drop_prob, block_size):
-        super(DropBlock2D, self).__init__()
-
-        self.drop_prob = drop_prob
-        self.block_size = block_size
-
-    def forward(self, x):
-        # shape: (bsize, channels, height, width)
-
-        assert x.dim() == 4, \
-            "Expected input with 4 dimensions (bsize, channels, height, width)"
-
-        if not self.training or self.drop_prob == 0.:
-            return x
-        else:
-            # get gamma value
-            gamma = self._compute_gamma(x)
-
-            # sample mask and place on input device
-            mask = (torch.rand(x.shape[0], *x.shape[2:]) < gamma).to(x)
-
-            # compute block mask
-            block_mask, keeped = self._compute_block_mask(mask)
-
-            # apply block mask
-            out = x * block_mask[:, None, :, :]
-
-            # scale output
-            out = out * (block_mask.numel() / keeped).to(out)
-            return out
-
-    def _compute_block_mask(self, mask):
-        block_mask = F.max_pool2d(input=mask[:, None, :, :],
-                                  kernel_size=(self.block_size, self.block_size),
-                                  stride=(1, 1),
-                                  padding=self.block_size // 2)
-
-        if self.block_size % 2 == 0:
-            block_mask = block_mask[:, :, :-1, :-1]
-
-        keeped = block_mask.numel() - block_mask.sum().to(torch.float32)  # prevent overflow in float16
-        block_mask = 1 - block_mask.squeeze(1)
-
-        return block_mask, keeped
-
-    def _compute_gamma(self, x):
-        return self.drop_prob / (self.block_size ** 2)
-
-
-class DropBlock3D(DropBlock2D):
-    r"""Randomly zeroes 3D spatial blocks of the input tensor.
-
-    An extension to the concept described in the paper
-    `DropBlock: A regularization method for convolutional networks`_ ,
-    dropping whole blocks of feature map allows to remove semantic
-    information as compared to regular dropout.
-
-    Args:
-        drop_prob (float): probability of an element to be dropped.
-        block_size (int): size of the block to drop
-
-    Shape:
-        - Input: `(N, C, D, H, W)`
-        - Output: `(N, C, D, H, W)`
-
-    .. _DropBlock: A regularization method for convolutional networks:
-       https://arxiv.org/abs/1810.12890
-
-    """
-
-    def __init__(self, drop_prob, block_size):
-        super(DropBlock3D, self).__init__(drop_prob, block_size)
-
-    def forward(self, x):
-        # shape: (bsize, channels, depth, height, width)
-
-        assert x.dim() == 5, \
-            "Expected input with 5 dimensions (bsize, channels, depth, height, width)"
-
-        if not self.training or self.drop_prob == 0.:
-            return x
-        else:
-            # get gamma value
-            gamma = self._compute_gamma(x)
-
-            # sample mask and place on input device
-            mask = (torch.rand(x.shape[0], *x.shape[2:]) < gamma).to(x)
-
-            # compute block mask
-            block_mask = self._compute_block_mask(mask)
-
-            # apply block mask
-            out = x * block_mask[:, None, :, :, :]
-
-            # scale output
-            out = out * block_mask.numel() / block_mask.sum()
-
-            return out
-
-    def _compute_block_mask(self, mask):
-        block_mask = F.max_pool3d(input=mask[:, None, :, :, :],
-                                  kernel_size=(self.block_size, self.block_size, self.block_size),
-                                  stride=(1, 1, 1),
-                                  padding=self.block_size // 2)
-
-        if self.block_size % 2 == 0:
-            block_mask = block_mask[:, :, :-1, :-1, :-1]
-
-        block_mask = 1 - block_mask.squeeze(1)
-
-        return block_mask
-
-    def _compute_gamma(self, x):
-        return self.drop_prob / (self.block_size ** 3)
-
-
-class DropBlockScheduled(nn.Module):
-    def __init__(self, dropblock, start_value, stop_value, nr_steps, start_step=0):
-        super(DropBlockScheduled, self).__init__()
-        self.dropblock = dropblock
-        self.register_buffer('i', torch.zeros(1, dtype=torch.int64))
-        self.start_step = start_step
-        self.nr_steps = nr_steps
-        self.step_size = (stop_value - start_value) / nr_steps
-
-    def forward(self, x):
-        if self.training:
-            self.step()
-        return self.dropblock(x)
-
-    def step(self):
-        idx = self.i.item()  # TODO (drop on restart)
-        if self.start_step < idx < self.start_step + self.nr_steps:
-            self.dropblock.drop_prob += self.step_size
-
-        self.i += 1
-
-
-class MBConv(nn.Sequential):
-    def __init__(self, in_channels, channels, out_channels, kernel_size, stride=1, se_ratio=1 / 16):
-        super().__init__()
-
-        self.bn = get_norm_layer('default', in_channels)
-        if in_channels != channels:
-            self.expand = Conv2d(in_channels, channels, kernel_size=1,
-                                 norm_layer='default', activation='default')
-
-        self.dwconv = Conv2d(channels, channels, kernel_size, stride=stride, groups=channels,
-                             norm_layer='default', activation='default')
-
-        if se_ratio:
-            assert 0 < se_ratio < 1
-            self.se = SEModule(channels, reduction=int(1 / se_ratio))
-
-        if out_channels is not None:
-            self.project = Conv2d(channels, out_channels, kernel_size=1,
-                                  norm_layer='default')
-        self.use_res_connect = stride == 1 and in_channels == out_channels
-
-    def forward(self, x):
-        identity = x
-        x = super().forward(x)
-        if self.use_res_connect:
-            x += identity
-        return x
 
 
 def seq(*modules):

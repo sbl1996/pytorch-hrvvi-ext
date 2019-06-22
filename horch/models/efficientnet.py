@@ -3,7 +3,8 @@ import math
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, Identity, DropConnect
+from horch.models.modules import Conv2d, Identity
+from horch.models.drop import DropConnect
 
 
 def round_channels(channels, multiplier=None, divisor=8, min_depth=None):

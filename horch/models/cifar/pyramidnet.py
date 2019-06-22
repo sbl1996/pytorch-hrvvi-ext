@@ -8,6 +8,7 @@ from horch.models.modules import Conv2d, get_activation, get_norm_layer
 class PadChannel(nn.Module):
     def __init__(self, channels):
         super().__init__()
+        assert channels >= 0
         self.c = channels
 
     def forward(self, x):

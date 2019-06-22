@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horch.models.modules import get_activation, Conv2d, SEModule, Identity
+from horch.models.modules import get_activation, Conv2d, Identity
+from horch.models.attention import SEModule
 
 
 class PreActDownBlock(nn.Module):

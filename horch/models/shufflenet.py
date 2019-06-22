@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import Conv2d, SEModule, get_activation
+from horch.models.modules import Conv2d, get_activation
+from horch.models.attention import SEModule
 
 
 def channel_shuffle(x, g):
