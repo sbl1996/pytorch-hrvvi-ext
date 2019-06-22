@@ -8,7 +8,7 @@ from horch.models.pretrained.vovnet import vovnet27_slim, vovnet39, vovnet57
 from pytorchcv.model_provider import get_model as ptcv_get_model
 
 from horch.models.pretrained.mobilenetv3 import mobilenetv3_large
-from horch.models.utils import get_out_channels, calc_out_channels, conv_to_atrous
+from horch.models.utils import get_out_channels, calc_out_channels, conv_to_atrous, decimate
 
 
 class ShuffleNetV2(nn.Module):
@@ -664,6 +664,77 @@ class VoVNet(nn.Module):
             get_out_channels(getattr(self, ("layer%d" % i)))
             for i in feature_levels
         ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
+class VGG16(nn.Module):
+    def __init__(self, feature_levels=(3, 4), pretrained=True, **kwargs):
+        super().__init__()
+        assert feature_levels == (3, 4)
+        assert pretrained, "Only pretrained VGG16 is provided."
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+
+        backbone = ptcv_get_model('bn_vgg16')
+        f = backbone.features
+        f.stage2.pool2.ceil_mode = True
+        f.stage3.pool3.ceil_mode = True
+        f.stage4.pool4.ceil_mode = True
+        f.stage5.pool5.ceil_mode = True
+        f.stage5.pool5.kernel_size = (3, 3)
+        f.stage5.pool5.stride = (1, 1)
+        f.stage5.pool5.padding = (1, 1)
+
+        conv6 = nn.Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6)
+        fc6 = backbone.output.fc1.fc
+        fc6_weight = fc6.weight.data.view(4096, 512, 7, 7)
+        fc6_bias = fc6.bias.data
+        conv6.weight.data = decimate(fc6_weight, m=[4, None, 3, 3])
+        conv6.bias.data = decimate(fc6_bias, m=[4])
+
+        conv7 = nn.Conv2d(1024, 1024, kernel_size=1)
+        fc7 = backbone.output.fc2.fc
+        fc7_weight = fc7.weight.data.view(4096, 4096, 1, 1)
+        fc7_bias = fc7.bias.data
+        conv7.weight.data = decimate(fc7_weight, m=[4, 4, None, None])
+        conv7.bias.data = decimate(fc7_bias, m=[4])
+
+        self.layer1 = nn.Sequential(
+            f.stage1,
+            f.stage2.unit1,
+            f.stage2.unit2,
+        )
+        self.layer2 = nn.Sequential(
+            f.stage2.pool2,
+            f.stage3.unit1,
+            f.stage3.unit2,
+            f.stage3.unit3,
+        )
+        self.layer3 = nn.Sequential(
+            f.stage3.pool3,
+            f.stage4.unit1,
+            f.stage4.unit2,
+            f.stage4.unit3,
+        )
+        self.layer4 = nn.Sequential(
+            f.stage4.pool4,
+            f.stage5.unit1,
+            f.stage5.unit2,
+            f.stage5.pool5,
+            nn.Sequential(
+                conv6,
+                nn.ReLU(inplace=True),
+            ),
+            nn.Sequential(
+                conv7,
+                nn.ReLU(inplace=True),
+            )
+        )
+
+        self.out_channels = [512, 1024]
 
     def forward(self, x):
         return backbone_forward(self, x)

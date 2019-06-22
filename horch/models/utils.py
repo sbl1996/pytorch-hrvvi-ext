@@ -69,6 +69,18 @@ def conv_to_atrous(mod, rate):
     return mod
 
 
+def remove_stride_padding(mod):
+    r"""
+    Convert a 3x3 Conv2d to Atrous Convolution.
+    """
+    def f(m):
+        if 'Conv2d' in type(m).__name__ and m.kernel_size != (1, 1):
+            m.padding = (0, 0)
+            m.stride = (1, 1)
+    mod.apply(f)
+    return mod
+
+
 def freeze(model):
     for p in model.parameters():
         p.requires_grad = False
@@ -111,3 +123,20 @@ def set_bn_momentum(module, val):
         if "BatchNorm" in name:
             m.momentum = val
     module.apply(f)
+
+
+def decimate(tensor, m):
+    """
+    Decimate a tensor by a factor 'm', i.e. downsample by keeping every 'm'th value.
+    This is used when we convert FC layers to equivalent Convolutional layers, BUT of a smaller size.
+    :param tensor: tensor to be decimated
+    :param m: list of decimation factors for each dimension of the tensor; None if not to be decimated along a dimension
+    :return: decimated tensor
+    """
+    assert tensor.dim() == len(m)
+    for d in range(tensor.dim()):
+        if m[d] is not None:
+            tensor = tensor.index_select(dim=d,
+                                         index=torch.arange(start=0, end=tensor.size(d), step=m[d]).long())
+
+    return tensor

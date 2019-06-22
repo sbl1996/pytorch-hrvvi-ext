@@ -71,59 +71,37 @@ def calc_mlvl_anchor_sizes(
     return torch.stack(mlvl_anchors_sizes)
 
 
-#
-#
-# def generate_mlvl_anchors(levels=(), lengths=(32, 64, 128, 256, 512), aspect_ratios=(1/2, 1/1, 2/1), scales=):
-#     width, height = input_size
-#     strides = [ 2 ** l for l in levels ]
-#     aspect_ratios = torch.tensor(aspect_ratios)
-#     locations = calc_grid_sizes(input_size, strides)
-#     mlvl_anchors = []
-#     for (lx, ly), scale, stride in zip(locations, lengths, strides):
-#         anchors = torch.zeros(lx, ly, len(aspect_ratios), 4)
-#         anchors[:, :, :, 0] = (torch.arange(
-#             lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, len(aspect_ratios)) + 0.5) / lx
-#         anchors[:, :, :, 1] = (torch.arange(
-#             ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, len(aspect_ratios)) + 0.5) / ly
-#         anchors[:, :, :, 2] = (stride * aspect_ratios).view(-1) / width
-#         anchors[:, :, :, 3] = (stride / aspect_ratios).view(-1) / height
-#         mlvl_anchors.append(anchors)
-#     return mlvl_anchors
-
-
-def generate_anchors(input_size, stride=16, aspect_ratios=(1 / 2, 1 / 1, 2 / 1), scales=(32, 64, 128, 256, 512)):
-    # width, height = input_size
-    # lx, ly = get_locations(input_size, [stride])[0]
-    # aspect_ratios = torch.tensor(aspect_ratios)
-    # scales = aspect_ratios.new_tensor(scales).view(len(scales), -1)
-    # num_anchors = len(aspect_ratios) * len(scales)
-    # anchors = torch.zeros(lx, ly, num_anchors, 4)
-    # anchors[:, :, :, 0] = (torch.arange(
-    #     lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, num_anchors) + 0.5) / lx
-    # anchors[:, :, :, 1] = (torch.arange(
-    #     ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, num_anchors) + 0.5) / ly
-    # if scales.size(1) == 2:
-    #     sw = scales[:, [0]]
-    #     sh = scales[:, [1]]
-    # else:
-    #     sw = sh = scales
-    # anchors[:, :, :, 2] = (sw * aspect_ratios).view(-1) / width
-    # anchors[:, :, :, 3] = (sh / aspect_ratios).view(-1) / height
-    # return anchors
-    pass
-
-
-def generate_anchors_with_priors(input_size, stride, priors):
-    # # lx, ly = get_locations(input_size, [stride])[0]
-    # # num_anchors = len(priors)
-    # # anchors = torch.zeros(lx, ly, num_anchors, 4)
-    # # anchors[:, :, :, 0] = (torch.arange(
-    # #     lx, dtype=torch.float).view(lx, 1, 1).expand(lx, ly, num_anchors) + 0.5) / lx
-    # # anchors[:, :, :, 1] = (torch.arange(
-    # #     ly, dtype=torch.float).view(1, ly, 1).expand(lx, ly, num_anchors) + 0.5) / ly
-    # # anchors[:, :, :, 2:] = priors
-    # return anchors
-    pass
+def calc_ssd_priors(
+        size,
+        scales=(0.1, 0.2, 0.375, 0.55, 0.725, 0.9),
+        aspect_ratios=(
+                (1 / 2, 1, 2 / 1),
+                (1 / 3, 1 / 2, 1, 2 / 1, 3 / 1),
+                (1 / 3, 1 / 2, 1, 2 / 1, 3 / 1),
+                (1 / 3, 1 / 2, 1, 2 / 1, 3 / 1),
+                (1 / 2, 1, 2 / 1),
+                (1 / 2, 1, 2 / 1),
+        ),
+        extra_for_one=True):
+    width, height = size
+    num_levels = len(scales)
+    aspect_ratios = tuplify(aspect_ratios, num_levels)
+    mlvl_priors = []
+    for i in range(num_levels):
+        s = scales[i]
+        ps = []
+        for a in aspect_ratios[i]:
+            sw = s * sqrt(a) * width
+            sh = s / sqrt(a) * height
+            ps.append((sw, sh))
+            if extra_for_one and a == 1:
+                if i == num_levels - 1:
+                    s_extra = 1.0
+                else:
+                    s_extra = sqrt(s * scales[i + 1])
+                ps.append((s_extra * width, s_extra * height))
+        mlvl_priors.append(ps)
+    return mlvl_priors
 
 
 def draw_bboxes(img, anns, categories=None):
@@ -154,7 +132,7 @@ def draw_bboxes(img, anns, categories=None):
 def generate_mlvl_anchors(grid_sizes, anchor_sizes, device='cpu', dtype=torch.float32):
     mlvl_anchors = []
     for (lx, ly), sizes in zip(grid_sizes, anchor_sizes):
-        anchors = anchor_sizes.new_zeros((lx, ly, len(sizes), 4))
+        anchors = sizes.new_zeros((lx, ly, len(sizes), 4))
         anchors[:, :, :, 0] = (torch.arange(
             lx, dtype=dtype, device=device).view(lx, 1, 1).expand(lx, ly, len(sizes)) + 0.5) / lx
         anchors[:, :, :, 1] = (torch.arange(

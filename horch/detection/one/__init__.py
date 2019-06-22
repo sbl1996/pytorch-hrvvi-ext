@@ -18,6 +18,7 @@ from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
 from horch.detection.nms import nms, soft_nms_cpu
 from toolz.curried import get
+from torchvision.ops import nms as tnms
 
 
 def flatten(xs):
@@ -30,16 +31,24 @@ def flatten(xs):
 class AnchorGenerator(AnchorGeneratorBase):
     def __init__(self, levels, anchors, flatten=True, with_corners=True, cache=True):
         super().__init__(levels, cache)
-        self.anchor_sizes = anchors
+        self.anchor_sizes = list(anchors)
         self.flatten = flatten
         self.with_corners = with_corners
 
     def calculate(self, size, grid_sizes, device, dtype):
         width, height = size
-        anchor_sizes = self.anchor_sizes.to(device=device, dtype=dtype, copy=True)
-        anchor_sizes.div_(anchor_sizes.new_tensor([width, height]))
+        anchor_sizes = [
+            a.to(device=device, dtype=dtype, copy=True)
+            if torch.is_tensor(a) else torch.tensor(a, device=device, dtype=dtype)
+            for a in self.anchor_sizes]
+        for a in anchor_sizes:
+            a.div_(a.new_tensor([width, height]))
         mlvl_anchors = generate_mlvl_anchors(
             grid_sizes, anchor_sizes, device, dtype)
+        for anchors in mlvl_anchors:
+            corners = BBox.convert(anchors, BBox.XYWH, BBox.LTRB, inplace=True)
+            corners.clamp_(0.0, 1.0)
+            BBox.convert(corners, BBox.LTRB, BBox.LTRB, inplace=True)
         if self.flatten:
             mlvl_anchors = flatten(mlvl_anchors)
         ret = {
@@ -451,6 +460,53 @@ def anchor_based_inference(
     return BoxList(dets)
 
 
+def anchor_based_inference_per_class(
+        loc_p, cls_p, anchors, conf_threshold=0.01,
+        iou_threshold=0.5, topk=100,
+        conf_strategy='softmax',
+        loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
+    bboxes = loc_p.view(-1, 4) * loc_p.new_tensor(loc_t_stds)
+    bboxes = target_to_coords(bboxes, anchors)
+    bboxes = BBox.convert(
+        bboxes, format=BBox.XYWH, to=BBox.LTRB, inplace=True)
+    num_classes = cls_p.size(-1)
+    logits = cls_p.view(-1, num_classes)
+    if conf_strategy == 'softmax':
+        scores = torch.softmax(logits, dim=1)
+    else:
+        scores = torch.sigmoid_(logits)
+
+    dets = []
+    for c in range(1, num_classes):
+        c_scores = scores[:, c]
+        c_bboxes = bboxes
+        if conf_threshold > 0:
+            pos = c_scores > conf_threshold
+            c_scores = c_scores[pos]
+            if len(c_scores) == 0:
+                continue
+            c_bboxes = c_bboxes[pos]
+
+        indices = tnms(c_bboxes, c_scores, iou_threshold)
+        c_scores = c_scores[indices]
+        c_bboxes = c_bboxes[indices]
+        c_bboxes = BBox.convert(
+            c_bboxes, format=BBox.LTRB, to=BBox.LTWH, inplace=True)
+
+        for i in range(len(c_scores)):
+            det = {
+                'image_id': -1,
+                'category_id': c,
+                'bbox': c_bboxes[i].tolist(),
+                'score': c_scores[i].item(),
+            }
+            dets.append(det)
+
+    dets = sorted(dets, key=lambda d: d['score'], reverse=True)
+    dets = dets[:topk]
+    return BoxList(dets)
+
+
 class AnchorBasedInference:
     r"""
     Parameters
@@ -472,8 +528,8 @@ class AnchorBasedInference:
 
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
-                 conf_strategy='softmax', nms='soft', min_score=None,
-                 loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
+                 conf_strategy='softmax', nms='nms', min_score=None,
+                 per_class_nms=True, loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator
@@ -485,12 +541,14 @@ class AnchorBasedInference:
         self.conf_strategy = conf_strategy
         self.nms = nms
         self.min_score = min_score
+        self.per_class_nms = per_class_nms
         self.loc_t_stds = loc_t_stds
 
     def __call__(self, loc_preds, cls_preds):
         grid_sizes = [p.size()[1:3] for p in loc_preds]
         anchors = self.generator(grid_sizes, loc_preds[0].device, loc_preds[0].dtype)["centers"]
         loc_p, cls_p = flatten_preds(loc_preds, cls_preds)
+        print(loc_p.shape)
         batch_size = loc_p.size(0)
         image_dets = [
             self.inference_single(loc_p[i], cls_p[i], anchors)
@@ -499,8 +557,15 @@ class AnchorBasedInference:
         return image_dets
 
     def inference_single(self, loc_p, cls_p, anchors):
-        return anchor_based_inference(
-            loc_p, cls_p, anchors, self.conf_threshold,
-            self.iou_threshold, self.topk,
-            self.conf_strategy, self.nms, self.min_score, self.loc_t_stds
-        )
+        if self.per_class_nms:
+            return anchor_based_inference_per_class(
+                loc_p, cls_p, anchors, self.conf_threshold,
+                self.iou_threshold, self.topk,
+                self.conf_strategy, self.loc_t_stds
+            )
+        else:
+            return anchor_based_inference(
+                loc_p, cls_p, anchors, self.conf_threshold,
+                self.iou_threshold, self.topk,
+                self.conf_strategy, self.nms, self.min_score, self.loc_t_stds
+            )

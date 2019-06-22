@@ -6,7 +6,7 @@ from horch.models.detection.nasfpn import ReLUConvBN
 
 from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat
 from horch.models.detection.nasfpn import NASFPN
-from horch.models.utils import conv_to_atrous
+from horch.models.utils import conv_to_atrous, remove_stride_padding
 
 
 class TopDown(nn.Module):
@@ -77,7 +77,7 @@ class BasicBlock(nn.Sequential):
 
 
 class ExtraLayers(nn.Module):
-    def __init__(self, in_channels_list, num_extra_layers=3, f_channels_list=(512, 256, 256), no_padding=-1, block=BasicBlock, **kwargs):
+    def __init__(self, in_channels_list, num_extra_layers=3, f_channels_list=(512, 256, 256), no_padding=0, block=BasicBlock, **kwargs):
         super().__init__()
         f_channels_list = tuplify(f_channels_list, num_extra_layers)
         in_channels_list = list(in_channels_list)
@@ -88,7 +88,7 @@ class ExtraLayers(nn.Module):
             in_channels_list.append(f_channels)
 
         for i in range(no_padding, 0):
-            conv_to_atrous(self.extra_layers[i], rate=1)
+            remove_stride_padding(self.extra_layers[i])
 
         self.out_channels = in_channels_list
 
