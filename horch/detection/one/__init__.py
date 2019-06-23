@@ -331,10 +331,6 @@ class MultiBoxLoss(nn.Module):
     def forward(self, loc_p, cls_p, loc_t, cls_t, ignore=None, *args):
         if not torch.is_tensor(loc_p):
             loc_p, cls_p = flatten_preds(loc_p, cls_p)
-        # print(loc_p.shape)
-        # print(cls_p.shape)
-        # print(loc_t.shape)
-        # print(cls_t.shape)
         pos = cls_t != 0
         neg = ~pos
         if ignore is not None:
@@ -351,16 +347,20 @@ class MultiBoxLoss(nn.Module):
         # Hard Negative Mining
         if self.neg_pos_ratio:
             if self.cls_loss == 'ce':
-                cls_loss = F.cross_entropy(
-                    cls_p, cls_t, reduction='none')
+                cls_loss_pos = F.cross_entropy(
+                    cls_p[pos], cls_t[pos], reduction='sum')
+                cls_p_neg = cls_p[neg]
+                cls_loss_neg = F.cross_entropy(
+                    cls_p_neg, cls_p_neg.new_zeros(len(cls_p_neg), dtype=torch.long),
+                    reduction='none')
             elif self.cls_loss == 'bce':
-                assert loc_p.dim() == 2
+                assert cls_p.dim() == 2
                 cls_loss = F.binary_cross_entropy_with_logits(
                     cls_p, cls_t.to(dtype=cls_p.dtype), reduction='none')
+                cls_loss_pos = cls_loss[pos].sum()
+                cls_loss_neg = cls_loss[neg]
             else:
                 raise ValueError("Invalid cls loss `%s` for hard negative mining" % self.cls_loss)
-            cls_loss_pos = cls_loss[pos].sum()
-            cls_loss_neg = cls_loss[neg]
             num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
             cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
             cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
