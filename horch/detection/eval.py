@@ -7,7 +7,7 @@ from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11
 
 
-def mean_average_precision(dts: List[BBox], gts: List[BBox], iou_threshold=.5):
+def mean_average_precision(dts: List[BBox], gts: List[BBox], iou_threshold=.5, use_07_metric=True):
     r"""
     Args:
         dts: sequences of BBox with `confidence`
@@ -51,12 +51,21 @@ def mean_average_precision(dts: List[BBox], gts: List[BBox], iou_threshold=.5):
         acc_tp = np.cumsum(TP)
         recall = acc_tp / n_positive
         precision = acc_tp / (acc_fp + acc_tp + 1e-10)
-        ap = average_precision_pr(precision, recall)[0]
+        ap = average_precision_pr(precision, recall, use_07_metric)
         aps.append(ap)
     return np.mean(aps)
 
 
-def average_precision_pr(precision, recall):
+def average_precision_pr(precision, recall, use_07_metric=True):
+    if use_07_metric:
+        ap = 0
+        for t in np.arange(0., 1.1, 0.1):
+            if np.sum(recall >= t) == 0:
+                p = 0
+            else:
+                p = np.max(np.nan_to_num(precision)[recall >= t])
+            ap += p / 11
+        return ap
     mrec = [0, *recall, 1]
     mpre = [0, *precision, 0]
     for i in range(len(mpre) - 1, 0, -1):
@@ -68,4 +77,5 @@ def average_precision_pr(precision, recall):
     ap = 0
     for i in ii:
         ap += np.sum((mrec[i] - mrec[i - 1]) * mpre[i])
-    return ap, mpre[:-1], mrec[:-1], ii
+    return ap
+    # return ap, mpre[:-1], mrec[:-1], ii
