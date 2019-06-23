@@ -24,9 +24,10 @@ def mean_average_precision(dts: List[BBox], gts: List[BBox], iou_threshold=.5):
             aps.append(0)
             continue
         i_gts = groupby(lambda b: b.image_id, class_gts[c])
-        n_positive = len(class_gts[c])
+        n_positive = len([d for d in class_gts[c] if not d.is_difficult])
         dts = sorted(class_dts[c], key=lambda b: b.score, reverse=True)
         TP = np.zeros(len(dts), dtype=np.uint8)
+        FP = np.zeros(len(dts), dtype=np.uint8)
         seen = {
             i: np.zeros(len(gts))
             for i, gts in i_gts.items()
@@ -35,17 +36,21 @@ def mean_average_precision(dts: List[BBox], gts: List[BBox], iou_threshold=.5):
             image_id = dt.image_id
             if image_id not in i_gts:
                 continue
-            ious = [iou_11(dt.bbox, gt.bbox) for gt in i_gts[dt.image_id]]
+            ious = [iou_11(dt.bbox, gt.bbox) for gt in i_gts[image_id]]
             j_max, iou_max = max(enumerate(ious), key=lambda x: x[1])
             if iou_max > iou_threshold:
-                if not seen[image_id][j_max]:
-                    TP[i] = 1
-                    seen[image_id][j_max] = 1
-        FP = 1 - TP
+                if not i_gts[image_id][j_max].is_difficult:
+                    if not seen[image_id][j_max]:
+                        TP[i] = 1
+                        seen[image_id][j_max] = 1
+                    else:
+                        FP[i] = 1
+            else:
+                FP[i] = 1
         acc_fp = np.cumsum(FP)
         acc_tp = np.cumsum(TP)
         recall = acc_tp / n_positive
-        precision = acc_tp / (acc_fp + acc_tp)
+        precision = acc_tp / (acc_fp + acc_tp + 1e-10)
         ap = average_precision_pr(precision, recall)[0]
         aps.append(ap)
     return np.mean(aps)

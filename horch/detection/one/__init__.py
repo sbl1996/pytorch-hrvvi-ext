@@ -31,6 +31,7 @@ def flatten(xs):
 class AnchorGenerator(AnchorGeneratorBase):
     def __init__(self, levels, anchors, flatten=True, with_corners=True, cache=True):
         super().__init__(levels, cache)
+        assert len(levels) == len(anchors)
         self.anchor_sizes = list(anchors)
         self.flatten = flatten
         self.with_corners = with_corners
@@ -295,10 +296,23 @@ class MultiBoxLoss(nn.Module):
         Default: 'ce'
     prefix : str
         Prefix of loss.
+
+    Inputs
+    ------
+    loc_p : Tensor or List[Tensor]
+        (batch_size, #anchors, 4) of list of (batch_size, w, h, ?a, 4)
+    cls_p : Tensor or List[Tensor]
+        (batch_size, #anchors, ?C) of list of (batch_size, w, h, ?a, ?C)
+    loc_t : Tensor
+        (batch_size, #anchors, 4)
+    cls_t : Tensor
+        (batch_size, #anchors)
+    ignore : Tensor
+        (batch_size, #anchors)
     """
 
     def __init__(self,
-                 pos_neg_ratio=None,
+                 neg_pos_ratio=None,
                  cls_loss='ce',
                  loc_t_stds=(0.1, 0.1, 0.2, 0.2),
                  p=0.01,
@@ -306,7 +320,9 @@ class MultiBoxLoss(nn.Module):
         super().__init__()
         assert 0 <= p <= 1
         assert cls_loss in ['focal', 'ce', 'bce'], "Classification loss must be one of ['focal', 'ce', 'bce']"
-        self.pos_neg_ratio = pos_neg_ratio
+        self.neg_pos_ratio = neg_pos_ratio
+        if loc_t_stds is None:
+            loc_t_stds = (1, 1, 1, 1)
         self.loc_t_stds = loc_t_stds
         self.cls_loss = cls_loss
         self.prefix = prefix
@@ -327,63 +343,52 @@ class MultiBoxLoss(nn.Module):
 
         if num_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
-        if loc_p.size()[:-1] == pos.size():
-            loc_p = loc_p[pos]
-        if loc_t.size()[:-1] == pos.size():
-            loc_t = loc_t[pos]
-        loc_t = loc_t / loc_t.new_tensor(self.loc_t_stds)
-        loc_loss = F.smooth_l1_loss(
-            loc_p, loc_t, reduction='sum') / num_pos
+
+        if self.loc_t_stds:
+            loc_t = loc_t / loc_t.new_tensor(self.loc_t_stds)
+        loc_loss = F.smooth_l1_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
 
         # Hard Negative Mining
-        if self.pos_neg_ratio:
+        if self.neg_pos_ratio:
             if self.cls_loss == 'ce':
-                cls_loss_pos = F.cross_entropy(
-                    cls_p[pos], cls_t[pos], reduction='sum')
-
-                cls_p_neg = cls_p[neg]
-                cls_loss_neg = F.cross_entropy(
-                    cls_p_neg,
-                    cls_p_neg.new_zeros(len(cls_p_neg), dtype=torch.long),
-                    reduction='none'
-                )
-                # cls_loss_neg = -F.log_softmax(cls_p_neg, dim=1)[..., 0]
+                cls_loss = F.cross_entropy(
+                    cls_p, cls_t, reduction='none')
             elif self.cls_loss == 'bce':
-                cls_p_pos = cls_p[pos]
-                cls_loss_pos = F.binary_cross_entropy_with_logits(
-                    cls_p_pos, torch.ones_like(cls_p_pos), reduction='sum')
-
-                cls_p_neg = cls_p[neg]
-                cls_loss_neg = F.binary_cross_entropy_with_logits(
-                    cls_p_neg,
-                    torch.zeros_like(cls_p_neg),
-                    reduction='none')
+                assert loc_p.dim() == 2
+                cls_loss = F.binary_cross_entropy_with_logits(
+                    cls_p, cls_t.to(dtype=cls_p.dtype), reduction='none')
             else:
                 raise ValueError("Invalid cls loss `%s` for hard negative mining" % self.cls_loss)
-
-            num_neg = min(int(num_pos / self.pos_neg_ratio), len(cls_loss_neg))
+            cls_loss_pos = cls_loss[pos].sum()
+            cls_loss_neg = cls_loss[neg]
+            num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
             cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
             cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
         else:
             if self.cls_loss == 'focal':
-                if cls_p.ndimension() - cls_t.ndimension() == 1:
+                if cls_p.dim() - cls_t.dim() == 1:
                     cls_t = one_hot(cls_t, C=cls_p.size(-1))
                 else:
-                    cls_t = cls_t.float()
+                    cls_t = cls_t.to(dtype=cls_p.dtype)
                 if ignore is not None:
-                    cls_loss_pos = focal_loss2(cls_p[pos], cls_t[pos], reduction='sum')
+                    cls_loss_pos = focal_loss2(
+                        cls_p[pos], cls_t[pos], reduction='sum')
                     cls_p_neg = cls_p[neg]
                     cls_loss_neg = focal_loss2(cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
                     cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
                 else:
                     cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
             elif self.cls_loss == 'bce':
-                assert cls_p.size() == cls_t.size()
-                cls_loss = F.binary_cross_entropy_with_logits(cls_p, cls_t.float(), reduction='sum') / num_pos
-            else:
+                if cls_p.dim() - cls_t.dim() == 1:
+                    cls_t = one_hot(cls_t, C=cls_p.size(-1))
+                else:
+                    cls_t = cls_t.to(dtype=cls_p.dtype)
+                cls_t = cls_t.to(dtype=cls_p.dtype)
+                cls_loss = F.binary_cross_entropy_with_logits(cls_p, cls_t, reduction='sum') / num_pos
+            elif self.cls_loss == 'ce':
                 cls_p = cls_p.view(-1, cls_p.size(-1))
                 cls_t = cls_t.view(-1)
-                if len(cls_p) != len(cls_t):
+                if ignore is not None:
                     cls_loss_pos = F.cross_entropy(
                         cls_p[pos], cls_t[pos], reduction='sum')
                     cls_p_neg = cls_p[neg]
@@ -392,6 +397,9 @@ class MultiBoxLoss(nn.Module):
                     cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
                 else:
                     cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
+            else:
+                raise ValueError("Classification loss must be one of ['focal', 'ce', 'bce']")
+
         loss = cls_loss + loc_loss
         if random.random() < self.p:
             if self.prefix:
@@ -542,6 +550,8 @@ class AnchorBasedInference:
         self.nms = nms
         self.min_score = min_score
         self.per_class_nms = per_class_nms
+        if loc_t_stds is None:
+            loc_t_stds = (1, 1, 1, 1)
         self.loc_t_stds = loc_t_stds
 
     def __call__(self, loc_preds, cls_preds):

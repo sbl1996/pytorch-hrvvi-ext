@@ -353,7 +353,7 @@ class Compose:
         self.transforms = A.Compose(
             ts,
             bbox_params={'format': 'coco', 'min_area': 0, 'min_visibility': 0.25,
-                         'label_fields': ['category_id', 'id', 'image_id', 'parea', 'area', 'iscrowd']})
+                         'label_fields': ['category_id', 'id', 'image_id', 'area', 'isdifficult', 'iscrowd']})
         self.post_transforms = transforms[i:]
 
     def __call__(self, img, anns):

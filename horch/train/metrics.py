@@ -1,3 +1,5 @@
+import time
+
 from PIL import Image
 from toolz import curry
 from toolz.curried import get
@@ -179,15 +181,14 @@ class LossG(Average):
 
 class COCOEval(Metric):
 
-    def __init__(self, annotations, iou_type='bbox', percent_area_ranges=None):
+    def __init__(self, annotations, iou_type='bbox'):
         self.annotations = annotations
         self.iou_type = iou_type
-        self.percent_area_ranges = percent_area_ranges
         super().__init__()
 
     def reset(self):
         from hpycocotools.coco import COCO
-        self.coco_gt = COCO(self.annotations, verbose=False, use_percent=bool(self.percent_area_ranges))
+        self.coco_gt = COCO(self.annotations, verbose=False)
         self.res = []
 
     def update(self, output):
@@ -211,7 +212,7 @@ class COCOEval(Metric):
             'images': imgs,
             'annotations': anns,
         }
-        coco_gt = COCO(annotations, verbose=False, use_percent=bool(self.percent_area_ranges))
+        coco_gt = COCO(annotations, verbose=False)
 
         from hpycocotools.cocoeval import COCOeval
         from hpycocotools.mask import encode
@@ -241,7 +242,7 @@ class COCOEval(Metric):
 
         coco_dt = coco_gt.loadRes(self.res)
         ev = COCOeval(coco_gt, coco_dt,
-                      iouType=self.iou_type, pAreaRng=self.percent_area_ranges, verbose=False)
+                      iouType=self.iou_type, verbose=False)
         ev.evaluate()
         ev.accumulate()
         ev.summarize()

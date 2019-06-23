@@ -23,7 +23,8 @@ DATASET_YEAR_DICT = {
         'filename': 'VOCtrainval_11-May-2012.tar',
         'md5': '6cd6e144f989b92b3379bac3b3de84fd',
         'base_dir': 'VOCdevkit/VOC2012',
-        "ann_file_url": "https://drive.google.com/open?id=1v98GB2D7oc6OoP8NdIHayZbt-8V6Fc5Q",
+        # "ann_file_url": "https://drive.google.com/open?id=1v98GB2D7oc6OoP8NdIHayZbt-8V6Fc5Q",
+        "ann_file_url": "https://drive.google.com/open?id=1DaCMKSWZyjXMrTV4eUpNqb1IWCxwL-jC",
     },
     '2011': {
         'url': 'http://host.robots.ox.ac.uk/pascal/VOC/voc2011/VOCtrainval_25-May-2011.tar',
@@ -54,7 +55,8 @@ DATASET_YEAR_DICT = {
         'filename': 'VOCtrainval_06-Nov-2007.tar',
         'md5': 'c52e279531787c972589f7e41ab4ae64',
         'base_dir': 'VOCdevkit/VOC2007',
-        "ann_file_url": "https://drive.google.com/open?id=1dwgWLM4qxe5aT3o46y0Jz10DKmh17w6W",
+        "ann_file_url": "https://drive.google.com/open?id=10_yix9rzarmL2yMT4bBSae8wZy9uIJBQ",
+        # "ann_file_url": "https://drive.google.com/open?id=1dwgWLM4qxe5aT3o46y0Jz10DKmh17w6W",
     }
 }
 
@@ -64,7 +66,8 @@ TEST_DATASET_YEAR_DICT = {
         'filename': 'VOCtest_06-Nov-2007.tar',
         'md5': 'b6e924de25625d8de591ea690078ad9f',
         'base_dir': 'VOCdevkit/VOC2007',
-        "ann_file_url": "https://drive.google.com/open?id=1BGSle9xH6B_voeUE4Mp0YYYFmKZfxu0B",
+        'ann_file_url': "https://drive.google.com/open?id=1FUok_Uo-RVxgz7FO4VkgMFeZu5lah1RG",
+        # "ann_file_url": "https://drive.google.com/open?id=1BGSle9xH6B_voeUE4Mp0YYYFmKZfxu0B",
     }
 }
 
