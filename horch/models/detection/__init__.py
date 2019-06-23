@@ -6,6 +6,7 @@ from horch.models.detection.ssd import SSD
 from horch.models.detection.retinanet import RetinaNet
 
 from horch.common import tuplify
+from horch.train.trainer import set_training
 
 
 class OneStageDetector(Sequential):
@@ -52,7 +53,7 @@ class OneStageDetector(Sequential):
             preds = self.head(*tuplify(features))
         if self._inference:
             preds = self._inference(*tuplify(preds))
-        self.train()
+        set_training(self)
         return preds
 
 

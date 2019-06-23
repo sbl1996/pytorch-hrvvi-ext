@@ -19,6 +19,13 @@ from torch.utils.data import DataLoader
 from typing import Sequence, Dict
 
 
+def set_training(model):
+    model.train()
+    for m in model.modules():
+        if "Norm" in type(m).__name__ and not m.weight.requires_grad:
+            m.eval()
+
+
 def create_supervised_evaluator(model, metrics=None,
                                 device=None, prepare_batch=_prepare_batch):
     if metrics is None:
@@ -59,7 +66,7 @@ def create_supervised_trainer(
         model.to(device)
 
     def _update(engine, batch):
-        model.train()
+        set_training(model)
         optimizer.zero_grad()
         inputs, targets = prepare_batch(batch, device=device)
         if targets_as_inputs:

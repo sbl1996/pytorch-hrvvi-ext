@@ -1,6 +1,7 @@
 import copy
 import os
 import torch
+from horch.train.trainer import set_training
 from tqdm.autonotebook import tqdm
 from torch.optim.lr_scheduler import _LRScheduler
 import matplotlib.pyplot as plt
@@ -153,7 +154,7 @@ class LRFinder(object):
 
     def _train_batch(self, batch):
         # Set model to training mode
-        self.model.train()
+        set_training(self.model)
 
         # Move data to the correct device
         inputs, targets = _prepare_batch(batch, device=self.device)

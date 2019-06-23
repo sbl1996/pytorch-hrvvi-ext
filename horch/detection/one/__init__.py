@@ -529,7 +529,7 @@ class AnchorBasedInference:
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
                  conf_strategy='softmax', nms='nms', min_score=None,
-                 per_class_nms=True, loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
+                 per_class_nms=False, loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator

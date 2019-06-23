@@ -140,3 +140,12 @@ def decimate(tensor, m):
                                          index=torch.arange(start=0, end=tensor.size(d), step=m[d]).long())
 
     return tensor
+
+
+def freeze_bn(module):
+    def f(m):
+        name = type(m).__name__
+        if "BatchNorm" in name:
+            m.weight.requires_grad = False
+            m.bias.requires_grad = False
+    module.apply(f)

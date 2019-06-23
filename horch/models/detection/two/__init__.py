@@ -8,6 +8,7 @@ from horch.common import detach, tuplify, _concat, inverse_sigmoid
 from horch.models.utils import bias_init_constant, weight_init_normal
 from horch.models.modules import Sequential, Conv2d
 from horch.models.detection.head import to_pred
+from horch.train.trainer import set_training
 
 
 class RPNHead(nn.Module):
@@ -170,7 +171,7 @@ class FasterRCNN(nn.Module):
             #     ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
             preds = self.box_head(*ps)
         image_dets = self._inference(rois[..., 1:], *preds)
-        self.train()
+        set_training(self)
         return image_dets
 
 
