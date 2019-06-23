@@ -45,10 +45,10 @@ class AnchorGenerator(AnchorGeneratorBase):
             a.div_(a.new_tensor([width, height]))
         mlvl_anchors = generate_mlvl_anchors(
             grid_sizes, anchor_sizes, device, dtype)
-        for anchors in mlvl_anchors:
-            corners = BBox.convert(anchors, BBox.XYWH, BBox.LTRB, inplace=True)
-            corners.clamp_(0.0, 1.0)
-            BBox.convert(corners, BBox.LTRB, BBox.LTRB, inplace=True)
+        # for anchors in mlvl_anchors:
+        #     corners = BBox.convert(anchors, BBox.XYWH, BBox.LTRB, inplace=True)
+        #     corners.clamp_(0.0, 1.0)
+        #     BBox.convert(corners, BBox.LTRB, BBox.LTRB, inplace=True)
         if self.flatten:
             mlvl_anchors = flatten(mlvl_anchors)
         ret = {
