@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import List
 
 import numpy as np
@@ -6,40 +7,48 @@ from toolz.curried import groupby
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_11
 
+from hpycocotools.mask import iou
 
-def mean_average_precision(dts: List[BBox], gts: List[BBox], iou_threshold=.5, use_07_metric=True):
+def mean_average_precision(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5, use_07_metric=True):
     r"""
     Args:
         dts: sequences of BBox with `confidence`
         gts: same size sequences of BBox
         iou_threshold:
     """
-    class_dts = groupby(lambda b: b.category_id, dts)
-    class_gts = groupby(lambda b: b.category_id, gts)
-    # classes = set(class_gts.keys()).union(set(class_dts.keys()))
-    classes = class_gts.keys()
+    dts = defaultdict(list)
+    gts = defaultdict(list)
+    for dt in detections:
+        dts[dt.category_id][dt.image_id].append(dt)
+    for gt in ground_truths:
+        gts[gt.category_id][gt.image_id].append(gt)
+
+    img_ids = set(d.image_id for d in ground_truths)
+    classes = set(d.category_id for d in ground_truths)
     aps = []
     for c in classes:
-        if c not in class_dts:
+        if c not in dts:
             aps.append(0)
             continue
-        i_gts = groupby(lambda b: b.image_id, class_gts[c])
-        n_positive = len([d for d in class_gts[c] if not d.is_difficult])
-        dts = sorted(class_dts[c], key=lambda b: b.score, reverse=True)
-        TP = np.zeros(len(dts), dtype=np.uint8)
-        FP = np.zeros(len(dts), dtype=np.uint8)
+
+        n_positive = len([d for d in gts[c] if not d.is_difficult])
+        c_dts = sorted(c_dts, key=lambda b: b.score, reverse=True)
+        TP = np.zeros(len(c_dts), dtype=np.uint8)
+        FP = np.zeros(len(c_dts), dtype=np.uint8)
         seen = {
             i: np.zeros(len(gts))
-            for i, gts in i_gts.items()
+            for i, gts in image2gts.items()
         }
-        for i, dt in enumerate(dts):
+        for i, dt in enumerate(c_dts):
             image_id = dt.image_id
-            if image_id not in i_gts:
+            if image_id not in image2gts:
                 continue
-            ious = [iou_11(dt.bbox, gt.bbox) for gt in i_gts[image_id]]
+            i_gts = image2gts[image_id]
+            ious1 = [iou_11(dt.bbox, gt.bbox) for gt in i_gts]
+            ious = iou()
             j_max, iou_max = max(enumerate(ious), key=lambda x: x[1])
             if iou_max > iou_threshold:
-                if not i_gts[image_id][j_max].is_difficult:
+                if not i_gts[j_max].is_difficult:
                     if not seen[image_id][j_max]:
                         TP[i] = 1
                         seen[image_id][j_max] = 1

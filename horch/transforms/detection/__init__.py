@@ -361,14 +361,14 @@ class RandomVerticalFlip(JointTransform):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-def SSDTransform(size, mean=0, color_jitter=True, scale=(0.1, 1), expand=(1, 4), min_area_frac=0.25):
+def SSDTransform(size, mean=0, color_jitter=True, expand=(1, 4)):
     transforms = []
     if color_jitter:
         transforms.append(
             InputTransform(
                 ColorJitter(
-                    brightness=0.1, contrast=0.5,
-                    saturation=0.5, hue=0.05,
+                    brightness=0.5, contrast=0.5,
+                    saturation=0.5, hue=18/255,
                 )
             )
         )
@@ -376,11 +376,7 @@ def SSDTransform(size, mean=0, color_jitter=True, scale=(0.1, 1), expand=(1, 4),
         RandomApply([
             RandomExpand(expand, mean=mean),
         ]),
-        RandomChoice([
-            UseOriginal(),
-            RandomSampleCrop(),
-            RandomResizedCrop(size, scale=scale, ratio=(1/2, 2/1), min_area_frac=min_area_frac),
-        ]),
+        RandomSampleCrop(),
         RandomHorizontalFlip(),
         Resize(size)
     ]
