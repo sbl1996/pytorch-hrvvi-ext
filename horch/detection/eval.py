@@ -1,67 +1,95 @@
+import time
 from collections import defaultdict
 from typing import List
 
 import numpy as np
+from horch._numpy import iou_mn
 from toolz.curried import groupby
 
 from horch.detection.bbox import BBox
-from horch.detection.iou import iou_11
 
-from hpycocotools.mask import iou
 
-def mean_average_precision(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5, use_07_metric=True):
+def mean_average_precision(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5, use_07_metric=True, ignore_difficult=True):
     r"""
     Args:
-        dts: sequences of BBox with `confidence`
-        gts: same size sequences of BBox
+        detections: sequences of BBox with `score`
+        ground_truths: same size sequences of BBox
         iou_threshold:
+        use_07_metric:
     """
-    dts = defaultdict(list)
-    gts = defaultdict(list)
-    for dt in detections:
-        dts[dt.category_id][dt.image_id].append(dt)
-    for gt in ground_truths:
-        gts[gt.category_id][gt.image_id].append(gt)
+    c2dts = groupby(lambda b: b.category_id, detections)
+    c2gts = groupby(lambda b: b.category_id, ground_truths)
+    dts = {}
+    gts = {}
+    for c, c_dts in c2dts.items():
+        dts[c] = groupby(lambda b: b.image_id, c_dts)
+        for i in dts[c]:
+            dts[c][i].sort(key=lambda d: d.score, reverse=True)
+    for c, c_gts in c2gts.items():
+        gts[c] = groupby(lambda b: b.image_id, c_gts)
 
     img_ids = set(d.image_id for d in ground_truths)
     classes = set(d.category_id for d in ground_truths)
+
+    ious = defaultdict(lambda: defaultdict())
+
+    for c in classes:
+        if c not in dts:
+            continue
+        for i in img_ids:
+            if i not in dts[c] or i not in gts[c]:
+                continue
+            gt = gts[c][i]
+            dt = dts[c][i]
+            dt_bboxes = np.array([d.bbox for d in dt])
+            gt_bboxes = np.array([d.bbox for d in gt])
+            ious[c][i] = iou_mn(dt_bboxes, gt_bboxes)
+
     aps = []
     for c in classes:
         if c not in dts:
             aps.append(0)
             continue
 
-        n_positive = len([d for d in gts[c] if not d.is_difficult])
-        c_dts = sorted(c_dts, key=lambda b: b.score, reverse=True)
+        c_gts = gts[c]
+        if ignore_difficult:
+            n_positive = len([d for ds in c_gts.values() for d in ds if not d.is_difficult])
+        else:
+            n_positive = len([d for ds in c_gts.values() for d in ds])
+        c_dts = sorted([d for ds in dts[c].values() for d in ds], key=lambda b: b.score, reverse=True)
         TP = np.zeros(len(c_dts), dtype=np.uint8)
         FP = np.zeros(len(c_dts), dtype=np.uint8)
         seen = {
-            i: np.zeros(len(gts))
-            for i, gts in image2gts.items()
+            i: np.zeros(len(ds), dtype=np.uint8)
+            for i, ds in c_gts.items()
         }
-        for i, dt in enumerate(c_dts):
-            image_id = dt.image_id
-            if image_id not in image2gts:
+        rank = {
+            i: 0
+            for i in c_gts
+        }
+        for di, dt in enumerate(c_dts):
+            img_id = dt.image_id
+            if img_id not in c_gts:
                 continue
-            i_gts = image2gts[image_id]
-            ious1 = [iou_11(dt.bbox, gt.bbox) for gt in i_gts]
-            ious = iou()
-            j_max, iou_max = max(enumerate(ious), key=lambda x: x[1])
+            iou = ious[c][img_id][rank[img_id]]
+            rank[img_id] += 1
+            j_max, iou_max = max(enumerate(iou), key=lambda x: x[1])
             if iou_max > iou_threshold:
-                if not i_gts[j_max].is_difficult:
-                    if not seen[image_id][j_max]:
-                        TP[i] = 1
-                        seen[image_id][j_max] = 1
+                if not (ignore_difficult and c_gts[img_id][j_max].is_difficult):
+                    if not seen[img_id][j_max]:
+                        TP[di] = 1
+                        seen[img_id][j_max] = 1
                     else:
-                        FP[i] = 1
+                        FP[di] = 1
             else:
-                FP[i] = 1
+                FP[di] = 1
         acc_fp = np.cumsum(FP)
         acc_tp = np.cumsum(TP)
         recall = acc_tp / n_positive
         precision = acc_tp / (acc_fp + acc_tp + 1e-10)
         ap = average_precision_pr(precision, recall, use_07_metric)
         aps.append(ap)
+    print(aps)
     return np.mean(aps)
 
 

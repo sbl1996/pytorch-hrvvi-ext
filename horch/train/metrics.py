@@ -395,10 +395,11 @@ class MeanAveragePrecision(Metric):
         preds: (batch_size, h, w, c)
     """
 
-    def __init__(self, iou_threshold=0.5, interpolation='11point'):
+    def __init__(self, iou_threshold=0.5, interpolation='11point', ignore_difficult=True):
         assert interpolation in ['all', '11point']
         self.iou_threshold = iou_threshold
         self.interpolation = interpolation
+        self.ignore_difficult = ignore_difficult
         super().__init__()
 
     def reset(self):
@@ -421,6 +422,6 @@ class MeanAveragePrecision(Metric):
         dts = [BBox(**ann, format=BBox.LTWH) for ann in self.dts]
         gts = [BBox(**ann, format=BBox.LTWH) for ann in self.gts]
 
-        mAP = mean_average_precision(dts, gts, self.iou_threshold, self.interpolation == '11point')
+        mAP = mean_average_precision(dts, gts, self.iou_threshold, self.interpolation == '11point', self.ignore_difficult)
 
         return mAP

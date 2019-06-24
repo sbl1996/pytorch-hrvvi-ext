@@ -4,6 +4,7 @@ from collections import defaultdict
 from horch.common import select, _concat
 from horch.detection import generate_mlvl_anchors, calc_grid_sizes
 from horch.detection.anchor.generator import AnchorGeneratorBase
+from horch.transforms import Transform
 from horch.transforms.detection import BoxList
 from toolz import curry
 
@@ -12,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch import one_hot
-from horch.nn.loss import focal_loss2, loc_kl_loss
+from horch.nn.loss import focal_loss2
 
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn
@@ -46,10 +47,6 @@ class AnchorGenerator(AnchorGeneratorBase):
             a.div_(a.new_tensor([width, height]))
         mlvl_anchors = generate_mlvl_anchors(
             grid_sizes, anchor_sizes, device, dtype)
-        # for anchors in mlvl_anchors:
-        #     corners = BBox.convert(anchors, BBox.XYWH, BBox.LTRB, inplace=True)
-        #     corners.clamp_(0.0, 1.0)
-        #     BBox.convert(corners, BBox.LTRB, BBox.LTRB, inplace=True)
         if self.flatten:
             mlvl_anchors = flatten(mlvl_anchors)
         ret = {
@@ -72,85 +69,46 @@ def target_to_coords(loc_t, anchors):
     return loc_t
 
 
-def coords_to_target2(bboxes, anchors):
-    r"""
-    Parameters
-    ----------
-    bboxes
-        (n, 4)
-    anchors
-        (m, 4)
-    """
-    bboxes = bboxes[:, None, :]
-    anchors = anchors[None, :, :]
-    txty = (bboxes[..., :2] - anchors[..., :2]) / anchors[..., 2:] / 0.1
-    twth = (bboxes[..., 2:] / anchors[..., 2:]).log_() / 0.2
-    return torch.cat((txty, twth), dim=-1)
-
-
-def match_anchors2(bboxes, labels, centers, corners, pos_thresh=0.7, neg_thresh=0.3, debug=False):
+@curry
+def match_anchors(bboxes, labels, centers, corners, pos_thresh=0.7, neg_thresh=0.3, cpu=True):
+    num_objects = len(bboxes)
     num_anchors = len(centers)
-    if len(bboxes) == 0:
+
+    if num_objects == 0:
         loc_t = centers.new_zeros(num_anchors, 4)
         cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
         ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8) if neg_thresh else None
         return loc_t, cls_t, ignore
 
-    bboxes = centers.new_tensor(bboxes)
-    bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = centers.new_tensor(labels, dtype=torch.long)
-
     ious = iou_mn(BBox.convert(bboxes, BBox.XYWH, BBox.LTRB), corners)
-
-    pos = ious > pos_thresh
-    cls_t, indices = (pos.long() * labels[:, None]).max(dim=0)
-    loc_t_all = coords_to_target2(bboxes, centers)
-    loc_t = select(loc_t_all, 0, indices)
 
     max_ious, max_indices = ious.max(dim=1)
-    if debug:
-        print(max_ious.tolist())
-    loc_t[max_indices] = select(loc_t_all, 1, max_indices)
-    cls_t[max_indices] = labels
+    match_ious, matches = ious.max(dim=0)
+    match_ious[max_indices] = 1.
+    matches[max_indices] = torch.arange(num_objects, device=centers.device)
 
-    ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
+    if cpu:
+        loc_t = centers.new_zeros(num_anchors, 4)
+        cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
 
-    return loc_t, cls_t, ignore
+        pos = match_ious > pos_thresh
+        matches = matches[pos]
+        loc_t[pos] = coords_to_target(bboxes[matches], centers[pos])
+        cls_t[pos] = labels[matches]
+        non_pos = ~pos
+    else:
+        loc_t = coords_to_target(bboxes[matches], centers)
+        cls_t = labels[matches]
+        non_pos = match_ious < pos_thresh
+        loc_t[non_pos] = 0
+        cls_t[non_pos] = 0
 
-
-@curry
-def match_anchors(bboxes, labels, centers, corners, pos_thresh=0.7, neg_thresh=0.3, debug=False):
-    num_anchors = len(centers)
-    loc_t = centers.new_zeros(num_anchors, 4)
-    cls_t = loc_t.new_zeros(num_anchors, dtype=torch.long)
-
-    if len(bboxes) == 0:
-        ignore = loc_t.new_zeros(num_anchors, dtype=torch.uint8) if neg_thresh else None
-        return loc_t, cls_t, ignore
-
-    bboxes = loc_t.new_tensor(bboxes)
-    bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-    labels = loc_t.new_tensor(labels, dtype=torch.long)
-
-    ious = iou_mn(BBox.convert(bboxes, BBox.XYWH, BBox.LTRB), corners)
-
-    pos = ious > pos_thresh
-    for ipos, bbox, label in zip(pos, bboxes, labels):
-        loc_t[ipos] = coords_to_target(bbox, centers[ipos])
-        cls_t[ipos] = label
-
-    max_ious, indices = ious.max(dim=1)
-    if debug:
-        print(max_ious.tolist())
-    loc_t[indices] = coords_to_target(bboxes, centers[indices])
-    cls_t[indices] = labels
-
-    ignore = (cls_t == 0) & ((ious >= neg_thresh).sum(dim=0) != 0) if neg_thresh else None
+    ignore = non_pos & (match_ious >= neg_thresh) if neg_thresh else None
 
     return loc_t, cls_t, ignore
 
 
-class MatchAnchors:
+class MatchAnchors(Transform):
     r"""
     MatchAnchors is a transform for general object detection that transforms
     annotations to localization and classification targets.
@@ -177,8 +135,7 @@ class MatchAnchors:
         >>> ])
     """
 
-    def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'],
-                 debug=False):
+    def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id']):
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator
@@ -187,19 +144,18 @@ class MatchAnchors:
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
-        self.debug = debug
 
     def __call__(self, x, anns):
         height, width = x.shape[1:3]
         centers, corners = get(["centers", "corners"], self.generator((width, height), x.device, x.dtype))
-        bboxes = []
-        labels = []
-        for ann in anns:
-            bboxes.append(ann['bbox'])
-            labels.append(self.get_label(ann))
+
+        bboxes = x.new_tensor([ann['bbox'] for ann in anns])
+        bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
+        labels = x.new_tensor([self.get_label(ann) for ann in anns], dtype=torch.long)
+
         loc_t, cls_t, ignore = match_anchors(
             bboxes, labels, centers, corners,
-            self.pos_thresh, self.neg_thresh, self.debug)
+            self.pos_thresh, self.neg_thresh)
 
         if ignore is not None:
             return x, [loc_t, cls_t, ignore]
@@ -226,37 +182,36 @@ class AnchorMatcher:
         >>> net = OneStageDetector(backbone, fpn, head, matcher, inference)
     """
 
-    def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id'], debug=False):
+    def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id']):
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator
         self.pos_thresh = pos_thresh
         self.neg_thresh = neg_thresh
         self.get_label = get_label
-        self.debug = debug
 
     def __call__(self, features, box_lists):
         is_cpu = features[0].device.type == 'cpu'
-        match_func = match_anchors if is_cpu else match_anchors2
-        batch_size = len(box_lists)
+
         grid_sizes = tuple(f.size()[-2:][::-1] for f in features)
         centers, corners = get(["centers", "corners"],
                                self.generator(grid_sizes, features[0].device, features[0].dtype))
-        bboxes = []
-        labels = []
-        for anns in box_lists:
-            bboxes.append([ann['bbox'] for ann in anns])
-            labels.append([self.get_label(ann) for ann in anns])
+
+        bboxes = centers.new_tensor([b['bbox'] for b in box_lists])
+        bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
+        labels = centers.new_tensor([self.get_label(b) for b in box_lists], dtype=torch.long)
+
         loc_targets = []
         cls_targets = []
         ignores = []
-        for i in range(batch_size):
-            loc_t, cls_t, ignore = match_func(
+        for i in range(len(box_lists)):
+            loc_t, cls_t, ignore = match_anchors(
                 bboxes[i], labels[i], centers, corners,
-                self.pos_thresh, self.neg_thresh, self.debug)
+                self.pos_thresh, self.neg_thresh, is_cpu)
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
             ignores.append(ignore)
+
         loc_t = torch.stack(loc_targets, dim=0)
         cls_t = torch.stack(cls_targets, dim=0)
         if ignores[0] is not None:

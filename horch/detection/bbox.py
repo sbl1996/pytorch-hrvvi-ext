@@ -36,7 +36,7 @@ class BBox:
         self.is_difficult = is_difficult
         self.bbox = transform_bbox(
             bbox, format=format, to=1)
-        self.area = area or get_bbox_area(bbox, format=format)
+        self.area = area
         self.segmentation = segmentation
 
     def __repr__(self):

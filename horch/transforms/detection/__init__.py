@@ -365,11 +365,9 @@ def SSDTransform(size, mean=0, color_jitter=True, expand=(1, 4)):
     transforms = []
     if color_jitter:
         transforms.append(
-            InputTransform(
-                ColorJitter(
-                    brightness=0.5, contrast=0.5,
-                    saturation=0.5, hue=18/255,
-                )
+            ColorJitter(
+                brightness=0.5, contrast=0.5,
+                saturation=0.5, hue=18/255,
             )
         )
     transforms += [

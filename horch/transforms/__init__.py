@@ -9,7 +9,7 @@ class Transform:
         pass
 
     def __call__(self, input, target):
-        pass
+        raise NotImplementedError
 
     def __repr__(self):
         return pprint(self)
@@ -73,13 +73,15 @@ class Compose(Transform):
     """
 
     def __init__(self, transforms):
+        super().__init__()
         self.transforms = transforms
 
     def __call__(self, img, target):
         for t in self.transforms:
-            # start = time.time()
-            img, target = t(img, target)
-            # print("%.4f" % ((time.time() - start) * 1000))
+            if isinstance(t, Transform):
+                img, target = t(img, target)
+            else:
+                img = t(img)
         return img, target
 
     # def __repr__(self):
@@ -97,7 +99,7 @@ class UseOriginal(Transform):
     """
 
     def __init__(self):
-        pass
+        super().__init__()
 
     def __call__(self, img, target):
         return img, target
@@ -106,6 +108,7 @@ class UseOriginal(Transform):
 class RandomApply(Transform):
 
     def __init__(self, transforms, p=0.5):
+        super().__init__()
         self.transforms = transforms
         self.p = p
 
@@ -139,6 +142,7 @@ class RandomChoice(Transform):
     """
 
     def __init__(self, transforms):
+        super().__init__()
         self.transforms = transforms
 
     def __call__(self, img, target):

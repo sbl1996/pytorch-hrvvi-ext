@@ -117,7 +117,7 @@ def iou_1m_with_size(box, boxes):
 
 
 def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
-                  get_label=lambda x: x['category_id'], debug=False):
+                  get_label=lambda x: x['category_id']):
     loc_targets = []
     cls_targets = []
     ignores = []
@@ -138,8 +138,8 @@ def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
         ious = iou_1m_with_size(size, mlvl_priors)
         max_iou, max_ind = ious.view(-1).max(dim=0)
         level, i = divmod(max_ind.item(), priors_per_level)
-        if debug:
-            print("[%d,%d]: %.4f" % (level, i, max_iou.item()))
+        # if debug:
+        #     print("[%d,%d]: %.4f" % (level, i, max_iou.item()))
         lx, ly = grid_sizes[level]
         pw, ph = mlvl_priors[level, i]
         cx, offset_x = divmod(x * lx, 1)
@@ -169,30 +169,28 @@ def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
 
 class YOLOMatchAnchors:
 
-    def __init__(self, mlvl_priors, levels, ignore_thresh=0.5, get_label=lambda x: x["category_id"], debug=False):
+    def __init__(self, mlvl_priors, levels, ignore_thresh=0.5, get_label=lambda x: x["category_id"]):
         self.mlvl_priors = mlvl_priors
         self.levels = levels
         self.strides = [2 ** l for l in levels]
         self.ignore_thresh = ignore_thresh
         self.get_label = get_label
-        self.debug = debug
 
     def __call__(self, x, anns):
         height, width = x.shape[1:3]
         grid_sizes = calc_grid_sizes((width, height), self.strides)
         grid_sizes = [torch.Size(s) for s in grid_sizes]
         targets = match_anchors(
-            anns, self.mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label, self.debug)
+            anns, self.mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label)
         return x, targets
 
 
 class YOLOAnchorMatcher:
 
-    def __init__(self, mlvl_priors, ignore_thresh=0.5, get_label=lambda x: x["category_id"], debug=False):
+    def __init__(self, mlvl_priors, ignore_thresh=0.5, get_label=lambda x: x["category_id"]):
         self.mlvl_priors = mlvl_priors
         self.ignore_thresh = ignore_thresh
         self.get_label = get_label
-        self.debug = debug
 
     def __call__(self, features, targets):
         batch_size = len(targets)
@@ -211,7 +209,7 @@ class YOLOAnchorMatcher:
         return loc_t, cls_t, ignore
 
     def match_single(self, anns, grid_sizes):
-        return match_anchors(anns, self.mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label, self.debug)
+        return match_anchors(anns, self.mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label)
 
 
 class YOLOLoss(nn.Module):
