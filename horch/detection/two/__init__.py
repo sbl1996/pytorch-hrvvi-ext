@@ -9,14 +9,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import select, sample, _concat, one_hot, expand_last_dim
-from horch.detection.one import MultiBoxLoss, AnchorBasedInference, match_anchors, flatten, match_anchors2
+from horch.detection.one import MultiBoxLoss, AnchorBasedInference, match_anchors, flatten, MultiBoxLossOnline
 from horch.detection.bbox import BBox
 from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu
 
 
-def sample_rois(loc_t, cls_t, n_samples=64, pos_neg_ratio=1/3):
+def sample_rois(loc_t, cls_t, n_samples=64, neg_pos_ratio=3):
     pos = cls_t != 0
-    n_pos = int(n_samples * pos_neg_ratio / (pos_neg_ratio + 1))
+    n_pos = int(n_samples / (neg_pos_ratio + 1))
     n_neg = n_samples - n_pos
     pos_indices = sample(torch.nonzero(pos).squeeze(1), n_pos)
     neg_indices = sample(torch.nonzero(~pos).squeeze(1), n_neg)
@@ -77,25 +77,34 @@ class InferenceRoIs:
 
 
 class MatchRoIs:
-    def __init__(self, pos_thresh=0.5, n_samples=None, pos_neg_ratio=1 / 3):
+    def __init__(self, pos_thresh=0.5, n_samples=None, neg_pos_ratio=3):
         super().__init__()
         self.pos_thresh = pos_thresh
         self.n_samples = n_samples
-        self.pos_neg_ratio = pos_neg_ratio
+        self.neg_pos_ratio = neg_pos_ratio
 
-    def __call__(self, rois, image_gts):
+    def __call__(self, rois, box_lists):
         is_cpu = rois.device.type == 'cpu'
-        match_func = match_anchors if is_cpu else match_anchors2
         roi_corners = rois[..., 1:]
         roi_centers = BBox.convert(roi_corners, BBox.LTRB, BBox.XYWH)
+
+        bboxes = [
+            BBox.convert(rois.new_tensor([b['bbox'] for b in boxes]), BBox.LTWH, BBox.XYWH)
+            for boxes in box_lists
+        ]
+        labels = [
+            rois.new_tensor([b['category_id'] for b in boxes], dtype=torch.long)
+            for boxes in box_lists
+        ]
 
         loc_targets = []
         cls_targets = []
         sampled_rois = []
         for i in range(len(rois)):
-            loc_t, cls_t, _ = match_func(
-                image_gts[i], roi_centers[i], roi_corners[i], self.pos_thresh, None)
-            loc_t, cls_t, indices = sample_rois(loc_t, cls_t, self.n_samples, self.pos_thresh)
+            loc_t, cls_t, _ = match_anchors(
+                bboxes[i], labels[i], roi_centers[i], roi_corners[i],
+                self.pos_thresh, neg_thresh=None, cpu=is_cpu)
+            loc_t, cls_t, indices = sample_rois(loc_t, cls_t, self.n_samples, self.neg_pos_ratio)
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
             sampled_rois.append(rois[i][indices])
@@ -108,9 +117,9 @@ class MatchRoIs:
 
 class RCNNLoss(nn.Module):
 
-    def __init__(self, p=0.01, rpn_cls_loss='softmax'):
+    def __init__(self, matcher, p=0.01, rpn_cls_loss='ce'):
         super().__init__()
-        self.rpn_loss = MultiBoxLoss(p=p, cls_loss=rpn_cls_loss, prefix='RPN')
+        self.rpn_loss = MultiBoxLossOnline(matcher, neg_pos_ratio=1, p=p, cls_loss=rpn_cls_loss, prefix='RPN')
         self.rcnn_loss = MultiBoxLoss(p=p, prefix='RCNN')
 
     @property
@@ -122,7 +131,7 @@ class RCNNLoss(nn.Module):
         self.rpn_loss.p = new_p
         self.rcnn_loss.p = new_p
 
-    def forward(self, loc_p, cls_p, loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore):
+    def forward(self, rois, rpn_loc_p, rpn_cls_p, loc_p, cls_p, loc_t, cls_t):
         rpn_loc_p = rpn_loc_p.view(-1, 4)
         rpn_cls_p = rpn_cls_p.view(-1, rpn_cls_p.size(-1))
         rpn_loss = self.rpn_loss(rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)

@@ -146,6 +146,5 @@ def freeze_bn(module):
     def f(m):
         name = type(m).__name__
         if "BatchNorm" in name:
-            m.weight.requires_grad = False
-            m.bias.requires_grad = False
+            m.frozen = True
     module.apply(f)

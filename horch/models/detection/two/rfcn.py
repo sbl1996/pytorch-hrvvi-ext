@@ -121,30 +121,24 @@ class RPN(Sequential):
 
 
 class RFCN(nn.Module):
-    def __init__(self, rpn, box_head, inference):
+    def __init__(self, rpn, roi_matcher, box_head, inference):
         super().__init__()
         self.rpn = rpn
+        self.roi_matcher = roi_matcher
         self.box_head = box_head
         self._inference = inference
 
-    def forward(self, x, image_gts=None):
-        ps, rois, rpn_loc_p, rpn_cls_p = \
-            self.rpn.region_proposal(x)
-
-        ps = [self.roi_pool(p, rois) for p in ps]
-        # if self._position_sensitive:
-        #     ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
-        preds = self.box_head(*ps)
-        return preds + (loc_t, cls_t, rpn_loc_p, rpn_cls_p, rpn_loc_t, rpn_cls_t, ignore)
+    def forward(self, x, box_lists):
+        p, rois, rpn_loc_p, rpn_cls_p = self.rpn.region_proposal(x)
+        loc_t, cls_t, rois = self.roi_matcher(rois, box_lists)
+        loc_p, cls_p = self.box_head(rois, p)
+        return rois, rpn_loc_p, rpn_cls_p, loc_p, cls_p, loc_t, cls_t
 
     def inference(self, x):
         self.eval()
         with torch.no_grad():
-            ps, rois = self.rpn.region_proposal(x)
-            ps = [self.roi_pool(p, rois) for p in ps]
-            # if self._position_sensitive:
-            #     ps = [p.view(p.size(0), -1, 1, 1) for p in ps]
-            preds = self.box_head(*ps)
-        image_dets = self._inference(rois[..., 1:], *preds)
+            p, rois = self.rpn.region_proposal(x)
+            loc_p, cls_p = self.box_head(rois, p)
+        image_dets = self._inference(rois[..., 1:], loc_p, cls_p)
         set_training(self)
         return image_dets

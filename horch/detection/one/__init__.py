@@ -249,7 +249,7 @@ def flatten_preds(*preds):
 
 class MultiBoxLossOnline(nn.Module):
 
-    def __init__(self, matcher, neg_pos_ratio=None, cls_loss='ce', loc_t_stds=(0.1, 0.1, 0.2, 0.2), p=0.01, prefix=""):
+    def __init__(self, matcher, neg_pos_ratio=None, cls_loss='ce', loc_t_stds=None, p=0.01, prefix=""):
         super().__init__()
         self.matcher = matcher
         self.loss = MultiBoxLoss(neg_pos_ratio, cls_loss, loc_t_stds, p, prefix)
@@ -294,7 +294,7 @@ class MultiBoxLoss(nn.Module):
     def __init__(self,
                  neg_pos_ratio=None,
                  cls_loss='ce',
-                 loc_t_stds=(0.1, 0.1, 0.2, 0.2),
+                 loc_t_stds=None,
                  p=0.01,
                  prefix=""):
         super().__init__()
@@ -302,7 +302,10 @@ class MultiBoxLoss(nn.Module):
         assert cls_loss in ['focal', 'ce', 'bce'], "Classification loss must be one of ['focal', 'ce', 'bce']"
         self.neg_pos_ratio = neg_pos_ratio
         if loc_t_stds is None:
-            loc_t_stds = (1, 1, 1, 1)
+            if cls_loss == 'focal':
+                loc_t_stds = (1.0, 1.0, 1.0, 1.0)
+            else:
+                loc_t_stds = (0.1, 0.1, 0.2, 0.2)
         self.loc_t_stds = loc_t_stds
         self.cls_loss = cls_loss
         self.prefix = prefix
@@ -425,7 +428,6 @@ def anchor_based_inference(
         labels = labels[pos]
         bboxes = bboxes[pos]
         anchors = anchors[pos]
-
     bboxes = target_to_coords(bboxes, anchors)
 
     bboxes = BBox.convert(

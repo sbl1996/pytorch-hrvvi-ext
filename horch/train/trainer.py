@@ -22,7 +22,7 @@ from typing import Sequence, Dict
 def set_training(model):
     model.train()
     for m in model.modules():
-        if "Norm" in type(m).__name__ and not m.weight.requires_grad:
+        if "BatchNorm" in type(m).__name__ and hasattr(m, "frozen") and m.frozen:
             m.eval()
 
 

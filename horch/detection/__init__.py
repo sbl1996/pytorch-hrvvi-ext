@@ -139,5 +139,6 @@ def generate_mlvl_anchors(grid_sizes, anchor_sizes, device='cpu', dtype=torch.fl
             ly, dtype=dtype, device=device).view(1, ly, 1).expand(lx, ly, len(sizes)) + 0.5) / ly
         anchors[:, :, :, 2] = sizes[:, 0]
         anchors[:, :, :, 3] = sizes[:, 1]
+        anchors.clamp_(min=0.0, max=1.0)
         mlvl_anchors.append(anchors)
     return mlvl_anchors
