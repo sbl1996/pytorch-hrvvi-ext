@@ -256,9 +256,9 @@ class MultiBoxLossOnline(nn.Module):
 
     def forward(self, loc_preds, cls_preds, box_lists):
         grid_sizes = [p.size()[1:3] for p in loc_preds]
-        loc_t, cls_t, ignore = self.matcher(grid_sizes, box_lists, loc_preds[0].device, loc_preds[0].dtype)
+        targets = self.matcher(grid_sizes, box_lists, loc_preds[0].device, loc_preds[0].dtype)
         loc_p, cls_p = flatten_preds(loc_preds, cls_preds)
-        return self.loss(loc_p, cls_p, loc_t, cls_t, ignore)
+        return self.loss(loc_p, cls_p, *targets)
 
 
 class MultiBoxLoss(nn.Module):
@@ -336,7 +336,7 @@ class MultiBoxLoss(nn.Module):
                     cls_p.view(-1, num_classes), cls_t.view(-1), reduction='none').view(batch_size, -1)
                 cls_loss_pos = cls_loss_all[pos].sum()
                 cls_loss_neg_all = cls_loss_all.clone()  # (N, 8732)
-                cls_loss_neg_all[pos | ignore] = 0.
+                cls_loss_neg_all[~neg] = 0.
 
                 cls_loss_neg = 0
                 for i in range(batch_size):
@@ -530,7 +530,7 @@ class AnchorBasedInference:
 
     def __init__(self, generator, conf_threshold=0.01,
                  iou_threshold=0.5, topk=100,
-                 conf_strategy='softmax', nms='nms', min_score=None,
+                 conf_strategy='softmax', nms='soft', min_score=None,
                  per_class_nms=False, loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
         assert generator.flatten
         assert generator.with_corners
