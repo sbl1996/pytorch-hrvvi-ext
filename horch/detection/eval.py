@@ -93,7 +93,7 @@ def average_precision(detections: List[BBox], ground_truths: List[BBox], iou_thr
         recall = acc_tp / n_positive
         precision = acc_tp / (acc_fp + acc_tp + 1e-10)
         ap = average_precision_pr(precision, recall, use_07_metric)
-        aps[c] = ap
+        aps[c] = round(ap, 6)
     return aps
 
 

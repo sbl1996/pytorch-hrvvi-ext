@@ -15,15 +15,19 @@ def _check_levels(levels):
 def backbone_forward(self, x):
     outs = []
     x = self.layer1(x)
+
     x = self.layer2(x)
     if 2 in self.feature_levels:
         outs.append(x)
+
     x = self.layer3(x)
     if 3 in self.feature_levels:
         outs.append(x)
+
     x = self.layer4(x)
     if 4 in self.feature_levels:
         outs.append(x)
+
     if 5 in self.forward_levels:
         x = self.layer5(x)
         if 5 in self.feature_levels:
@@ -82,7 +86,7 @@ class SNet(nn.Module):
             Default: (3, 4, 5)
     """
 
-    def __init__(self, version=49, feature_levels=(3, 4, 5), pretrained=False, **kwargs):
+    def __init__(self, version=49, feature_levels=(3, 4, 5), pretrained=False, include_final=False, **kwargs):
         super().__init__()
         assert not pretrained, "No pretrained models for SNet, please use ShuffleNetV2 instead."
         _check_levels(feature_levels)
@@ -96,14 +100,15 @@ class SNet(nn.Module):
         self.layer2 = net.maxpool
         self.layer3 = net.stage2
         self.layer4 = net.stage3
-        if len(channels) == 5:
+        if len(channels) == 5 and include_final:
             self.layer5 = nn.Sequential(
                 net.stage4,
                 net.conv5,
             )
+            out_channels = [channels[0]] + channels[:3] + [channels[-1]]
         else:
             self.layer5 = net.stage4
-        out_channels = [channels[0]] + channels[:3] + [channels[-1]]
+            out_channels = [channels[0]] + channels[:3] + [net.conv5.in_channels]
         self.out_channels = [
             out_channels[i - 1] for i in feature_levels
         ]

@@ -11,6 +11,7 @@ def shuffle_block(in_channels, out_channels):
 
 
 def pyramid_block(in_channels, out_channels):
+    assert in_channels <= out_channels
     return PyrUnit(in_channels, out_channels // PyrUnit.expansion, stride=2)
 
 

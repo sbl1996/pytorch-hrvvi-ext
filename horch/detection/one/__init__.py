@@ -315,30 +315,34 @@ class MultiBoxLoss(nn.Module):
         neg = ~pos
         if ignore is not None:
             neg = neg & ~ignore
-        num_pos = pos.sum().item()
+        num_pos = pos.sum(dim=1)
+        total_pos = num_pos.sum().item()
 
-        if num_pos == 0:
+        if total_pos == 0:
             return loc_p.new_tensor(0, requires_grad=True)
 
         if self.loc_t_stds:
             loc_t = loc_t / loc_t.new_tensor(self.loc_t_stds)
-        loc_loss = F.smooth_l1_loss(loc_p[pos], loc_t[pos], reduction='sum') / num_pos
+        loc_loss = F.smooth_l1_loss(loc_p[pos], loc_t[pos], reduction='sum') / total_pos
 
         # Hard Negative Mining
         if self.neg_pos_ratio:
             if self.cls_loss == 'ce':
-                cls_loss_pos = F.cross_entropy(
-                    cls_p[pos], cls_t[pos], reduction='sum')
-                cls_p_neg = cls_p[neg]
-                if len(cls_p_neg) == 0:
-                    cls_loss = cls_loss_pos / num_pos
-                else:
-                    cls_loss_neg = F.cross_entropy(
-                        cls_p_neg, cls_p_neg.new_zeros(len(cls_p_neg), dtype=torch.long),
-                        reduction='none')
-                    num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
-                    cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
-                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+                batch_size = cls_p.size(0)
+                num_classes = cls_p.size(-1)
+                num_neg = self.neg_pos_ratio * num_pos
+
+                cls_loss_all = F.cross_entropy(
+                    cls_p.view(-1, num_classes), cls_t.view(-1), reduction='none').view(batch_size, -1)
+                cls_loss_pos = cls_loss_all[pos].sum()
+                cls_loss_neg_all = cls_loss_all.clone()  # (N, 8732)
+                cls_loss_neg_all[pos | ignore] = 0.
+
+                cls_loss_neg = 0
+                for i in range(batch_size):
+                    cls_loss_neg += cls_loss_neg_all[i].topk(num_neg[i])[0].sum()
+
+                cls_loss = (cls_loss_pos + cls_loss_neg) / total_pos
             elif self.cls_loss == 'bce':
                 assert cls_p.dim() == 2
                 cls_loss = F.binary_cross_entropy_with_logits(
@@ -346,11 +350,11 @@ class MultiBoxLoss(nn.Module):
                 cls_loss_pos = cls_loss[pos].sum()
                 cls_loss_neg = cls_loss[neg]
                 if len(cls_loss_neg) == 0:
-                    cls_loss = cls_loss_pos / num_pos
+                    cls_loss = cls_loss_pos / total_pos
                 else:
-                    num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
+                    num_neg = min(int(total_pos * self.neg_pos_ratio), len(cls_loss_neg))
                     cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
-                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / total_pos
             else:
                 raise ValueError("Invalid cls loss `%s` for hard negative mining" % self.cls_loss)
         else:
@@ -364,16 +368,16 @@ class MultiBoxLoss(nn.Module):
                         cls_p[pos], cls_t[pos], reduction='sum')
                     cls_p_neg = cls_p[neg]
                     cls_loss_neg = focal_loss2(cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
-                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / total_pos
                 else:
-                    cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / num_pos
+                    cls_loss = focal_loss2(cls_p, cls_t, reduction='sum') / total_pos
             elif self.cls_loss == 'bce':
                 if cls_p.dim() - cls_t.dim() == 1:
                     cls_t = one_hot(cls_t, C=cls_p.size(-1))
                 else:
                     cls_t = cls_t.to(dtype=cls_p.dtype)
                 cls_t = cls_t.to(dtype=cls_p.dtype)
-                cls_loss = F.binary_cross_entropy_with_logits(cls_p, cls_t, reduction='sum') / num_pos
+                cls_loss = F.binary_cross_entropy_with_logits(cls_p, cls_t, reduction='sum') / total_pos
             elif self.cls_loss == 'ce':
                 cls_p = cls_p.view(-1, cls_p.size(-1))
                 cls_t = cls_t.view(-1)
@@ -383,9 +387,9 @@ class MultiBoxLoss(nn.Module):
                     cls_p_neg = cls_p[neg]
                     cls_loss_neg = F.cross_entropy(
                         cls_p_neg, torch.zeros_like(cls_p_neg), reduction='sum')
-                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / total_pos
                 else:
-                    cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / num_pos
+                    cls_loss = F.cross_entropy(cls_p, cls_t, reduction='sum') / total_pos
             else:
                 raise ValueError("Classification loss must be one of ['focal', 'ce', 'bce']")
 
