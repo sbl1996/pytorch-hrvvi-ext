@@ -64,8 +64,8 @@ def coords_to_target(gt_box, anchors):
 
 
 def target_to_coords(loc_t, anchors):
-    loc_t[..., :2].mul_(anchors[:, 2:]).add_(anchors[:, :2])
-    loc_t[..., 2:].exp_().mul_(anchors[:, 2:])
+    loc_t[..., :2].mul_(anchors[..., 2:]).add_(anchors[..., :2])
+    loc_t[..., 2:].exp_().mul_(anchors[..., 2:])
     return loc_t
 
 
@@ -136,6 +136,7 @@ class MatchAnchors(Transform):
     """
 
     def __init__(self, generator, pos_thresh=0.5, neg_thresh=None, get_label=lambda x: x['category_id']):
+        super().__init__()
         assert generator.flatten
         assert generator.with_corners
         self.generator = generator
@@ -190,35 +191,45 @@ class AnchorMatcher:
         self.neg_thresh = neg_thresh
         self.get_label = get_label
 
-    def __call__(self, features, box_lists):
-        is_cpu = features[0].device.type == 'cpu'
-
-        grid_sizes = tuple(f.size()[-2:][::-1] for f in features)
+    def __call__(self, grid_sizes, box_lists, device, dtype):
+        grid_sizes = tuple(grid_sizes)
         centers, corners = get(["centers", "corners"],
-                               self.generator(grid_sizes, features[0].device, features[0].dtype))
+                               self.generator(grid_sizes, device, dtype))
 
-        bboxes = centers.new_tensor([b['bbox'] for b in box_lists])
-        bboxes = BBox.convert(bboxes, format=BBox.LTWH, to=BBox.XYWH, inplace=True)
-        labels = centers.new_tensor([self.get_label(b) for b in box_lists], dtype=torch.long)
+        return batched_match_anchors(
+            centers, corners, box_lists, self.pos_thresh, self.neg_thresh, self.get_label
+        )
 
-        loc_targets = []
-        cls_targets = []
-        ignores = []
-        for i in range(len(box_lists)):
-            loc_t, cls_t, ignore = match_anchors(
-                bboxes[i], labels[i], centers, corners,
-                self.pos_thresh, self.neg_thresh, is_cpu)
-            loc_targets.append(loc_t)
-            cls_targets.append(cls_t)
-            ignores.append(ignore)
 
-        loc_t = torch.stack(loc_targets, dim=0)
-        cls_t = torch.stack(cls_targets, dim=0)
-        if ignores[0] is not None:
-            ignore = torch.stack(ignores, dim=0)
-            return loc_t, cls_t, ignore
-        else:
-            return loc_t, cls_t
+def batched_match_anchors(centers, corners, box_lists, pos_thresh, neg_thresh, get_label=lambda x: x['category_id']):
+    is_cpu = centers.device.type == 'cpu'
+    bboxes = [
+        BBox.convert(centers.new_tensor([b['bbox'] for b in boxes]), BBox.LTWH, BBox.XYWH)
+        for boxes in box_lists
+    ]
+    labels = [
+        centers.new_tensor([get_label(b) for b in boxes], dtype=torch.long)
+        for boxes in box_lists
+    ]
+
+    loc_targets = []
+    cls_targets = []
+    ignores = []
+    for i in range(len(box_lists)):
+        loc_t, cls_t, ignore = match_anchors(
+            bboxes[i], labels[i], centers, corners,
+            pos_thresh, neg_thresh, is_cpu)
+        loc_targets.append(loc_t)
+        cls_targets.append(cls_t)
+        ignores.append(ignore)
+
+    loc_t = torch.stack(loc_targets, dim=0)
+    cls_t = torch.stack(cls_targets, dim=0)
+    if ignores[0] is not None:
+        ignore = torch.stack(ignores, dim=0)
+        return loc_t, cls_t, ignore
+    else:
+        return loc_t, cls_t
 
 
 def flatten_preds(*preds):
@@ -236,11 +247,25 @@ def flatten_preds(*preds):
     return preds_flat
 
 
+class MultiBoxLossOnline(nn.Module):
+
+    def __init__(self, matcher, neg_pos_ratio=None, cls_loss='ce', loc_t_stds=(0.1, 0.1, 0.2, 0.2), p=0.01, prefix=""):
+        super().__init__()
+        self.matcher = matcher
+        self.loss = MultiBoxLoss(neg_pos_ratio, cls_loss, loc_t_stds, p, prefix)
+
+    def forward(self, loc_preds, cls_preds, box_lists):
+        grid_sizes = [p.size()[1:3] for p in loc_preds]
+        loc_t, cls_t, ignore = self.matcher(grid_sizes, box_lists, loc_preds[0].device, loc_preds[0].dtype)
+        loc_p, cls_p = flatten_preds(loc_preds, cls_preds)
+        return self.loss(loc_p, cls_p, loc_t, cls_t, ignore)
+
+
 class MultiBoxLoss(nn.Module):
     r"""
     Parameters
     ----------
-    pos_neg_ratio : float
+    neg_pos_ratio : float
         Ratio between positive and negative samples used for hard negative mining.
         Default : None
     p : float
@@ -305,20 +330,29 @@ class MultiBoxLoss(nn.Module):
                 cls_loss_pos = F.cross_entropy(
                     cls_p[pos], cls_t[pos], reduction='sum')
                 cls_p_neg = cls_p[neg]
-                cls_loss_neg = F.cross_entropy(
-                    cls_p_neg, cls_p_neg.new_zeros(len(cls_p_neg), dtype=torch.long),
-                    reduction='none')
+                if len(cls_p_neg) == 0:
+                    cls_loss = cls_loss_pos / num_pos
+                else:
+                    cls_loss_neg = F.cross_entropy(
+                        cls_p_neg, cls_p_neg.new_zeros(len(cls_p_neg), dtype=torch.long),
+                        reduction='none')
+                    num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
+                    cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
             elif self.cls_loss == 'bce':
                 assert cls_p.dim() == 2
                 cls_loss = F.binary_cross_entropy_with_logits(
                     cls_p, cls_t.to(dtype=cls_p.dtype), reduction='none')
                 cls_loss_pos = cls_loss[pos].sum()
                 cls_loss_neg = cls_loss[neg]
+                if len(cls_loss_neg) == 0:
+                    cls_loss = cls_loss_pos / num_pos
+                else:
+                    num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
+                    cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
+                    cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
             else:
                 raise ValueError("Invalid cls loss `%s` for hard negative mining" % self.cls_loss)
-            num_neg = min(int(num_pos * self.neg_pos_ratio), len(cls_loss_neg))
-            cls_loss_neg = torch.topk(cls_loss_neg, num_neg)[0].sum()
-            cls_loss = (cls_loss_pos + cls_loss_neg) / num_pos
         else:
             if self.cls_loss == 'focal':
                 if cls_p.dim() - cls_t.dim() == 1:
@@ -443,6 +477,7 @@ def anchor_based_inference_per_class(
     for c in range(1, num_classes):
         c_scores = scores[:, c]
         c_bboxes = bboxes
+
         if conf_threshold > 0:
             pos = c_scores > conf_threshold
             c_scores = c_scores[pos]

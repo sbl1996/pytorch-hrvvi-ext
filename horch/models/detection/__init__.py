@@ -26,24 +26,18 @@ class OneStageDetector(Sequential):
         Optional feature enhance module from `horch.models.detection.enhance`.
     """
 
-    def __init__(self, backbone, fpn, head, matcher=None, inference=None):
+    def __init__(self, backbone, fpn, head, inference=None):
         super().__init__()
         self.backbone = backbone
         self.fpn = fpn
         self.head = head
-        self.matcher = matcher
         self._inference = inference
 
     def forward(self, inputs, targets=None):
         cs = self.backbone(inputs)
         features = self.fpn(*tuplify(cs))
         outputs = self.head(*tuplify(features))
-        if self.training and self.matcher:
-            assert targets is not None, "Targets must be provided in training."
-            targets = self.matcher(features, targets)
-            return (*outputs, *targets)
-        else:
-            return outputs
+        return outputs
 
     def inference(self, inputs):
         self.eval()

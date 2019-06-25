@@ -127,7 +127,7 @@ def boxes_ltwh_to_xywh(boxes, inplace=False):
         return boxes
     boxes_lt = boxes[..., :2]
     boxes_wh = boxes[..., 2:]
-    boxes_xy = boxes_lt - boxes_wh / 2
+    boxes_xy = boxes_lt + boxes_wh / 2
     return torch.cat((boxes_xy, boxes_wh), dim=-1)
 
 

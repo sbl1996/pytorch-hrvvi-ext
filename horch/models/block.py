@@ -3,13 +3,22 @@ from horch.models.attention import SEModule
 from horch.models.cifar.pyramidnet import Bottleneck as PyrUnit
 from torch import nn as nn
 
+from pytorchcv.models.shufflenetv2b import ShuffleUnit
+
+
+def shuffle_block(in_channels, out_channels):
+    return ShuffleUnit(in_channels, out_channels, downsample=True, use_se=True, use_residual=False, shuffle_group_first=True)
+
 
 def pyramid_block(in_channels, out_channels):
     return PyrUnit(in_channels, out_channels // PyrUnit.expansion, stride=2)
 
 
 def mb_conv_block(in_channels, out_channels, expand_ratio=4, kernel_size=3):
-    return MBConv(in_channels, out_channels * expand_ratio, out_channels, kernel_size=kernel_size, stride=2)
+    if expand_ratio == 1:
+        return MBConv(in_channels, in_channels, out_channels, kernel_size=kernel_size, stride=2)
+    else:
+        return MBConv(in_channels, out_channels * expand_ratio, out_channels, kernel_size=kernel_size, stride=2)
 
 
 class MBConv(nn.Sequential):

@@ -7,6 +7,7 @@ from toolz.curried import get
 import cv2
 import torch
 import numpy as np
+import pandas as pd
 
 from ignite.metrics import Accuracy as IgniteAccuracy
 from ignite.exceptions import NotComputableError
@@ -17,7 +18,7 @@ from nltk.translate.bleu_score import SmoothingFunction
 
 from horch.functools import lmap
 from horch.detection import BBox
-from horch.detection.eval import mean_average_precision
+from horch.detection.eval import mean_average_precision, average_precision
 
 
 class Average(Metric):
@@ -395,11 +396,12 @@ class MeanAveragePrecision(Metric):
         preds: (batch_size, h, w, c)
     """
 
-    def __init__(self, iou_threshold=0.5, interpolation='11point', ignore_difficult=True):
+    def __init__(self, iou_threshold=0.5, interpolation='11point', ignore_difficult=True, class_names=None):
         assert interpolation in ['all', '11point']
         self.iou_threshold = iou_threshold
         self.interpolation = interpolation
         self.ignore_difficult = ignore_difficult
+        self.class_names = class_names
         super().__init__()
 
     def reset(self):
@@ -422,6 +424,15 @@ class MeanAveragePrecision(Metric):
         dts = [BBox(**ann, format=BBox.LTWH) for ann in self.dts]
         gts = [BBox(**ann, format=BBox.LTWH) for ann in self.gts]
 
-        mAP = mean_average_precision(dts, gts, self.iou_threshold, self.interpolation == '11point', self.ignore_difficult)
-
+        aps = average_precision(dts, gts, self.iou_threshold, self.interpolation == '11point', self.ignore_difficult)
+        mAP = np.mean(list(aps.values()))
+        if self.class_names:
+            num_classes = len(self.class_names)
+            d = {}
+            for i in range(num_classes):
+                d[self.class_names[i]] = aps.get(i + 1, 0) * 100
+            d['ALL'] = mAP * 100
+            d = pd.DataFrame({'mAP': d}).transpose()
+            pd.set_option('precision', 1)
+            print(d)
         return mAP

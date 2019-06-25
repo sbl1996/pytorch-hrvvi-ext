@@ -10,6 +10,11 @@ from horch.detection.bbox import BBox
 
 
 def mean_average_precision(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5, use_07_metric=True, ignore_difficult=True):
+    aps = average_precision(detections, ground_truths, iou_threshold, use_07_metric, ignore_difficult)
+    return np.mean(aps.values())
+
+
+def average_precision(detections: List[BBox], ground_truths: List[BBox], iou_threshold=.5, use_07_metric=True, ignore_difficult=True):
     r"""
     Args:
         detections: sequences of BBox with `score`
@@ -45,10 +50,10 @@ def mean_average_precision(detections: List[BBox], ground_truths: List[BBox], io
             gt_bboxes = np.array([d.bbox for d in gt])
             ious[c][i] = iou_mn(dt_bboxes, gt_bboxes)
 
-    aps = []
+    aps = {}
     for c in classes:
         if c not in dts:
-            aps.append(0)
+            aps[c] = 0
             continue
 
         c_gts = gts[c]
@@ -88,9 +93,8 @@ def mean_average_precision(detections: List[BBox], ground_truths: List[BBox], io
         recall = acc_tp / n_positive
         precision = acc_tp / (acc_fp + acc_tp + 1e-10)
         ap = average_precision_pr(precision, recall, use_07_metric)
-        aps.append(ap)
-    print(aps)
-    return np.mean(aps)
+        aps[c] = ap
+    return aps
 
 
 def average_precision_pr(precision, recall, use_07_metric=True):
