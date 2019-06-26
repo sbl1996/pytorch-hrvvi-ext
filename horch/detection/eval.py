@@ -75,6 +75,7 @@ def average_precision(detections: List[BBox], ground_truths: List[BBox], iou_thr
         for di, dt in enumerate(c_dts):
             img_id = dt.image_id
             if img_id not in c_gts:
+                FP[di] = 1
                 continue
             iou = ious[c][img_id][rank[img_id]]
             rank[img_id] += 1
