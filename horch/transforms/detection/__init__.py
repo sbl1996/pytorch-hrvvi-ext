@@ -66,7 +66,7 @@ class RandomExpand(JointTransform):
         self.ratios = ratios
         if mean != 0:
             assert isinstance(mean, Sequence)
-            mean = [round(x * 255) for x in mean]
+            mean = tuple(round(x * 255) for x in mean)
         self.mean = mean
 
     def __call__(self, img, anns):
