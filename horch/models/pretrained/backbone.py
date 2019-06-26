@@ -445,6 +445,34 @@ class ResNet(nn.Module):
         return backbone_forward(self, x)
 
 
+class ResNetTV(nn.Module):
+    def __init__(self, name, feature_levels=(3, 4, 5), pretrained=True):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+        from torchvision.models import resnet18
+        net = resnet18(pretrained=pretrained)
+        del net.fc
+        self.layer1 = nn.Sequential(
+            net.conv1,
+            net.bn1,
+            net.relu,
+        )
+        self.layer2 = net.maxpool
+        self.layer3 = net.layer2
+        self.layer4 = net.layer3
+        self.layer5 = net.layer4
+
+        self.out_channels = [
+            calc_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
 class DLA(nn.Module):
 
     def __init__(self, name, feature_levels=(3, 4, 5), pretrained=True):

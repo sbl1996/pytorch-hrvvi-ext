@@ -33,6 +33,7 @@ def calc_out_channels(mod):
     """
     in_channels = get_in_channels(mod)
     x = torch.randn(1, in_channels, 32, 32)
+    mod.eval()
     with torch.no_grad():
         x = mod(x)
     return x.size(1)
@@ -142,9 +143,13 @@ def decimate(tensor, m):
     return tensor
 
 
-def freeze_bn(module):
+def freeze_bn(module, eval=True, requires_grad=True):
     def f(m):
         name = type(m).__name__
         if "BatchNorm" in name:
-            m.frozen = True
+            if eval:
+                m.frozen = True
+                m.eval()
+            m.weight.requires_grad = requires_grad
+            m.bias.requires_grad = requires_grad
     module.apply(f)

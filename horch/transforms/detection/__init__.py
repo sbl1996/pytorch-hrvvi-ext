@@ -64,6 +64,9 @@ class RandomExpand(JointTransform):
     def __init__(self, ratios=(1, 4), mean=0):
         super().__init__()
         self.ratios = ratios
+        if mean != 0:
+            assert isinstance(mean, Sequence)
+            mean = [round(x * 255) for x in mean]
         self.mean = mean
 
     def __call__(self, img, anns):
@@ -85,7 +88,6 @@ class RandomExpand(JointTransform):
         format_string += '(ratio={0})'.format(tuple(round(r, 4)
                                                     for r in self.ratios))
         return format_string
-
 
 
 class RandomSampleCrop(JointTransform):
@@ -150,7 +152,8 @@ class RandomResizedCrop(JointTransform):
         Minimal area fraction requirement of the original bounding box.
     """
 
-    def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), min_area_frac=0.25, interpolation=Image.BILINEAR):
+    def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), min_area_frac=0.25,
+                 interpolation=Image.BILINEAR):
         super().__init__()
         if isinstance(size, tuple):
             self.size = size
@@ -367,7 +370,7 @@ def SSDTransform(size, mean=0, color_jitter=True, expand=(1, 4)):
         transforms.append(
             ColorJitter(
                 brightness=0.5, contrast=0.5,
-                saturation=0.5, hue=18/255,
+                saturation=0.5, hue=18 / 255,
             )
         )
     transforms += [
