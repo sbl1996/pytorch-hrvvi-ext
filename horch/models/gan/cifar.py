@@ -17,7 +17,8 @@ class ResNetGenerator(nn.Module):
             ResBlock(channels * 4, channels * 4, 'upscale'),
             nn.BatchNorm2d(channels * 4),
             nn.ReLU(True),
-            nn.Conv2d(channels * 4, out_channels, kernel_size=3, padding=1)
+            nn.Conv2d(channels * 4, out_channels, kernel_size=3, padding=1),
+            nn.Tanh(),
         )
 
         spectral_norm(self.dense)
