@@ -9,6 +9,7 @@ from horch.detection import soft_nms_cpu, BBox, nms, calc_grid_sizes
 from horch.detection.one import flatten_preds
 from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.nn.loss import focal_loss2, iou_loss
+from horch.transforms import Transform
 
 
 def get_fovea(cx, cy, w, h, shrunk=0.3):
@@ -39,11 +40,11 @@ def get_mlvl_centers(grid_sizes, device='cpu', dtype=torch.float32):
     return mlvl_centers
 
 
-class FoveaAnchorGenerator(AnchorGeneratorBase):
-    def __init__(self, cache=True):
-        super().__init__(cache)
+class FoveaGenerator(AnchorGeneratorBase):
+    def __init__(self, levels, cache=True):
+        super().__init__(levels, cache)
 
-    def calculate(self, grid_sizes, device, dtype):
+    def calculate(self, size, grid_sizes, device, dtype):
         mlvl_centers = get_mlvl_centers(grid_sizes, device, dtype)
         ret = {
             "centers": mlvl_centers
@@ -99,17 +100,17 @@ def match_anchors(anns, mlvl_centers, levels, thresholds, shrunk_pos, shrunk_neg
     return loc_t, cls_t, ignore
 
 
-class FoveaMatchAnchors:
+class MatchFoveas(Transform):
 
-    def __init__(self, generator, levels=(3, 4, 5, 6, 7),
-                 thresholds=DEFAULT_AREA_THRESHOLDS,
-                 shrunk_pos=0.3, shrunk_neg=0.4, get_label=lambda x: x["category_id"]):
-        assert isinstance(generator, FoveaAnchorGenerator), \
+    def __init__(self, generator, thresholds=DEFAULT_AREA_THRESHOLDS, shrunk_pos=0.3, shrunk_neg=0.4,
+                 get_label=lambda x: x["category_id"]):
+        super().__init__()
+        assert isinstance(generator, FoveaGenerator), \
             "Generator must be FoveaAnchorGenerator, got %s" % type(generator)
         self.generator = generator
-        assert len(levels) == len(thresholds), "Thresholds don't match number of levels."
-        self.levels = levels
-        self.strides = [2 ** l for l in levels]
+        assert len(generator.levels) == len(thresholds), "Thresholds don't match number of levels."
+        self.levels = generator.levels
+        self.strides = generator.strides
         self.thresholds = thresholds
         self.shrunk_pos = shrunk_pos
         self.shrunk_neg = shrunk_neg
@@ -117,13 +118,11 @@ class FoveaMatchAnchors:
 
     def __call__(self, x, anns):
         height, width = x.shape[1:3]
-        grid_sizes = calc_grid_sizes((width, height), self.strides)
-        grid_sizes = [torch.Size(s) for s in grid_sizes]
-        mlvl_centers = self.generator(grid_sizes, x.device, x.dtype)['centers']
-        targets = match_anchors(
+        mlvl_centers = self.generator((width, height), x.device, x.dtype)['centers']
+        loc_t, cls_t, ignore = match_anchors(
             anns, mlvl_centers, self.levels, self.thresholds,
             self.shrunk_pos, self.shrunk_neg, self.get_label)
-        return x, targets
+        return x, (loc_t, cls_t, ignore)
 
 
 class FoveaMatcher:
@@ -131,7 +130,7 @@ class FoveaMatcher:
     def __init__(self, generator, levels=(3, 4, 5, 6, 7),
                  thresholds=DEFAULT_AREA_THRESHOLDS,
                  shrunk_pos=0.3, shrunk_neg=0.4, get_label=lambda x: x["category_id"]):
-        assert isinstance(generator, FoveaAnchorGenerator), \
+        assert isinstance(generator, FoveaGenerator), \
             "Generator must be FoveaAnchorGenerator, got %s" % type(generator)
         self.generator = generator
         assert len(levels) == len(thresholds), "Thresholds don't match number of levels."
@@ -146,14 +145,14 @@ class FoveaMatcher:
             anns, mlvl_centers, self.levels, self.thresholds,
             self.shrunk_pos, self.shrunk_neg, self.get_label)
 
-    def __call__(self, features, targets):
-        grid_sizes = [f.size()[-2:][::-1] for f in features]
-        mlvl_centers = self.generator(grid_sizes, features[0].device, features[0].dtype)['centers']
+    def __call__(self, grid_sizes, box_lists, device, dtype):
+        grid_sizes = tuple(grid_sizes)
+        mlvl_centers = self.generator(grid_sizes, device, dtype)['centers']
         assert len(mlvl_centers) == len(self.levels)
         loc_targets = []
         cls_targets = []
         ignores = []
-        for anns in targets:
+        for anns in box_lists:
             loc_t, cls_t, ignore = self.match_single(mlvl_centers, anns)
             loc_targets.append(loc_t)
             cls_targets.append(cls_t)
@@ -275,7 +274,7 @@ class FoveaInference:
 
     def __init__(self, generator, conf_threshold=0.05, iou_threshold=0.5,
                  topk1=1000, nms_method='soft_nms', topk2=100):
-        assert isinstance(generator, FoveaAnchorGenerator)
+        assert isinstance(generator, FoveaGenerator)
         self.generator = generator
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold

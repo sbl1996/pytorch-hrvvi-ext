@@ -1,55 +1,69 @@
+import datetime
 import os
 from collections import defaultdict
+from pathlib import Path
 
+from horch.common import CUDA
+from horch.models.utils import unfreeze, freeze
+from horch.train.trainer import wrap, _terminate_on_iterations
 from toolz.curried import get, identity, curry, keyfilter
 
 import torch
 import torch.nn as nn
 
 from ignite.engine import Engine, Events
-from ignite.metrics import Accuracy as IgniteAccuracy
 
-from ignite.exceptions import NotComputableError
-from ignite.metrics.metric import Metric
 from ignite.handlers import Timer, ModelCheckpoint
 
-from horch.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event
+from horch.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event, to_device
 
 
 def create_gan_trainer(
-        G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None, metrics={},
+        G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
         device=None, prepare_batch=_prepare_batch):
 
+    if metrics is None:
+        metrics = {}
+    if device:
+        G.to(device)
+        D.to(device)
+
     def _update(engine, batch):
-        x, y = prepare_batch(batch, device=device)
-        real, noise_D, noise_G = x
-        y_real, y_fake = y
+        inputs, _ = prepare_batch(batch, device=device)
+        real_x = inputs[0]
 
+        batch_size = real_x.size(0)
+
+        unfreeze(D)
         D.train()
-        D.zero_grad()
-        y_pred_real = D(real)
+        optimizerD.zero_grad()
 
-        fake = G(noise_D)
-        y_pred_fake = D(fake.detach())
-        lossD = criterionD(y_pred_real, y_pred_fake, y_real, y_fake)
+        real_p = D(real_x)
+
+        noise = torch.randn(batch_size, G.in_channels)
+        noise = to_device(noise, device)
+        with torch.no_grad():
+            fake_x = G(noise)
+        fake_p = D(fake_x)
+        lossD = criterionD(real_p, fake_p)
         lossD.backward()
         optimizerD.step()
-        for p in D.parameters():
-            p.data.clamp_(-0.01, 0.01)
-        if engine.state.iteration % 5 == 0:
-            G.train()
-            G.zero_grad()
-            y_pred_fake = D(G(noise_G))
-            lossG = criterionG(y_pred_fake, y_real)
-            lossG.backward()
-            optimizerG.step()
-        else:
-            lossG = torch.tensor(0.)
+
+        freeze(D)
+        G.train()
+        optimizerG.zero_grad()
+
+        noise = torch.randn(batch_size, G.in_channels)
+        noise = to_device(noise, device)
+        fake_p = D(G(noise))
+        lossG = criterionG(fake_p)
+        lossG.backward()
+        optimizerG.step()
 
         output = {
             "lossD": lossD.item(),
             "lossG": lossG.item(),
-            "batch_size": real.size(0),
+            "batch_size": batch_size,
         }
         return output
 
@@ -63,7 +77,7 @@ def create_gan_trainer(
 class GANTrainer:
 
     def __init__(self, G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None,
-                 metrics={}, device=None, save_path=".", name="Net"):
+                 metrics=None, save_path=".", name="GAN"):
 
         self.G = G
         self.D = D
@@ -73,51 +87,18 @@ class GANTrainer:
         self.optimizerD = optimizerD
         self.lr_schedulerG = lr_schedulerG
         self.lr_schedulerD = lr_schedulerD
-        self.metrics = metrics
-        self.device = device or (
-            'cuda' if torch.cuda.is_available() else 'cpu')
-        self.save_path = save_path
+        self.metrics = metrics or {}
         self.name = name
+        root = Path(save_path).expanduser().absolute()
+        self.save_path = root / 'gan_trainer' / self.name
 
         self.metric_history = defaultdict(list)
-        self._print_callbacks = set([lambda msg: print(msg, end='')])
-        self._weixin_logined = False
+        self.device = 'cuda' if CUDA else 'cpu'
         self._timer = Timer()
-        self._epochs = 0
+        self._iterations = 0
 
         self.G.to(self.device)
         self.D.to(self.device)
-        # self._create_evaluator()
-
-    def _create_engine(self):
-        engine = create_gan_trainer(
-            self.G, self.D, self.criterionG, self.criterionD, self.optimizerG, self.optimizerD,
-            self.lr_schedulerG, self.lr_schedulerD, self.metrics, self.device)
-        engine.add_event_handler(
-            Events.EPOCH_STARTED, self._lr_scheduler_step)
-        self._timer.attach(engine,
-                           start=Events.EPOCH_STARTED)
-        return engine
-
-    def _on(self, event_name, f, *args, **kwargs):
-        cancel_event(self.engine, event_name, f)
-        self.engine.add_event_handler(event_name, f, *args, **kwargs)
-
-    def _fprint(self, msg):
-        for f in self._print_callbacks:
-            try:
-                f(msg)
-            except Exception as e:
-                pass
-
-    def _enable_send_weixin(self):
-        if self._weixin_logined:
-            self._print_callbacks.add(send_weixin)
-        else:
-            print("Weixin is not logged in.")
-
-    def _disable_send_weixin(self):
-        self._print_callbacks.discard(send_weixin)
 
     def _lr_scheduler_step(self, engine):
         if self.lr_schedulerG:
@@ -125,118 +106,103 @@ class GANTrainer:
         if self.lr_schedulerD:
             self.lr_schedulerD.step()
 
-    def _log_epochs(self, engine, epochs):
-        self._epochs += 1
-        self._fprint("Epoch %d/%d\n" %
-                     (self._epochs, self._epochs + epochs - engine.state.epoch))
+    def _attach_timer(self, engine):
+        self._trained_time = 0
+        self._timer.reset()
 
-    def _evaluate(self, engine, val_loader):
-        self.evaluator.run(val_loader)
+    def _increment_iteration(self, engine):
+        self._iterations += 1
 
-    def _log_results(self, engine, validate):
-        elapsed = int(self._timer.value())
+    def _log_results(self, engine, log_interval, max_iter):
+        if self._iterations % log_interval != 0:
+            return
+        i = engine.state.iteration
+        elapsed = self._timer.value()
+        self._timer.reset()
+        self._trained_time += elapsed
+        trained_time = self._trained_time
+        eta_seconds = int((trained_time / i) * (max_iter - i))
+        it_fmt = "%" + str(len(str(max_iter))) + "d"
+        print(("Iter: " + it_fmt + ", Cost: %.2fs, Eta: %s") % (
+            self._iterations, elapsed, datetime.timedelta(seconds=eta_seconds)))
+
+        for name, metric in self.metrics.items():
+            metric.completed(engine, name)
+            metric.reset()
+
         msg = ""
-        msg += "elapsed: %ds\t" % elapsed
         for name, val in engine.state.metrics.items():
             msg += "%s: %.4f\t" % (name, val)
             self.metric_history[name].append(val)
-        msg += '\n'
-        if validate:
-            msg += "validate ------\t"
-            for name, val in self.evaluator.state.metrics.items():
-                msg += "%s: %.4f\t" % (name, val)
-                self.metric_history["val_" + name].append(val)
-            msg += "\n"
-        self._fprint(msg)
+        print(msg)
 
-    def fit(self, train_loader, epochs, val_loader=None, send_weixin=False, save_per_epochs=None, callbacks=[]):
-        validate = val_loader is not None
-        # Weixin
-        if send_weixin:
-            self._enable_send_weixin()
+    def fit(self, it, max_iter, log_interval=100, save=None, callbacks=()):
 
-        # Create engine
-        engine = self._create_engine()
+        engine = create_gan_trainer(
+            self.G, self.D, self.criterionG, self.criterionD, self.optimizerG, self.optimizerD,
+            self.metrics, self.device)
+        self._attach_timer(engine)
 
-        # Register events
-        engine.add_event_handler(Events.EPOCH_STARTED,
-                                 self._log_epochs, epochs)
-
-        if validate:
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, self._evaluate, val_loader)
         engine.add_event_handler(
-            Events.EPOCH_COMPLETED, self._log_results, validate)
+            Events.ITERATION_STARTED, self._lr_scheduler_step)
+
+        engine.add_event_handler(Events.ITERATION_COMPLETED, self._increment_iteration)
+        engine.add_event_handler(Events.ITERATION_COMPLETED, self._log_results, log_interval, max_iter)
 
         # Set checkpoint
-        if save_per_epochs:
-            checkpoint_handler = ModelCheckpoint(
-                self.save_path, self.name, save_per_epochs, save_as_state_dict=True, require_empty=False)
-            checkpoint_handler._iteration = self.epochs()
+        if save:
+            checkpoint_handler = save.parse(self)
             engine.add_event_handler(
                 Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
 
         for callback in callbacks:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, _callback_wrapper(callback), self)
+                Events.ITERATION_COMPLETED, wrap(callback), self)
+
+        engine.add_event_handler(
+            Events.ITERATION_COMPLETED, _terminate_on_iterations, max_iter)
 
         # Run
-        engine.run(train_loader, epochs)
-
-        # Destroy
-        self._disable_send_weixin()
+        engine.run(it, 1)
 
         # Return history
-        hist = {metric: hist[-epochs:]
-                for metric, hist in self.metric_history.items()}
-        if not validate:
-            hist = keyfilter(lambda k: not k.startswith("val_"), hist)
-        return hist
+        return self.metric_history
 
     def state_dict(self):
         s = {
-            "epochs": self.epochs(),
-            "models": self.model.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-            "criterion": self.criterion.state_dict(),
-            "lr_scheduler": None,
+            "iterations": self.iterations(),
+            "G": self.G.state_dict(),
+            "D": self.D.state_dict(),
+            "optimizerG": self.optimizerG.state_dict(),
+            "optimizerD": self.optimizerD.state_dict(),
+            "criterionG": self.criterionG.state_dict(),
+            "criterionD": self.criterionD.state_dict(),
+            "lr_schedulerG": None,
+            "lr_schedulerD": None,
             "metric_history": self.metric_history,
         }
-        if self.lr_scheduler:
-            s["lr_scheduler"] = self.lr_scheduler.state_dict()
+        if self.lr_schedulerG:
+            s["lr_schedulerG"] = self.lr_schedulerG.state_dict()
+        if self.lr_schedulerD:
+            s["lr_schedulerD"] = self.lr_schedulerD.state_dict()
         return s
 
     def load_state_dict(self, state_dict):
-        epochs, model, optimizer, criterion, lr_scheduler, metric_history = get(
-            ["epochs", "models", "optimizer", "criterion", "lr_scheduler", "metric_history"], state_dict)
-        self._epochs = epochs
-        self.model.load_state_dict(model)
-        self.optimizer.load_state_dict(optimizer)
-        self.criterion.load_state_dict(criterion)
-        if self.lr_scheduler and lr_scheduler:
-            self.lr_scheduler.load_state_dict(lr_scheduler)
+        iterations, G, D, optimizerG, optimizerD, criterionG, criterionD, lr_schedulerG, lr_schedulerD, metric_history = get(
+            ["iterations", "G", "D", "optimizerG", "optimizerD", "criterionG", "criterionD",
+             "lr_schedulerG", "lr_schedulerD", "metric_history"], state_dict)
+        self._iterations = iterations
+        self.G.load_state_dict()
+        self.D.load_state_dict()
+        self.optimizerG.load_state_dict(optimizerG)
+        self.optimizerD.load_state_dict(optimizerD)
+        self.criterionG.load_state_dict(criterionG)
+        self.criterionD.load_state_dict(criterionD)
+        if self.lr_schedulerG and lr_schedulerG:
+            self.lr_schedulerG.load_state_dict(lr_schedulerG)
+        if self.lr_schedulerD and lr_schedulerD:
+            self.lr_schedulerD.load_state_dict(lr_schedulerD)
         self.metric_history = metric_history
 
-    def epochs(self):
-        return self._epochs
-
-    def login_weixin(self, save_path='.'):
-        import itchat
-        itchat.logout()
-        itchat.auto_login(hotReload=True, enableCmdQR=2,
-                          statusStorageDir=os.path.join(save_path, 'weixin.pkl'))
-        self._weixin_logined = True
-
-    def logout_weixin(self):
-        import itchat
-        itchat.logout()
-        self._weixin_logined = False
-
-    def set_lr(self, lr):
-        set_lr(lr, self.optimizer, self.lr_scheduler)
-
-
-def _callback_wrapper(f):
-    def func(engine, *args, **kwargs):
-        return f(*args, **kwargs)
-    return func
+    def iterations(self):
+        return self._iterations

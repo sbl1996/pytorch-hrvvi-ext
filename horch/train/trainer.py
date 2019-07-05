@@ -59,7 +59,7 @@ def create_supervised_evaluator(model, metrics=None,
 
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch, targets_as_inputs=False, grad_clip_value=None):
+        device=None, prepare_batch=_prepare_batch, grad_clip_value=None):
     if metrics is None:
         metrics = {}
     if device:
@@ -69,12 +69,8 @@ def create_supervised_trainer(
         set_training(model)
         optimizer.zero_grad()
         inputs, targets = prepare_batch(batch, device=device)
-        if targets_as_inputs:
-            outputs = model(*inputs, *targets)
-            loss = criterion(*tuplify(outputs))
-        else:
-            preds = tuplify(model(*inputs))
-            loss = criterion(*preds, *targets)
+        preds = tuplify(model(*inputs))
+        loss = criterion(*preds, *targets)
         loss.backward()
         optimizer.step()
         if grad_clip_value:
@@ -83,9 +79,8 @@ def create_supervised_trainer(
             "target": detach(targets),
             "loss": loss.item(),
             "batch_size": inputs[0].size(0),
+            "preds": preds,
         }
-        if not targets_as_inputs:
-            outs["preds"] = preds
         return outs
 
     engine = Engine(_update)
@@ -108,7 +103,7 @@ def _evaluate(engine, evaluator, val_loader, per_epochs):
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics=None, test_metrics=None, save_path=".", name="Net", targets_as_inputs=False):
+                 metrics=None, test_metrics=None, save_path=".", name="Net"):
 
         self.model = model
         self.criterion = criterion
@@ -122,7 +117,6 @@ class Trainer:
                 self.test_metrics['loss'] = Loss(criterion=criterion)
         self.save_path = os.path.join(save_path, 'trainer')
         self.name = name
-        self.targets_as_inputs = targets_as_inputs
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
         log_dir = os.path.join(save_path, 'runs', self.name, current_time)
@@ -149,7 +143,6 @@ class Trainer:
                 self.lr_scheduler.step(self.epochs() * iters_per_epoch + cur_iter)
             else:
                 self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
-
 
     def _attach_timer(self, engine):
         self._timer.attach(engine, start=Events.EPOCH_STARTED)
@@ -192,7 +185,7 @@ class Trainer:
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs, grad_clip_value=grad_clip_value)
+            self.metrics, self.device, grad_clip_value=grad_clip_value)
         self._attach_timer(engine)
 
         engine.add_event_handler(
@@ -246,7 +239,7 @@ class Trainer:
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, targets_as_inputs=self.targets_as_inputs, grad_clip_value=grad_clip_value)
+            self.metrics, self.device, grad_clip_value=grad_clip_value)
         self._attach_timer(engine)
 
         engine.add_event_handler(

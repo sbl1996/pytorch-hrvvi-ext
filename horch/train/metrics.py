@@ -1,6 +1,7 @@
 import time
 
 from PIL import Image
+from ignite.engine import Events
 from toolz import curry
 from toolz.curried import get, groupby
 
@@ -19,6 +20,40 @@ from nltk.translate.bleu_score import SmoothingFunction
 from horch.functools import lmap
 from horch.detection import BBox
 from horch.detection.eval import mean_average_precision, average_precision
+
+
+class IAverage(Metric):
+    def __init__(self, output_transform):
+        super().__init__(output_transform)
+        self._num_examples = 0
+        self._sum = 0
+
+    def reset(self):
+        self._num_examples = 0
+        self._sum = 0
+
+    def update(self, output):
+        val, n = output
+        self._sum += val * n
+        self._num_examples += n
+
+    def compute(self):
+        return self._sum / self._num_examples
+
+    @torch.no_grad()
+    def iteration_completed(self, engine):
+        output = self._output_transform(engine.state.output)
+        self.update(output)
+
+    def completed(self, engine, name):
+        result = self.compute()
+        if torch.is_tensor(result) and len(result.shape) == 0:
+            result = result.item()
+        engine.state.metrics[name] = result
+
+    def attach(self, engine, name):
+        if not engine.has_event_handler(self.iteration_completed, Events.ITERATION_COMPLETED):
+            engine.add_event_handler(Events.ITERATION_COMPLETED, self.iteration_completed)
 
 
 class Average(Metric):
@@ -158,7 +193,7 @@ class Bleu(Average):
         return bleu(preds, target, self.eos_index), batch_size
 
 
-class LossD(Average):
+class LossD(IAverage):
 
     def __init__(self):
         super().__init__(self.output_transform)
@@ -169,7 +204,7 @@ class LossD(Average):
         return lossD, batch_size
 
 
-class LossG(Average):
+class LossG(IAverage):
 
     def __init__(self):
         super().__init__(self.output_transform)

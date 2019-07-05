@@ -467,7 +467,7 @@ def anchor_based_inference_per_class(
         loc_p, cls_p, anchors, conf_threshold=0.01,
         iou_threshold=0.5, topk=100,
         conf_strategy='softmax',
-        loc_t_stds=(0.1, 0.1, 0.2, 0.2)):
+        loc_t_stds=(0.1, 0.1, 0.2, 0.2), nms_method='soft'):
     bboxes = loc_p.view(-1, 4) * loc_p.new_tensor(loc_t_stds)
     bboxes = target_to_coords(bboxes, anchors)
     bboxes = BBox.convert(
@@ -491,7 +491,11 @@ def anchor_based_inference_per_class(
                 continue
             c_bboxes = c_bboxes[pos]
 
-        indices = tnms(c_bboxes, c_scores, iou_threshold)
+        if nms_method == 'soft':
+            indices = soft_nms_cpu(
+                c_bboxes, c_scores, iou_threshold, topk, min_score=conf_threshold)
+        else:
+            indices = nms(c_bboxes, c_scores, iou_threshold)
         c_scores = c_scores[indices]
         c_bboxes = c_bboxes[indices]
         c_bboxes = BBox.convert(

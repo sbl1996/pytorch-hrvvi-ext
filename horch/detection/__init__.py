@@ -16,8 +16,8 @@ from horch.detection.eval import mean_average_precision
 __all__ = [
     "BBox", "nms", "soft_nms_cpu",
     "iou_1m", "iou_11", "iou_b11", "iou_mn", "draw_bboxes",
-    "calc_grid_sizes", "calc_anchor_sizes", "generate_anchors",
-    "generate_mlvl_anchors", "generate_anchors_with_priors",
+    "calc_grid_sizes", "calc_anchor_sizes",
+    "generate_mlvl_anchors",
     "find_priors_kmeans", "mean_average_precision", "find_priors_coco", "softer_nms_cpu"
 ]
 
