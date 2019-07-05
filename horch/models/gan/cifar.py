@@ -22,7 +22,7 @@ class ResNetGenerator(nn.Module):
         )
 
         spectral_norm(self.dense)
-        spectral_norm(self.conv[-1])
+        spectral_norm(self.conv[-2])
 
     def forward(self, x):
         x = self.dense(x).view(x.size(0), -1, 4, 4)
