@@ -38,7 +38,7 @@ class IterSampler(Sampler):
     a specified number of iterations have been sampled
     """
 
-    def __init__(self, data_source, batch_size, shuffle=True, num_iterations=inf, start_iter=0):
+    def __init__(self, data_source, batch_size, shuffle=True, drop_last=False, num_iterations=inf, start_iter=0):
         super().__init__(data_source)
         if shuffle:
             sampler = RandomSampler(data_source)
@@ -46,7 +46,7 @@ class IterSampler(Sampler):
             sampler = SequentialSampler(data_source)
         self.data_source = data_source
         self.num_iterations = num_iterations
-        self.batch_sampler = BatchSampler(sampler, batch_size=batch_size, drop_last=False)
+        self.batch_sampler = BatchSampler(sampler, batch_size=batch_size, drop_last=drop_last)
         self.start_iter = start_iter
 
     def __iter__(self):
