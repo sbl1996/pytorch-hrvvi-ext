@@ -3,7 +3,7 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
-from horch.common import CUDA
+from horch.common import CUDA, one_hot
 from horch.models.utils import unfreeze, freeze
 from horch.train.trainer import wrap, _terminate_on_iterations
 from toolz.curried import get, identity, curry, keyfilter
@@ -74,10 +74,70 @@ def create_gan_trainer(
     return engine
 
 
+def create_acgan_trainer(
+        G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
+        device=None, prepare_batch=_prepare_batch):
+
+    if metrics is None:
+        metrics = {}
+    if device:
+        G.to(device)
+        D.to(device)
+
+    def _update(engine, batch):
+        inputs, targets = prepare_batch(batch, device=device)
+        real_x = inputs[0]
+        labels = targets[0]
+
+        batch_size = real_x.size(0)
+        num_classes = D.num_classes
+
+        unfreeze(D)
+        D.train()
+        optimizerD.zero_grad()
+
+        real_p, real_cp = D(real_x)
+
+        noise = torch.randn(batch_size, G.in_channels - num_classes)
+        noise = to_device(noise, device)
+        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
+        with torch.no_grad():
+            fake_x = G(z)
+        fake_p, fake_cp = D(fake_x)
+        lossD = criterionD(real_p, fake_p, real_cp, fake_cp, labels)
+        lossD.backward()
+        optimizerD.step()
+
+        freeze(D)
+        G.train()
+        optimizerG.zero_grad()
+
+        noise = torch.randn(batch_size, G.in_channels - num_classes)
+        noise = to_device(noise, device)
+        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
+        fake_p, fake_cp = D(G(z))
+        lossG = criterionG(fake_p, fake_cp, labels)
+        lossG.backward()
+        optimizerG.step()
+
+        output = {
+            "lossD": lossD.item(),
+            "lossG": lossG.item(),
+            "batch_size": batch_size,
+        }
+        return output
+
+    engine = Engine(_update)
+    for name, metric in metrics.items():
+        metric.attach(engine, name)
+
+    return engine
+
+
 class GANTrainer:
 
     def __init__(self, G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None,
-                 metrics=None, save_path=".", name="GAN"):
+                 metrics=None, save_path=".", name="GAN", gan_type='gan'):
 
         self.G = G
         self.D = D
@@ -99,6 +159,12 @@ class GANTrainer:
 
         self.G.to(self.device)
         self.D.to(self.device)
+
+        assert gan_type in ['gan', 'acgan']
+        if gan_type == 'gan':
+            self.create_fn = create_gan_trainer
+        elif gan_type == 'acgan':
+            self.create_fn = create_acgan_trainer
 
     def _lr_scheduler_step(self, engine):
         if self.lr_schedulerG:
@@ -138,7 +204,7 @@ class GANTrainer:
 
     def fit(self, it, max_iter, log_interval=100, save=None, callbacks=()):
 
-        engine = create_gan_trainer(
+        engine = self.create_fn(
             self.G, self.D, self.criterionG, self.criterionD, self.optimizerG, self.optimizerD,
             self.metrics, self.device)
         self._attach_timer(engine)
