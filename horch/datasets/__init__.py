@@ -30,6 +30,7 @@ from horch.datasets.captcha import Captcha, CaptchaDetectionOnline, CaptchaOnlin
 from horch.datasets.coco import CocoDetection
 from horch.datasets.voc import VOCDetection, VOCSegmentation, VOCDetectionConcat
 from horch.datasets.svhn import SVHNDetection
+from horch.datasets.animefaces import AnimeFaces
 
 
 class Fullset(Dataset):

@@ -1,7 +1,16 @@
+import re
+
 from torchvision.datasets.utils import check_integrity
 
 
-def download_google_drive(file_id, root, filename, md5=None):
+def download_google_drive(url_or_id, root, filename, md5=None):
+    match = re.match(
+        r"https://drive.google.com/open\?id=(.*)", url_or_id)
+    if match:
+        file_id = match.group(1)
+    else:
+        file_id = url_or_id
+
     fpath = root / filename
 
     root.mkdir(exist_ok=True)

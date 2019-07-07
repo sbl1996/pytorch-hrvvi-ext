@@ -11,15 +11,18 @@ class Generator(nn.Module):
         super().__init__()
         self.h, self.w = size
         self.in_channels = in_channels
-        self.dense = nn.Linear(in_channels, (self.h // 8) * (self.w // 8) * channels * 8)
+        self.dense = nn.Sequential(
+            nn.Linear(in_channels, (self.h // 8) * (self.w // 8) * channels * 8),
+            nn.ReLU(True),
+        )
         self.conv = nn.Sequential(
-            nn.ConvTranspose2d(channels * 8, channels * 4, kernel_size=5, stride=2, padding=2, bias=False),
+            nn.ConvTranspose2d(channels * 8, channels * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(channels * 4),
             nn.ReLU(True),
-            nn.ConvTranspose2d(channels * 4, channels * 2, kernel_size=5, stride=2, padding=2, bias=False),
+            nn.ConvTranspose2d(channels * 4, channels * 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(channels * 2),
             nn.ReLU(True),
-            nn.ConvTranspose2d(channels * 2, out_channels, kernel_size=5, stride=2, padding=2),
+            nn.ConvTranspose2d(channels * 2, out_channels, kernel_size=4, stride=2, padding=1),
             nn.Tanh(),
         )
 
@@ -30,10 +33,10 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, in_channels=3, channels=64, num_classes=10, size=(32, 32), dropout=0.5, use_sn=False):
+    def __init__(self, in_channels=3, channels=64, out_channels=1, size=(32, 32), dropout=0.5, use_sn=False):
         super().__init__()
         self.h, self.w = size
-        self.num_classes = num_classes
+        self.out_channels = out_channels
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, channels // 4, kernel_size=3, stride=2, padding=1),
             nn.LeakyReLU(0.2, True),
@@ -59,19 +62,16 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, True),
             nn.Dropout(dropout),
         )
-        self.dense1 = nn.Linear((self.h // 8) * (self.w // 8) * channels * 8, 1)
-        self.dense2 = nn.Linear((self.h // 8) * (self.w // 8) * channels * 8, num_classes)
+        self.dense = nn.Linear((self.h // 8) * (self.w // 8) * channels * 8, out_channels)
 
         if use_sn:
             for m in self.conv:
                 if isinstance(m, nn.Conv2d):
                     spectral_norm(m)
-            spectral_norm(self.dense1)
-            spectral_norm(self.dense2)
+            spectral_norm(self.dense)
 
     def forward(self, x):
         x = self.conv(x)
         x = x.view(x.size(0), -1)
-        p = self.dense1(x).view(-1)
-        cp = self.dense2(x).view(x.size(0), -1)
-        return p, cp
+        p = self.dense(x).view(x.size(0), -1)
+        return p

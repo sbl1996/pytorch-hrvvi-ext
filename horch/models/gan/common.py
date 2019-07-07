@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horch.models.modules import seq
 from horch.nn import MaxUnpool2d
 
 from torch.nn.utils import spectral_norm
@@ -15,6 +14,8 @@ class Generator(nn.Module):
         self.in_channels = in_channels
         self.dense = nn.Linear(in_channels, (self.h // 8) * (self.w // 8) * channels * 8)
         self.conv = nn.Sequential(
+            nn.BatchNorm2d(channels * 8),
+            nn.ReLU(True),
             nn.ConvTranspose2d(channels * 8, channels * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(channels * 4),
             nn.ReLU(True),
@@ -24,7 +25,7 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(channels * 2, channels * 1, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(channels * 1),
             nn.ReLU(True),
-            nn.Conv2d(channels * 1, out_channels, kernel_size=3, stride=1, padding=1),
+            nn.ConvTranspose2d(channels * 1, out_channels, kernel_size=3, stride=1, padding=1),
             nn.Tanh(),
         )
 
@@ -35,35 +36,38 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, in_channels, channels, size=(32, 32)):
+    def __init__(self, in_channels, channels=64, out_channels=1, size=(32, 32), leaky_slope=0.1, use_sn=True):
         super().__init__()
         self.h, self.w = size
+        self.out_channels = out_channels
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, channels, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels, channels, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels, channels * 2, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels * 2, channels * 2, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels * 2, channels * 4, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels * 4, channels * 4, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels * 4, channels * 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.1, True),
+            nn.LeakyReLU(leaky_slope, True),
         )
-        self.dense = nn.Linear((self.h // 8) * (self.w // 8) * channels * 8, 1)
-        for m in self.conv:
-            if isinstance(m, nn.Conv2d):
-                spectral_norm(m)
-        spectral_norm(self.dense)
+        self.dense = nn.Linear((self.h // 8) * (self.w // 8) * channels * 8, out_channels)
+
+        if use_sn:
+            for m in self.conv:
+                if isinstance(m, nn.Conv2d):
+                    spectral_norm(m)
+            spectral_norm(self.dense)
 
     def forward(self, x):
         x = self.conv(x)
         x = x.view(x.size(0), -1)
-        x = self.dense(x).view(-1)
+        x = self.dense(x)
         return x
 
 
