@@ -65,6 +65,7 @@ class Discriminator(nn.Module):
             spectral_norm(self.dense)
 
     def forward(self, x):
+        print(x.shape)
         x = self.conv(x)
         x = x.view(x.size(0), -1)
         x = self.dense(x)
@@ -72,34 +73,35 @@ class Discriminator(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, resample=None):
-        assert resample in ['downscale', 'upscale', None]
+    def __init__(self, in_channels, out_channels, scale=None, use_sn=True):
+        assert scale in ['down', 'up', None]
         super().__init__()
         shortcut = nn.Sequential()
-        if resample == 'upscale':
-            shortcut.resample = MaxUnpool2d(True)
+        if scale == 'up':
+            shortcut.scale = MaxUnpool2d(True)
         shortcut.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        if resample == 'downscale':
-            shortcut.resample = nn.AvgPool2d(2, 2)
+        if scale == 'down':
+            shortcut.scale = nn.AvgPool2d(2, 2)
         self.shortcut = shortcut
 
         conv = nn.Sequential()
         conv.bn1 = nn.BatchNorm2d(in_channels)
         conv.relu1 = nn.ReLU(True)
 
-        if resample == 'upscale':
-            conv.resample = MaxUnpool2d(True)
+        if scale == 'up':
+            conv.scale = MaxUnpool2d(True)
         conv.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         conv.bn2 = nn.BatchNorm2d(out_channels)
         conv.relu2 = nn.ReLU(inplace=True)
         conv.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
-        if resample == 'downscale':
-            conv.resample = nn.AvgPool2d(2, 2)
+        if scale == 'down':
+            conv.scale = nn.AvgPool2d(2, 2)
         self.conv = conv
 
-        spectral_norm(self.shortcut.conv)
-        spectral_norm(self.conv.conv1)
-        spectral_norm(self.conv.conv2)
+        if use_sn:
+            spectral_norm(self.shortcut.conv)
+            spectral_norm(self.conv.conv1)
+            spectral_norm(self.conv.conv2)
 
     def forward(self, x):
         return self.conv(x) + self.shortcut(x)
