@@ -65,7 +65,6 @@ class Discriminator(nn.Module):
             spectral_norm(self.dense)
 
     def forward(self, x):
-        print(x.shape)
         x = self.conv(x)
         x = x.view(x.size(0), -1)
         x = self.dense(x)
