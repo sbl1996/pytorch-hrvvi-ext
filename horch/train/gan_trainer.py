@@ -265,8 +265,8 @@ class GANTrainer:
             ["iterations", "G", "D", "optimizerG", "optimizerD", "criterionG", "criterionD",
              "lr_schedulerG", "lr_schedulerD", "metric_history"], state_dict)
         self._iterations = iterations
-        self.G.load_state_dict()
-        self.D.load_state_dict()
+        self.G.load_state_dict(G)
+        self.D.load_state_dict(D)
         self.optimizerG.load_state_dict(optimizerG)
         self.optimizerD.load_state_dict(optimizerD)
         self.criterionG.load_state_dict(criterionG)
@@ -276,6 +276,32 @@ class GANTrainer:
         if self.lr_schedulerD and lr_schedulerD:
             self.lr_schedulerD.load_state_dict(lr_schedulerD)
         self.metric_history = metric_history
+
+    def save(self, remove_prev=True):
+        d = self.save_path
+        d.mkdir(parents=True, exist_ok=True)
+
+        if remove_prev:
+            pattern = "%s_trainer*.pth" % self.name
+            saves = list(d.glob(pattern))
+            if len(saves) != 0:
+                fp = max(saves, key=lambda f: f.stat().st_mtime)
+                fp.unlink()
+
+        filename = "%s_trainer_%d.pth" % (self.name, self.iterations())
+        fp = d / filename
+        torch.save(self.state_dict(), fp)
+        print("Save trainer as %s" % fp)
+
+    def load(self):
+        d = self.save_path
+        pattern = "%s_trainer*.pth" % self.name
+        saves = list(d.glob(pattern))
+        if len(saves) == 0:
+            raise FileNotFoundError("No checkpoint to load for %s in %s" % (self.name, self.save_path))
+        fp = max(saves, key=lambda f: f.stat().st_mtime)
+        self.load_state_dict(torch.load(fp, map_location=self.device))
+        print("Load trainer from %s" % fp)
 
     def iterations(self):
         return self._iterations
