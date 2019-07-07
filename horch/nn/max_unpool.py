@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class MaxUnpool2d(nn.Module):
     def __init__(self, cache=False):
         super().__init__()
@@ -17,8 +18,8 @@ class MaxUnpool2d(nn.Module):
         return indices
 
     def forward(self, x):
-        if self.cache:
-            if self.indices is None:
+        if self.cache and self.training:
+            if self.indices is None or len(self.indices) != len(x):
                 self.indices = self.compute_indices(x)
             indices = self.indices
         else:
