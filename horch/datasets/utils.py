@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from torchvision.datasets.utils import check_integrity
 
@@ -11,6 +12,7 @@ def download_google_drive(url_or_id, root, filename, md5=None):
     else:
         file_id = url_or_id
 
+    root = Path(root)
     fpath = root / filename
 
     root.mkdir(exist_ok=True)
