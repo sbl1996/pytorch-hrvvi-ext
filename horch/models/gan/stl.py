@@ -7,7 +7,7 @@ from torch.nn.utils import spectral_norm
 
 class ResNetGenerator(nn.Module):
 
-    def __init__(self, in_channels, channels, out_channels, use_sn=True):
+    def __init__(self, in_channels, channels=64, out_channels=3, use_sn=True):
         super().__init__()
         self.in_channels = in_channels
         self.dense = nn.Linear(in_channels, 6 * 6 * channels * 8)
@@ -33,7 +33,7 @@ class ResNetGenerator(nn.Module):
 
 class ResNetDiscriminator(nn.Module):
 
-    def __init__(self, in_channels, channels, out_channels, use_sn=True):
+    def __init__(self, in_channels=3, channels=64, out_channels=1, use_sn=True):
         super().__init__()
         self.out_channels = out_channels
         self.conv = nn.Sequential(
