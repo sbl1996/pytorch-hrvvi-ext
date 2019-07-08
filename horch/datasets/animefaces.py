@@ -37,7 +37,7 @@ class AnimeFaces(VisionDataset):
             'md5': 'a66112bec4a2ab4467eda5c68eccd69a'
         },
         'unlabeled96': {
-            # 'url': 'https://drive.google.com/open?id=16tAUOr4QCs-0jObqFAUPRX9Fv_tO48k1',
+            'url': 'https://drive.google.com/open?id=1ERMI1I0DXKPdYMeZtdhUYd5fcTqNTtEc',
             'tgz_filename': 'animefaces96.tar.gz',
             'tgz_md5': '47701650112cd743e35f8a31a6854642',
             'filename': 'unlabeled96_X.npy',

@@ -43,17 +43,17 @@ class Discriminator(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, channels, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(leaky_slope, True),
-            nn.Conv2d(channels, channels, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(channels, channels * 2, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(leaky_slope, True),
-            nn.Conv2d(channels, channels * 2, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(channels * 2, channels * 2, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(leaky_slope, True),
-            nn.Conv2d(channels * 2, channels * 2, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(channels * 2, channels * 4, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(leaky_slope, True),
-            nn.Conv2d(channels * 2, channels * 4, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(channels * 4, channels * 4, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(leaky_slope, True),
-            nn.Conv2d(channels * 4, channels * 4, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(channels * 4, channels * 8, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(leaky_slope, True),
-            nn.Conv2d(channels * 4, channels * 8, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(channels * 8, channels * 8, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(leaky_slope, True),
         )
         self.dense = nn.Linear((self.h // 8) * (self.w // 8) * channels * 8, out_channels)
