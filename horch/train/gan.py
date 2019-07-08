@@ -1,27 +1,29 @@
-import datetime
 import os
+import datetime
 from collections import defaultdict
 from pathlib import Path
 
-from horch.common import CUDA, one_hot
-from horch.models.utils import unfreeze, freeze
-from horch.train.trainer import wrap, _terminate_on_iterations
 from toolz.curried import get, identity, curry, keyfilter
+
+import numpy as np
 
 import torch
 import torch.nn as nn
 
-from ignite.engine import Engine, Events
+from torchvision.utils import make_grid
 
+from ignite.engine import Engine, Events
 from ignite.handlers import Timer, ModelCheckpoint
 
+from horch.common import CUDA, one_hot
+from horch.models.utils import unfreeze, freeze
+from horch.train.trainer import wrap, _terminate_on_iterations
 from horch.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event, to_device
 
 
 def create_gan_trainer(
         G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
         device=None, prepare_batch=_prepare_batch):
-
     if metrics is None:
         metrics = {}
     if device:
@@ -77,7 +79,6 @@ def create_gan_trainer(
 def create_acgan_trainer(
         G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
         device=None, prepare_batch=_prepare_batch):
-
     if metrics is None:
         metrics = {}
     if device:
@@ -305,3 +306,27 @@ class GANTrainer:
 
     def iterations(self):
         return self._iterations
+
+
+@curry
+def save_generated(trainer, save_interval, fixed_z, sharpen=True):
+    if trainer.iterations() % save_interval != 0:
+        return
+    import matplotlib.pyplot as plt
+    trainer.G.eval()
+    with torch.no_grad():
+        fake_x = trainer.G(fixed_z).cpu()
+    trainer.G.train()
+    img = np.transpose(make_grid(fake_x, padding=2, normalize=True).numpy(), (1, 2, 0))
+    if not sharpen:
+        img = (img + 1) / 2
+    fp = trainer.save_path / "images" / ("%d.jpg" % trainer.iterations())
+    fp.parent.mkdir(exist_ok=True, parents=True)
+    plt.imsave(fp, img)
+
+
+@curry
+def save_trainer(trainer, save_interval):
+    if trainer.iterations() % save_interval != 0:
+        return
+    trainer.save()

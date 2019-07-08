@@ -8,7 +8,7 @@ from torch.nn.utils import spectral_norm
 
 class Generator(nn.Module):
 
-    def __init__(self, in_channels, channels, out_channels, size=(32, 32)):
+    def __init__(self, in_channels, channels, out_channels, size=(32, 32), use_sn=True):
         super().__init__()
         self.h, self.w = size
         self.in_channels = in_channels
@@ -28,6 +28,12 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(channels * 1, out_channels, kernel_size=3, stride=1, padding=1),
             nn.Tanh(),
         )
+
+        if use_sn:
+            spectral_norm(self.dense)
+            for m in self.conv.children():
+                if isinstance(m, nn.ConvTranspose2d):
+                    spectral_norm(m)
 
     def forward(self, x):
         x = self.dense(x).view(x.size(0), -1, self.h // 8, self.w // 8)
@@ -72,26 +78,29 @@ class Discriminator(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, scale=None, use_sn=True):
+    def __init__(self, in_channels, out_channels, scale=None, use_sn=False, use_bn=True):
         assert scale in ['down', 'up', None]
         super().__init__()
         shortcut = nn.Sequential()
         if scale == 'up':
-            shortcut.scale = MaxUnpool2d(True)
+            # shortcut.scale = MaxUnpool2d(True)
+            shortcut.scale = nn.UpsamplingNearest2d(scale_factor=2)
         shortcut.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         if scale == 'down':
             shortcut.scale = nn.AvgPool2d(2, 2)
         self.shortcut = shortcut
 
         conv = nn.Sequential()
-        conv.bn1 = nn.BatchNorm2d(in_channels)
-        conv.relu1 = nn.ReLU(True)
+        if use_bn:
+            conv.bn1 = nn.BatchNorm2d(in_channels)
+        conv.relu1 = nn.ReLU(use_bn)
 
         if scale == 'up':
-            conv.scale = MaxUnpool2d(True)
+            conv.scale = nn.UpsamplingNearest2d(scale_factor=2)
         conv.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        conv.bn2 = nn.BatchNorm2d(out_channels)
-        conv.relu2 = nn.ReLU(inplace=True)
+        if use_bn:
+            conv.bn2 = nn.BatchNorm2d(out_channels)
+        conv.relu2 = nn.ReLU(use_bn)
         conv.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
         if scale == 'down':
             conv.scale = nn.AvgPool2d(2, 2)

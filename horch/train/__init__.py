@@ -3,7 +3,7 @@ from typing import Sequence
 import torch
 from horch import ProtectedSeq
 from horch.train.trainer import Trainer, ValSet
-from horch.train.gan_trainer import GANTrainer
+from horch.train.gan import GANTrainer
 from horch.transforms.detection import BoxList
 
 from toolz import curry

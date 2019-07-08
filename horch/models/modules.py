@@ -288,7 +288,11 @@ class Flatten(nn.Module):
 
 
 def seq(*modules):
-    return nn.Sequential(OrderedDict(modules))
+    mods = []
+    for k, v in modules:
+        if v is not None:
+            mods.append((k, v))
+    return nn.Sequential(OrderedDict(mods))
 
 
 class L2Norm(nn.Module):
@@ -308,3 +312,67 @@ class L2Norm(nn.Module):
         x = torch.div(x, norm)
         out = self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x) * x
         return out
+
+
+class SelfAttention(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv_theta = Conv2d(in_channels, in_channels // 8, kernel_size=1)
+
+        self.conv_phi = Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.pool_phi = nn.MaxPool2d(kernel_size=2, stride=(2, 2))
+
+        self.conv_g = Conv2d(in_channels, in_channels // 2, kernel_size=1)
+        self.pool_g = nn.MaxPool2d(kernel_size=2, stride=(2, 2))
+
+        self.conv_attn = Conv2d(in_channels // 2, in_channels, kernel_size=1)
+
+        self.sigma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        theta = self.conv_theta(x)
+        theta = theta.view(b, -1, h * w)
+
+        phi = self.conv_phi(x)
+        phi = self.pool_phi(phi)
+        phi = phi.view(b, -1, h * w // 4)
+
+        attn = torch.bmm(theta.permute(0, 2, 1), phi)
+        attn = F.softmax(attn, dim=-1)
+
+        g = self.conv_g(x)
+        g = self.pool_g(g)
+        g = g.view(b, -1, h * w // 4)
+
+        attn_g = torch.bmm(g, attn.permute(0, 2, 1))
+        attn_g = attn_g.view(b, -1, h, w)
+        attn_g = self.conv_attn(attn_g)
+
+        x = x + self.sigma * attn_g
+        return x
+
+
+class SelfAttention2(nn.Module):
+    def __init__(self, in_channels, reduction=8):
+        super().__init__()
+        channels = in_channels // reduction
+        self.proj_f = nn.Linear(in_channels, channels)
+        self.proj_g = nn.Linear(in_channels, channels)
+        self.proj_h = nn.Linear(in_channels, channels)
+        self.proj_v = nn.Linear(channels, in_channels)
+        self.sigma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        identity = x
+        x = x.reshape(b, c, h * w).permute(0, 2, 1)
+        ff = self.proj_f(x)
+        fg = self.proj_g(x)
+        s = torch.bmm(ff, fg.permute(0, 2, 1))
+        s = torch.softmax(s, dim=-1)
+        fh = self.proj_h(x)
+        fv = self.proj_v(torch.bmm(s, fh))
+        x = fv.permute(0, 2, 1).reshape(b, c, h, w)
+        x = identity + self.sigma * x
+        return x
