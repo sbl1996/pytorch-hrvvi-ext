@@ -357,22 +357,29 @@ class SelfAttention2(nn.Module):
     def __init__(self, in_channels, reduction=8):
         super().__init__()
         channels = in_channels // reduction
-        self.proj_f = nn.Linear(in_channels, channels)
-        self.proj_g = nn.Linear(in_channels, channels)
-        self.proj_h = nn.Linear(in_channels, channels)
-        self.proj_v = nn.Linear(channels, in_channels)
+        self.conv_theta = Conv2d(in_channels, channels, kernel_size=1)
+        self.conv_phi = Conv2d(in_channels, channels, kernel_size=1)
+        self.conv_g = Conv2d(in_channels, channels, kernel_size=1)
+        self.conv_attn = Conv2d(channels, in_channels, kernel_size=1)
         self.sigma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
         b, c, h, w = x.size()
-        identity = x
-        x = x.reshape(b, c, h * w).permute(0, 2, 1)
-        ff = self.proj_f(x)
-        fg = self.proj_g(x)
-        s = torch.bmm(ff, fg.permute(0, 2, 1))
-        s = torch.softmax(s, dim=-1)
-        fh = self.proj_h(x)
-        fv = self.proj_v(torch.bmm(s, fh))
-        x = fv.permute(0, 2, 1).reshape(b, c, h, w)
-        x = identity + self.sigma * x
+        theta = self.conv_theta(x)
+        theta = theta.view(b, -1, h * w)
+
+        phi = self.conv_phi(x)
+        phi = phi.view(b, -1, h * w)
+
+        attn = torch.bmm(theta.permute(0, 2, 1), phi)
+        attn = F.softmax(attn, dim=-1)
+
+        g = self.conv_g(x)
+        g = g.view(b, -1, h * w)
+
+        attn_g = torch.bmm(g, attn.permute(0, 2, 1))
+        attn_g = attn_g.view(b, -1, h, w)
+        attn_g = self.conv_attn(attn_g)
+
+        x = x + self.sigma * attn_g
         return x
