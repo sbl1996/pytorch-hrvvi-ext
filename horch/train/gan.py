@@ -157,42 +157,33 @@ def create_cgan_trainer(
         labels = targets[0]
 
         batch_size = real_x.size(0)
-        num_classes = D.out_channels - 1
-        lat_dim = G.in_channels - num_classes
+        lat_dim = G.in_channels
 
         unfreeze(D)
         D.train()
-        G.eval()
+        # G.eval()
         optimizerD.zero_grad()
 
-        real_p = D(real_x)
-        real_cp = real_p[:, 1:]
-        real_p = real_p[:, 0]
+        real_p = D(real_x, labels)
 
         noise = torch.randn(batch_size, lat_dim)
         noise = to_device(noise, device)
-        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
         with torch.no_grad():
-            fake_x = G(z, labels)
-        fake_p = D(fake_x)
-        fake_cp = fake_p[:, 1:]
-        fake_p = fake_p[:, 0]
-        lossD = criterionD(real_p, fake_p, real_cp, fake_cp, labels)
+            fake_x = G(noise, labels)
+        fake_p = D(fake_x, labels)
+        lossD = criterionD(real_p, fake_p)
         lossD.backward()
         optimizerD.step()
 
         freeze(D)
-        D.eval()
+        # D.eval()
         G.train()
         optimizerG.zero_grad()
 
         noise = torch.randn(batch_size, lat_dim)
         noise = to_device(noise, device)
-        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
-        fake_p = D(G(z, labels))
-        fake_cp = fake_p[:, 1:]
-        fake_p = fake_p[:, 0]
-        lossG = criterionG(fake_p, fake_cp, labels)
+        fake_p = D(G(noise, labels), labels)
+        lossG = criterionG(fake_p)
         lossG.backward()
         optimizerG.step()
 
