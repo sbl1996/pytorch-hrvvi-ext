@@ -1,7 +1,8 @@
 import torch.nn as nn
-from horch.models.modules import ConditionalBatchNorm2d
 from torch.nn.utils import spectral_norm
 
+from horch.models.modules import ConditionalBatchNorm2d
+from horch.models.gan.common import Discriminator
 
 class Generator(nn.Module):
 

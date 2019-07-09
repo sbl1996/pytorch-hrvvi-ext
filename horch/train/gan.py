@@ -142,6 +142,74 @@ def create_acgan_trainer(
     return engine
 
 
+def create_cgan_trainer(
+        G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
+        device=None, prepare_batch=_prepare_batch):
+    if metrics is None:
+        metrics = {}
+    if device:
+        G.to(device)
+        D.to(device)
+
+    def _update(engine, batch):
+        inputs, targets = prepare_batch(batch, device=device)
+        real_x = inputs[0]
+        labels = targets[0]
+
+        batch_size = real_x.size(0)
+        num_classes = D.out_channels - 1
+        lat_dim = G.in_channels - num_classes
+
+        unfreeze(D)
+        D.train()
+        G.eval()
+        optimizerD.zero_grad()
+
+        real_p = D(real_x)
+        real_cp = real_p[:, 1:]
+        real_p = real_p[:, 0]
+
+        noise = torch.randn(batch_size, lat_dim)
+        noise = to_device(noise, device)
+        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
+        with torch.no_grad():
+            fake_x = G(z, labels)
+        fake_p = D(fake_x)
+        fake_cp = fake_p[:, 1:]
+        fake_p = fake_p[:, 0]
+        lossD = criterionD(real_p, fake_p, real_cp, fake_cp, labels)
+        lossD.backward()
+        optimizerD.step()
+
+        freeze(D)
+        D.eval()
+        G.train()
+        optimizerG.zero_grad()
+
+        noise = torch.randn(batch_size, lat_dim)
+        noise = to_device(noise, device)
+        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
+        fake_p = D(G(z, labels))
+        fake_cp = fake_p[:, 1:]
+        fake_p = fake_p[:, 0]
+        lossG = criterionG(fake_p, fake_cp, labels)
+        lossG.backward()
+        optimizerG.step()
+
+        output = {
+            "lossD": lossD.item(),
+            "lossG": lossG.item(),
+            "batch_size": batch_size,
+        }
+        return output
+
+    engine = Engine(_update)
+    for name, metric in metrics.items():
+        metric.attach(engine, name)
+
+    return engine
+
+
 class GANTrainer:
 
     def __init__(self, G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None,
@@ -168,11 +236,13 @@ class GANTrainer:
         self.G.to(self.device)
         self.D.to(self.device)
 
-        assert gan_type in ['gan', 'acgan']
+        assert gan_type in ['gan', 'acgan', 'cgan']
         if gan_type == 'gan':
             self.create_fn = create_gan_trainer
         elif gan_type == 'acgan':
             self.create_fn = create_acgan_trainer
+        elif gan_type == 'cgan':
+            self.create_fn = create_cgan_trainer
 
     def _lr_scheduler_step(self, engine):
         if self.lr_schedulerG:
