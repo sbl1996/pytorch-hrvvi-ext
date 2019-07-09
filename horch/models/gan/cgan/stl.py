@@ -6,6 +6,7 @@ from torch.nn.utils import spectral_norm
 from horch.models.modules import seq, SelfAttention2, ConditionalBatchNorm2d
 from horch.models.gan.stl import ResNetDiscriminator
 
+
 class GenResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, num_classes, scale=None, use_sn=False):
         assert scale in ['down', 'up', None]
