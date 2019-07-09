@@ -383,3 +383,20 @@ class SelfAttention2(nn.Module):
 
         x = x + self.sigma * attn_g
         return x
+
+
+class ConditionalBatchNorm2d(nn.Module):
+
+    def __init__(self, num_features, num_classes, momentum=0.001):
+        super().__init__()
+        self.num_features = num_features
+        self.bn = nn.BatchNorm2d(num_features, affine=False, momentum=momentum)
+        self.embed = nn.Embedding(num_classes, num_features * 2)
+        self.embed.weight.data[:, :num_features].normal_(1, 0.02)  # Initialise scale at N(1, 0.02)
+        self.embed.weight.data[:, num_features:].zero_()  # Initialise bias at 0
+
+    def forward(self, x, y):
+        out = self.bn(x)
+        gamma, beta = self.embed(y).chunk(2, 1)
+        out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
+        return out
