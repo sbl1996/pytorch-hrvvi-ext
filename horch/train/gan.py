@@ -380,6 +380,7 @@ def save_generated(trainer, save_interval, fixed_inputs, sharpen=True):
     trainer.G.eval()
     if torch.is_tensor(fixed_inputs):
         fixed_inputs = (fixed_inputs,)
+    fixed_inputs = to_device(fixed_inputs, trainer.device)
     with torch.no_grad():
         fake_x = trainer.G(*fixed_inputs).cpu()
     trainer.G.train()

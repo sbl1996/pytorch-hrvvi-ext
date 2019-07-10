@@ -13,24 +13,17 @@ from torchvision.models.utils import load_state_dict_from_url
 FID_WEIGHTS_URL = 'https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth'
 
 
-class InceptionV3(nn.Module):
+class FIDInceptionV3(nn.Module):
     """Pretrained InceptionV3 network returning feature maps"""
 
     def __init__(self,
                  resize_input=True,
                  normalize_input=True,
-                 requires_grad=False,
-                 use_fid_inception=True):
+                 requires_grad=False):
         """Build pretrained InceptionV3
 
         Parameters
         ----------
-        output_blocks : list of int
-            Indices of blocks to return features of. Possible values are:
-                - 0: corresponds to output of first max pooling
-                - 1: corresponds to output of second max pooling
-                - 2: corresponds to output which is fed to aux classifier
-                - 3: corresponds to output of final average pooling
         resize_input : bool
             If true, bilinearly resizes input to width and height 299 before
             feeding input to model. As the network without fully connected
@@ -42,26 +35,13 @@ class InceptionV3(nn.Module):
         requires_grad : bool
             If true, parameters of the model require gradients. Possibly useful
             for finetuning the network
-        use_fid_inception : bool
-            If true, uses the pretrained Inception model used in Tensorflow's
-            FID implementation. If false, uses the pretrained Inception model
-            available in torchvision. The FID Inception model has different
-            weights and a slightly different structure from torchvision's
-            Inception model. If you want to compute FID scores, you are
-            strongly advised to set this parameter to true to get comparable
-            results.
         """
         super().__init__()
-
-        assert use_fid_inception
 
         self.resize_input = resize_input
         self.normalize_input = normalize_input
 
-        if use_fid_inception:
-            inception = fid_inception_v3()
-        else:
-            inception = models.inception_v3(pretrained=True, transform_input=False)
+        inception = fid_inception_v3()
 
         self.features = nn.Sequential(
             inception.Conv2d_1a_3x3,
@@ -114,6 +94,39 @@ class InceptionV3(nn.Module):
 
         x = self.features(x)
         x = x.view(x.size(0), -1)
+        return x
+
+
+class InceptionV3(nn.Module):
+
+    def __init__(self, resize_input=True, normalize_input=True, requires_grad=False):
+        super().__init__()
+        self.inception = models.inception_v3(pretrained=True, transform_input=normalize_input)
+        self.resize_input = resize_input
+        self.normalize_input = normalize_input
+        self.requires_grad = requires_grad
+
+    def forward(self, x):
+        """Get Inception feature maps
+
+        Parameters
+        ----------
+        x : torch.autograd.Variable
+            Input tensor of shape Bx3xHxW. Values are expected to be in
+            range (0, 1)
+
+        Returns
+        -------
+        List of torch.autograd.Variable, corresponding to the selected output
+        block, sorted ascending by index
+        """
+        if self.resize_input:
+            x = F.interpolate(x,
+                              size=(299, 299),
+                              mode='bilinear',
+                              align_corners=False)
+
+        x = self.inception(x)
         return x
 
 
