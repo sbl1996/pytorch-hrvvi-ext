@@ -373,13 +373,15 @@ def _gan_trainer_callback_wrap(f):
 
 
 @curry
-def save_generated(trainer, save_interval, fixed_z, sharpen=True):
+def save_generated(trainer, save_interval, fixed_inputs, sharpen=True):
     if trainer.iterations() % save_interval != 0:
         return
     import matplotlib.pyplot as plt
     trainer.G.eval()
+    if torch.is_tensor(fixed_inputs):
+        fixed_inputs = (fixed_inputs,)
     with torch.no_grad():
-        fake_x = trainer.G(fixed_z).cpu()
+        fake_x = trainer.G(*fixed_inputs).cpu()
     trainer.G.train()
     img = np.transpose(make_grid(fake_x, padding=2, normalize=True).numpy(), (1, 2, 0))
     if not sharpen:

@@ -1,12 +1,12 @@
+from collections import Sequence
+from math import ceil
+
 import numpy as np
 from scipy import linalg
 
 import torch
 import torch.nn.functional as F
-from scipy.stats import entropy
-from toolz import curry
-from torch.utils.data import DataLoader, Dataset
-from torchvision.models import inception_v3
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchvision.transforms import Compose, Resize, ToTensor
 
 from horch.common import CUDA
@@ -23,56 +23,62 @@ class _ImageDataset(Dataset):
         img = self.imgs[item]
         if self.transform is not None:
             img = self.transform(img)
-        return img
+        return img,
 
     def __len__(self):
         return len(self.imgs)
 
 
-def inception_score(imgs, model, batch_size=32, device=None):
-    device = device or ('cuda' if CUDA else 'cpu')
+def batchify(tensors, batch_size=32):
+    assert len(set([len(t) for t in tensors])) == 1
+    n = len(tensors[0])
+    n_batches = ceil(n / batch_size)
+    for i in range(n_batches):
+        start = i * batch_size
+        end = min(n, (i + 1) * batch_size)
+        batch = tuple(t[start:end] for t in tensors)
+        yield batch
 
-    transforms = Compose([
-        ToTensor()
-    ])
-    ds = _ImageDataset(imgs, transforms)
-    data_loader = DataLoader(ds, batch_size=batch_size)
+
+def batch_apply(inputs, model, func=lambda x: x, batch_size=32, device=None):
+    device = device or ('cuda' if CUDA else 'cpu')
 
     model.eval()
     model.to(device)
 
-    pyxs = []
-    for batch in data_loader:
-        x = to_device(batch, device)
-        with torch.no_grad():
-            p = F.softmax(model(x), dim=1)
-        pyxs.append(p)
+    if torch.is_tensor(inputs):
+        inputs = (inputs,)
 
-    pyxs = torch.cat(pyxs, dim=0)
+    if isinstance(inputs, Sequence) and all(torch.is_tensor(t) for t in inputs):
+        it = batchify(inputs, batch_size=batch_size)
+    else:
+        transforms = Compose([
+            ToTensor()
+        ])
+        ds = _ImageDataset(inputs, transforms)
+        it = DataLoader(ds, batch_size=batch_size)
+
+    preds = []
+    for batch in it:
+        x = to_device(batch, device)
+        if torch.is_tensor(x):
+            x = (x,)
+        with torch.no_grad():
+            p = func(model(*x))
+        preds.append(p)
+    preds = torch.cat(preds, dim=0)
+    return preds
+
+
+def inception_score(imgs, model, batch_size=32, device=None):
+    pyxs = batch_apply(imgs, model, lambda p: F.softmax(p, dim=1), batch_size, device)
     py = torch.mean(pyxs, dim=0)
     score = (pyxs * (pyxs / py).log_()).sum(dim=1).mean().exp().item()
     return score
 
 
 def calculate_activation_statistics(imgs, model, batch_size=32, device=None):
-    device = device or ('cuda' if CUDA else 'cpu')
-
-    transforms = Compose([
-        ToTensor()
-    ])
-    ds = _ImageDataset(imgs, transforms)
-    data_loader = DataLoader(ds, batch_size=batch_size)
-
-    model.eval()
-    model.to(device)
-
-    preds = []
-    for batch in data_loader:
-        x = to_device(batch, device)
-        with torch.no_grad():
-            p = model(x).view(x.size(0), -1)
-        preds.append(p.cpu().numpy())
-    preds = np.concatenate(preds)
+    preds = batch_apply(imgs, model, lambda x: x, batch_size, device).cpu().numpy()
     mu = np.mean(preds, axis=0)
     sigma = np.cov(preds, rowvar=False)
     return mu, sigma

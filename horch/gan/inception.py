@@ -113,7 +113,7 @@ class InceptionV3(nn.Module):
             x = 2 * x - 1  # Scale from range (0, 1) to range (-1, 1)
 
         x = self.features(x)
-
+        x = x.view(x.size(0), -1)
         return x
 
 
