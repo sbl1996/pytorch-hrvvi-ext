@@ -1,5 +1,6 @@
 import os
 import datetime
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -12,12 +13,13 @@ import torch.nn as nn
 
 from torchvision.utils import make_grid
 
-from ignite.engine import Engine, Events
+from ignite.engine import Events
 from ignite.handlers import Timer, ModelCheckpoint
 
 from horch.common import CUDA, one_hot
 from horch.models.utils import unfreeze, freeze
-from horch.train.trainer import wrap, _terminate_on_iterations
+from horch.train.engine import Engine
+from horch.train.trainer import _trainer_callback_wrap, _terminate_on_iterations
 from horch.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event, to_device
 
 
@@ -271,7 +273,7 @@ class GANTrainer:
             self.metric_history[name].append(val)
         print(msg)
 
-    def fit(self, it, max_iter, log_interval=100, save=None, callbacks=()):
+    def fit(self, it, max_iter, log_interval=100, callbacks=()):
 
         engine = self.create_fn(
             self.G, self.D, self.criterionG, self.criterionD, self.optimizerG, self.optimizerD,
@@ -284,21 +286,12 @@ class GANTrainer:
         engine.add_event_handler(Events.ITERATION_COMPLETED, self._increment_iteration)
         engine.add_event_handler(Events.ITERATION_COMPLETED, self._log_results, log_interval, max_iter)
 
-        # Set checkpoint
-        if save:
-            checkpoint_handler = save.parse(self)
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
-
         for callback in callbacks:
             engine.add_event_handler(
-                Events.ITERATION_COMPLETED, wrap(callback), self)
-
-        engine.add_event_handler(
-            Events.ITERATION_COMPLETED, _terminate_on_iterations, max_iter)
+                Events.ITERATION_COMPLETED, _trainer_callback_wrap(callback), self)
 
         # Run
-        engine.run(it, 1)
+        engine.run(it, max_iter)
 
         # Return history
         return self.metric_history
@@ -348,7 +341,10 @@ class GANTrainer:
             saves = list(d.glob(pattern))
             if len(saves) != 0:
                 fp = max(saves, key=lambda f: f.stat().st_mtime)
-                fp.unlink()
+                p = "%s_trainer_(?P<iters>[0-9]+).pth" % self.name
+                iters = int(re.match(p, fp.name).group('iters'))
+                if self.iterations() > iters:
+                    fp.unlink()
 
         filename = "%s_trainer_%d.pth" % (self.name, self.iterations())
         fp = d / filename
@@ -367,6 +363,13 @@ class GANTrainer:
 
     def iterations(self):
         return self._iterations
+
+
+def _gan_trainer_callback_wrap(f):
+    def func(engine, *args, **kwargs):
+        return f(*args, **kwargs)
+
+    return func
 
 
 @curry

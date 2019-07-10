@@ -217,7 +217,7 @@ class Trainer:
 
         for callback in callbacks:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, wrap(callback), self)
+                Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
 
         if iterations:
             engine.add_event_handler(
@@ -253,9 +253,9 @@ class Trainer:
             Events.EPOCH_COMPLETED, self._log_results)
 
         engine.add_event_handler(
-            Events.EPOCH_COMPLETED, wrap(validate.evaluate))
+            Events.EPOCH_COMPLETED, _trainer_callback_wrap(validate.evaluate))
         engine.add_event_handler(
-            Events.EPOCH_COMPLETED, wrap(validate.log_results))
+            Events.EPOCH_COMPLETED, _trainer_callback_wrap(validate.log_results))
 
         # Set checkpoint
         if save:
@@ -265,7 +265,7 @@ class Trainer:
 
         for callback in callbacks:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, wrap(callback), self)
+                Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
 
         engine.run(train_loader, epochs)
 
@@ -328,7 +328,7 @@ class Trainer:
         set_lr(lr, self.optimizer, self.lr_scheduler)
 
 
-def wrap(f):
+def _trainer_callback_wrap(f):
     def func(engine, *args, **kwargs):
         return f(*args, **kwargs)
 

@@ -14,6 +14,7 @@ from horch.models.utils import get_last_conv, bias_init_constant
 from horch.nn.loss import focal_loss2
 
 from horch.detection import BBox, soft_nms_cpu, nms, generate_mlvl_anchors, calc_grid_sizes
+from horch.transforms import Transform
 from toolz.curried import get
 
 
@@ -73,9 +74,9 @@ class YOLOv3(nn.Module):
                              norm_layer='default', activation='default', depthwise_separable=lite)
         self.pred3 = Conv2d(channels[-3], out_channels, kernel_size=1)
 
-        get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
-        get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
-        get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
+        # get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
+        # get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
+        # get_last_conv(self.pred3).bias.data[4].fill_(inverse_sigmoid(0.01))
 
     def forward(self, c3, c4, c5):
         p51 = self.conv51(c5)
@@ -167,21 +168,23 @@ def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
     return loc_t, cls_t, ignore
 
 
-class YOLOMatchAnchors:
+class YOLOMatchAnchors(Transform):
 
-    def __init__(self, mlvl_priors, levels, ignore_thresh=0.5, get_label=lambda x: x["category_id"]):
-        self.mlvl_priors = mlvl_priors
-        self.levels = levels
-        self.strides = [2 ** l for l in levels]
+    def __init__(self, gen, ignore_thresh=0.5, get_label=lambda x: x["category_id"]):
+        super().__init__()
+        self.gen = gen
+        self.mlvl_priors = gen.anchor_sizes
+        self.levels = gen.levels
+        self.strides = gen.strides
         self.ignore_thresh = ignore_thresh
         self.get_label = get_label
 
     def __call__(self, x, anns):
         height, width = x.shape[1:3]
-        grid_sizes = calc_grid_sizes((width, height), self.strides)
-        grid_sizes = [torch.Size(s) for s in grid_sizes]
+        grid_sizes = self.gen.size2grid_sizes[(width, height)]
+        mlvl_priors = self.mlvl_priors / self.mlvl_priors.new_tensor([width, height])
         targets = match_anchors(
-            anns, self.mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label)
+            anns, mlvl_priors, grid_sizes, self.ignore_thresh, self.get_label)
         return x, targets
 
 
@@ -220,8 +223,8 @@ class YOLOLoss(nn.Module):
         self.neg_gain = neg_gain
         self.loc_gain = loc_gain
 
-    def forward(self, loc_p, obj_p, cls_p, loc_t, cls_t, ignore):
-        loc_p, obj_p, cls_p = flatten_preds(loc_p, obj_p, cls_p)
+    def forward(self, loc_preds, obj_preds, cls_preds, loc_t, cls_t, ignore):
+        loc_p, obj_p, cls_p = flatten_preds(loc_preds, obj_preds, cls_preds)
 
         pos = cls_t != 0
         num_pos = pos.sum().item()
@@ -268,13 +271,21 @@ def get_locations(mlvl_anchors):
 
 
 class YOLOAnchorGenerator(AnchorGeneratorBase):
-    def __init__(self, anchor_sizes, cache=True):
-        super().__init__(cache)
-        self.anchor_sizes = anchor_sizes
+    def __init__(self, levels, anchors, cache=True):
+        super().__init__(levels, cache)
+        assert len(levels) == len(anchors)
+        self.anchor_sizes = anchors
 
-    def calculate(self, grid_sizes, device, dtype):
+    def calculate(self, size, grid_sizes, device, dtype):
+        width, height = size
+        anchor_sizes = [
+            a.to(device=device, dtype=dtype, copy=True)
+            if torch.is_tensor(a) else torch.tensor(a, device=device, dtype=dtype)
+            for a in self.anchor_sizes]
+        for a in anchor_sizes:
+            a.div_(a.new_tensor([width, height]))
         mlvl_anchors = generate_mlvl_anchors(
-            grid_sizes, self.anchor_sizes, device, dtype)
+            grid_sizes, anchor_sizes, device, dtype)
         locations = get_locations(mlvl_anchors)
         anchors = flatten(mlvl_anchors)
         ret = {
@@ -300,7 +311,6 @@ def yolo_inference(
         bboxes = bboxes[pos]
         anchors = anchors[pos]
         locations = locations[pos]
-
     bboxes[..., :2].sigmoid_().sub_(0.5).div_(locations).add_(anchors[:, :2])
     bboxes[..., 2:].exp_().mul_(anchors[:, 2:])
 
