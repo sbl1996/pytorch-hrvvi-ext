@@ -24,13 +24,15 @@ from horch.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event
 
 
 def create_gan_trainer(
-        G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
+        G, D, criterionG, criterionD, optimizerG, optimizerD, make_latent=None, metrics=None,
         device=None, prepare_batch=_prepare_batch):
     if metrics is None:
         metrics = {}
     if device:
         G.to(device)
         D.to(device)
+    if make_latent is None:
+        make_latent = lambda b: torch.randn(b, G.in_channels)
 
     def _update(engine, batch):
         inputs, _ = prepare_batch(batch, device=device)
@@ -44,10 +46,10 @@ def create_gan_trainer(
 
         real_p = D(real_x)
 
-        noise = torch.randn(batch_size, G.in_channels)
-        noise = to_device(noise, device)
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
         with torch.no_grad():
-            fake_x = G(noise)
+            fake_x = G(lat)
         fake_p = D(fake_x)
         lossD = criterionD(real_p, fake_p)
         lossD.backward()
@@ -57,9 +59,9 @@ def create_gan_trainer(
         G.train()
         optimizerG.zero_grad()
 
-        noise = torch.randn(batch_size, G.in_channels)
-        noise = to_device(noise, device)
-        fake_p = D(G(noise))
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
+        fake_p = D(G(lat))
         lossG = criterionG(fake_p)
         lossG.backward()
         optimizerG.step()
@@ -78,8 +80,67 @@ def create_gan_trainer(
     return engine
 
 
+def create_infogan_trainer(
+        G, D, criterionG, criterionD, optimizerG, optimizerD, make_latent=None, metrics=None,
+        device=None, prepare_batch=_prepare_batch):
+    if metrics is None:
+        metrics = {}
+    if device:
+        G.to(device)
+        D.to(device)
+    if make_latent is None:
+        make_latent = lambda b: torch.randn(b, G.in_channels)
+
+    def _update(engine, batch):
+        inputs, _ = prepare_batch(batch, device=device)
+        real_x = inputs[0]
+
+        batch_size = real_x.size(0)
+
+        unfreeze(D)
+        D.train()
+        optimizerD.zero_grad()
+        D.q = False
+
+        real_p = D(real_x)
+
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
+        with torch.no_grad():
+            fake_x = G(lat)
+        fake_p = D(fake_x)
+        lossD = criterionD(real_p, fake_p)
+        lossD.backward()
+        optimizerD.step()
+
+        freeze(D)
+        G.train()
+        optimizerG.zero_grad()
+
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
+        D.q = True
+        fake_p, q_p = D(G(lat))
+        lossG = criterionG(fake_p, q_p, lat)
+        lossG.backward()
+        optimizerG.step()
+
+        output = {
+            "lossD": lossD.item(),
+            "lossG": lossG.item(),
+            "batch_size": batch_size,
+        }
+        return output
+
+    engine = Engine(_update)
+    for name, metric in metrics.items():
+        metric.attach(engine, name)
+
+    return engine
+
+
 def create_acgan_trainer(
-        G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
+        G, D, criterionG, criterionD, optimizerG, optimizerD, make_latent, metrics=None,
         device=None, prepare_batch=_prepare_batch):
     if metrics is None:
         metrics = {}
@@ -87,14 +148,18 @@ def create_acgan_trainer(
         G.to(device)
         D.to(device)
 
+    num_classes = D.out_channels - 1
+    lat_dim = G.in_channels - num_classes
+
+    if make_latent is None:
+        make_latent = lambda b: torch.randn(b, lat_dim)
+
     def _update(engine, batch):
         inputs, targets = prepare_batch(batch, device=device)
         real_x = inputs[0]
         labels = targets[0]
 
         batch_size = real_x.size(0)
-        num_classes = D.out_channels - 1
-        lat_dim = G.in_channels - num_classes
 
         unfreeze(D)
         D.train()
@@ -104,9 +169,9 @@ def create_acgan_trainer(
         real_cp = real_p[:, 1:]
         real_p = real_p[:, 0]
 
-        noise = torch.randn(batch_size, lat_dim)
-        noise = to_device(noise, device)
-        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
+        z = torch.cat([lat, one_hot(labels, num_classes)], dim=1)
         with torch.no_grad():
             fake_x = G(z)
         fake_p = D(fake_x)
@@ -120,9 +185,9 @@ def create_acgan_trainer(
         G.train()
         optimizerG.zero_grad()
 
-        noise = torch.randn(batch_size, lat_dim)
-        noise = to_device(noise, device)
-        z = torch.cat([noise, one_hot(labels, num_classes)], dim=1)
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
+        z = torch.cat([lat, one_hot(labels, num_classes)], dim=1)
         fake_p = D(G(z))
         fake_cp = fake_p[:, 1:]
         fake_p = fake_p[:, 0]
@@ -145,13 +210,19 @@ def create_acgan_trainer(
 
 
 def create_cgan_trainer(
-        G, D, criterionG, criterionD, optimizerG, optimizerD, metrics=None,
+        G, D, criterionG, criterionD, optimizerG, optimizerD, make_latent=None, metrics=None,
         device=None, prepare_batch=_prepare_batch):
     if metrics is None:
         metrics = {}
     if device:
         G.to(device)
         D.to(device)
+    num_classes = D.out_channels - 1
+    lat_dim = G.in_channels - num_classes
+
+    if make_latent is None:
+        make_latent = lambda b: torch.randn(b, lat_dim)
+
 
     def _update(engine, batch):
         inputs, targets = prepare_batch(batch, device=device)
@@ -159,19 +230,17 @@ def create_cgan_trainer(
         labels = targets[0]
 
         batch_size = real_x.size(0)
-        lat_dim = G.in_channels
 
         unfreeze(D)
         D.train()
-        # G.eval()
         optimizerD.zero_grad()
 
         real_p = D(real_x, labels)
 
-        noise = torch.randn(batch_size, lat_dim)
-        noise = to_device(noise, device)
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
         with torch.no_grad():
-            fake_x = G(noise, labels)
+            fake_x = G(lat, labels)
         fake_p = D(fake_x, labels)
         lossD = criterionD(real_p, fake_p)
         lossD.backward()
@@ -182,9 +251,9 @@ def create_cgan_trainer(
         G.train()
         optimizerG.zero_grad()
 
-        noise = torch.randn(batch_size, lat_dim)
-        noise = to_device(noise, device)
-        fake_p = D(G(noise, labels), labels)
+        lat = make_latent(batch_size)
+        lat = to_device(lat, device)
+        fake_p = D(G(lat, labels), labels)
         lossG = criterionG(fake_p)
         lossG.backward()
         optimizerG.step()
@@ -206,7 +275,7 @@ def create_cgan_trainer(
 class GANTrainer:
 
     def __init__(self, G, D, criterionG, criterionD, optimizerG, optimizerD, lr_schedulerG=None, lr_schedulerD=None,
-                 metrics=None, save_path=".", name="GAN", gan_type='gan'):
+                 make_latent=None, metrics=None, save_path=".", name="GAN", gan_type='gan'):
 
         self.G = G
         self.D = D
@@ -216,6 +285,7 @@ class GANTrainer:
         self.optimizerD = optimizerD
         self.lr_schedulerG = lr_schedulerG
         self.lr_schedulerD = lr_schedulerD
+        self.make_latent = make_latent
         self.metrics = metrics or {}
         self.name = name
         root = Path(save_path).expanduser().absolute()
@@ -229,13 +299,15 @@ class GANTrainer:
         self.G.to(self.device)
         self.D.to(self.device)
 
-        assert gan_type in ['gan', 'acgan', 'cgan']
+        assert gan_type in ['gan', 'acgan', 'cgan', 'infogan']
         if gan_type == 'gan':
             self.create_fn = create_gan_trainer
         elif gan_type == 'acgan':
             self.create_fn = create_acgan_trainer
         elif gan_type == 'cgan':
             self.create_fn = create_cgan_trainer
+        elif gan_type == 'infogan':
+            self.create_fn =  create_infogan_trainer
 
     def _lr_scheduler_step(self, engine):
         if self.lr_schedulerG:
@@ -277,7 +349,7 @@ class GANTrainer:
 
         engine = self.create_fn(
             self.G, self.D, self.criterionG, self.criterionD, self.optimizerG, self.optimizerD,
-            self.metrics, self.device)
+            self.make_latent, self.metrics, self.device)
         self._attach_timer(engine)
 
         engine.add_event_handler(

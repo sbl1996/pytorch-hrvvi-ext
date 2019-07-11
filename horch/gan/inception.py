@@ -98,27 +98,32 @@ class FIDInceptionV3(nn.Module):
 
 
 class InceptionV3(nn.Module):
+    r"""
+    InceptonV3 accepts inputs in the range (-1, 1). If your inputs are under
+    standard normalization (ImageNet normalization), set normalize_input to True.
+    """
 
-    def __init__(self, resize_input=True, normalize_input=True, requires_grad=False):
+    def __init__(self, resize_input=True, normalize_input=False):
         super().__init__()
         self.inception = models.inception_v3(pretrained=True, transform_input=normalize_input)
         self.resize_input = resize_input
-        self.normalize_input = normalize_input
-        self.requires_grad = requires_grad
+
+    @property
+    def normalize_input(self):
+        return self.inception.transform_input
+
+    @normalize_input.setter
+    def normalize_input(self, normalize_input):
+        self.inception.transform_input = normalize_input
 
     def forward(self, x):
-        """Get Inception feature maps
+        """Get Inception logits
 
         Parameters
         ----------
-        x : torch.autograd.Variable
+        x : torch.tensor
             Input tensor of shape Bx3xHxW. Values are expected to be in
-            range (0, 1)
-
-        Returns
-        -------
-        List of torch.autograd.Variable, corresponding to the selected output
-        block, sorted ascending by index
+            range (-1, 1) or under standard normalization.
         """
         if self.resize_input:
             x = F.interpolate(x,

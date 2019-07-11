@@ -71,6 +71,13 @@ def batch_apply(inputs, model, func=lambda x: x, batch_size=32, device=None):
 
 
 def inception_score(imgs, model, batch_size=32, device=None):
+    r"""
+    Parameters
+    ----------
+    imgs : List[Image] or ndarray or tensor
+        `imgs` could be a list of PIL Images or uint8 ndarray of shape (N, H, W, C)
+        or a float tensor of shape (N, C, H, W)
+    """
     pyxs = batch_apply(imgs, model, lambda p: F.softmax(p, dim=1), batch_size, device)
     py = torch.mean(pyxs, dim=0)
     score = (pyxs * (pyxs / py).log_()).sum(dim=1).mean().exp().item()

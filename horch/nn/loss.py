@@ -73,3 +73,17 @@ def loc_kl_loss(loc_p, log_var_p, loc_t, reduction='sum'):
         return loss.sum()
     else:
         return loss.mean()
+
+
+def normal_nll_loss(x, mu, var, eps=1e-6):
+    """
+    Calculate the negative log likelihood
+    of normal distribution.
+    This needs to be minimised.
+    Treating Q(cj | x) as a factored Gaussian.
+    """
+
+    logli = -0.5 * (var.mul(2 * math.pi) + eps).log() - (x - mu).pow(2).div(var.mul(2.0) + eps)
+    nll = -(logli.sum(dim=1).mean())
+
+    return nll
