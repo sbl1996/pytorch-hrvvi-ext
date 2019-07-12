@@ -14,7 +14,7 @@ class Discriminator(nn.Module):
         self.h, self.w = size
         self.q = True
         self.q_out_channels = q_out_channels
-        self.conv = nn.Sequential(
+        self.features = nn.Sequential(
             nn.Conv2d(in_channels, channels, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(leaky_slope, True),
             nn.Conv2d(channels, channels * 2, kernel_size=4, stride=2, padding=1),
@@ -38,7 +38,7 @@ class Discriminator(nn.Module):
             nn.Linear(channels, q_out_channels),
         )
         if use_sn:
-            for m in self.conv:
+            for m in self.features:
                 if isinstance(m, nn.Conv2d):
                     spectral_norm(m)
             spectral_norm(self.d_head)
@@ -47,7 +47,7 @@ class Discriminator(nn.Module):
                     spectral_norm(m)
 
     def forward(self, x):
-        x = self.conv(x)
+        x = self.features(x)
         x = x.view(x.size(0), -1)
         d_pred = self.d_head(x)
         if not self.q:

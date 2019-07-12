@@ -97,10 +97,12 @@ def create_infogan_trainer(
 
         batch_size = real_x.size(0)
 
-        unfreeze(D)
-        D.train()
-        optimizerD.zero_grad()
         D.q = False
+        unfreeze(D.features)
+        unfreeze(D.d_head)
+        D.features.train()
+        D.d_head.train()
+        optimizerD.zero_grad()
 
         real_p = D(real_x)
 
@@ -113,7 +115,8 @@ def create_infogan_trainer(
         lossD.backward()
         optimizerD.step()
 
-        freeze(D)
+        freeze(D.features)
+        freeze(D.d_head)
         G.train()
         optimizerG.zero_grad()
 
@@ -223,7 +226,6 @@ def create_cgan_trainer(
     if make_latent is None:
         make_latent = lambda b: torch.randn(b, lat_dim)
 
-
     def _update(engine, batch):
         inputs, targets = prepare_batch(batch, device=device)
         real_x = inputs[0]
@@ -307,7 +309,7 @@ class GANTrainer:
         elif gan_type == 'cgan':
             self.create_fn = create_cgan_trainer
         elif gan_type == 'infogan':
-            self.create_fn =  create_infogan_trainer
+            self.create_fn = create_infogan_trainer
 
     def _lr_scheduler_step(self, engine):
         if self.lr_schedulerG:
