@@ -98,8 +98,8 @@ def create_infogan_trainer(
         batch_size = real_x.size(0)
 
         D.q = False
-        unfreeze(D.features)
-        unfreeze(D.d_head)
+        # unfreeze(D.features)
+        # unfreeze(D.d_head)
         D.features.train()
         D.d_head.train()
         optimizerD.zero_grad()
@@ -115,16 +115,17 @@ def create_infogan_trainer(
         lossD.backward()
         optimizerD.step()
 
-        freeze(D.features)
-        freeze(D.d_head)
+        D.q = True
+        # freeze(D.features)
+        # freeze(D.d_head)
         G.train()
+        D.q_head.train()
         optimizerG.zero_grad()
 
         lat = make_latent(batch_size)
         lat = to_device(lat, device)
-        D.q = True
-        fake_p, q_p = D(G(lat))
-        lossG = criterionG(fake_p, q_p, lat)
+        fake_p, lat_p = D(G(lat))
+        lossG = criterionG(fake_p, lat_p, lat)
         lossG.backward()
         optimizerG.step()
 
