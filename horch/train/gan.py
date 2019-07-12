@@ -108,9 +108,9 @@ def create_infogan_trainer(
 
         lat = make_latent(batch_size)
         lat = to_device(lat, device)
-        with torch.no_grad():
-            fake_x = G(lat)
-        fake_p = D(fake_x)
+        # with torch.no_grad():
+        fake_x = G(lat)
+        fake_p = D(fake_x.detach())
         lossD = criterionD(real_p, fake_p)
         lossD.backward()
         optimizerD.step()
@@ -122,9 +122,9 @@ def create_infogan_trainer(
         D.q_head.train()
         optimizerG.zero_grad()
 
-        lat = make_latent(batch_size)
-        lat = to_device(lat, device)
-        fake_p, lat_p = D(G(lat))
+        # lat = make_latent(batch_size)
+        # lat = to_device(lat, device)
+        fake_p, lat_p = D(fake_x)
         lossG = criterionG(fake_p, lat_p, lat)
         lossG.backward()
         optimizerG.step()
