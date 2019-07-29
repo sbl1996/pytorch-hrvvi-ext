@@ -81,15 +81,13 @@ def create_gan_trainer(
 
 
 def create_infogan_trainer(
-        G, D, criterionG, criterionD, optimizerG, optimizerD, make_latent=None, metrics=None,
+        G, D, criterionG, criterionD, optimizerG, optimizerD, make_latent, metrics=None,
         device=None, prepare_batch=_prepare_batch):
     if metrics is None:
         metrics = {}
     if device:
         G.to(device)
         D.to(device)
-    if make_latent is None:
-        make_latent = lambda b: torch.randn(b, G.in_channels)
 
     def _update(engine, batch):
         inputs, _ = prepare_batch(batch, device=device)
@@ -98,8 +96,8 @@ def create_infogan_trainer(
         batch_size = real_x.size(0)
 
         D.q = False
-        # unfreeze(D.features)
-        # unfreeze(D.d_head)
+        unfreeze(D.features)
+        unfreeze(D.d_head)
         D.features.train()
         D.d_head.train()
         optimizerD.zero_grad()
@@ -116,8 +114,8 @@ def create_infogan_trainer(
         optimizerD.step()
 
         D.q = True
-        # freeze(D.features)
-        # freeze(D.d_head)
+        freeze(D.features)
+        freeze(D.d_head)
         G.train()
         D.q_head.train()
         optimizerG.zero_grad()

@@ -400,3 +400,17 @@ class ConditionalBatchNorm2d(nn.Module):
         gamma, beta = self.embed(y).chunk(2, 1)
         out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
         return out
+
+class SharedConditionalBatchNorm2d(nn.Module):
+
+    def __init__(self, num_features, embedding, momentum=0.001):
+        super().__init__()
+        self.num_features = num_features
+        self.bn = nn.BatchNorm2d(num_features, affine=False, momentum=momentum)
+        self.embedding = embedding
+
+    def forward(self, x, y):
+        out = self.bn(x)
+        gamma, beta = self.embed(y).chunk(2, 1)
+        out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
+        return out
