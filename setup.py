@@ -41,6 +41,7 @@ REQUIRED = [
     "googledrivedownloader",
     "tensorboardX",
     "pybind11",
+    "sklearn",
     "opencv-python",
     "pytorchcv",
 ]
