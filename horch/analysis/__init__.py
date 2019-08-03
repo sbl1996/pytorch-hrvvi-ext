@@ -8,7 +8,7 @@ import torch
 def plot_confusion_matrix(y_true, y_pred, classes,
                           normalize=False,
                           title=None,
-                          cmap='blue'):
+                          cmap='Blues'):
     """
     This function prints and plots the confusion matrix.
     Normalization can be applied by setting `normalize=True`.
