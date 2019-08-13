@@ -1,3 +1,5 @@
+import colorsys
+import random
 from typing import Sequence
 from math import sqrt
 
@@ -103,29 +105,45 @@ def calc_ssd_priors(
         mlvl_priors.append(ps)
     return mlvl_priors
 
+def random_colors(N, bright=True):
+    """
+    Generate random colors.
+    To get visually distinct colors, generate them in HSV space then
+    convert to RGB.
+    """
+    brightness = 1.0 if bright else 0.7
+    hsv = [(i / N, 1, brightness) for i in range(N)]
+    colors = list(map(lambda c: colorsys.hsv_to_rgb(*c), hsv))
+    random.shuffle(colors)
+    return colors
 
-def draw_bboxes(img, anns, categories=None):
+
+def draw_bboxes(img, anns, categories=None, fontsize=8, linewidth=2, colors=None, label_offset=16, figsize=(10, 10)):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
-    fig, ax = plt.subplots(1)
+
+    if not colors:
+        if categories:
+            colors = random_colors(len(categories))
+        else:
+            colors = ['w' for _ in range(100)]
+
+    fig, ax = plt.subplots(1, figsize=figsize)
     ax.imshow(img)
     for ann in anns:
+        c = ann["category_id"]
         if isinstance(ann, BBox):
             ann = ann.to_ann()
         bbox = ann["bbox"]
-        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=2,
-                         edgecolor='g', facecolor='none')
+        color = colors[c]
+        rect = Rectangle(bbox[:2], bbox[2], bbox[3], linewidth=linewidth,
+                         alpha=0.7, edgecolor=color, facecolor='none')
+
         ax.add_patch(rect)
         if categories:
-            ax.text(bbox[0], bbox[1],
-                    categories[ann["category_id"]], fontsize=12,
-                    bbox=dict(boxstyle="round",
-                              # ec=(1., 0.5, 0.5),
-                              # fc=(1., 0.8, 0.8),
-                              facecolor='green', alpha=0.5, edgecolor='green'
-                              ),
-                    color='white',
-                    )
+            text = "%s %.2f" % (categories[c], ann['score'])
+            ax.text(bbox[0], bbox[1] + label_offset, text,
+                    color=color, size=fontsize, backgroundcolor="none")
     return fig, ax
 
 

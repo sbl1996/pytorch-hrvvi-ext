@@ -1,9 +1,6 @@
-import bisect
-import copy
-import warnings
+import math
 
 import numpy as np
-from toolz.curried import groupby
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose
 from horch.transforms import InputTransform
@@ -128,3 +125,13 @@ class CachedDataset(Dataset):
         if self.cache[idx] is None:
             self.cache[idx] = self.dataset[idx]
         return self.cache[idx]
+
+
+def batchify(ds, batch_size):
+    n = len(ds)
+    n_batches = math.ceil(n / batch_size)
+    for i in range(n_batches):
+        start = i * batch_size
+        end = min((i + 1) * batch_size, n)
+        batch = [ds[j] for j in range(start, end)]
+        yield batch
