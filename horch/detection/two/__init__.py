@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import select, sample, _concat, one_hot, expand_last_dim
+from horch.ops import sample, _concat, expand_last_dim, select, one_hot
 from horch.detection.one import MultiBoxLoss, AnchorBasedInference, match_anchors, flatten, MultiBoxLossOnline
 from horch.detection.bbox import BBox
 from horch.detection.nms import nms, soft_nms_cpu, softer_nms_cpu

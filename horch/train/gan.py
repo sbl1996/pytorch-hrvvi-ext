@@ -16,7 +16,8 @@ from torchvision.utils import make_grid
 from ignite.engine import Events
 from ignite.handlers import Timer, ModelCheckpoint
 
-from horch.common import CUDA, one_hot
+from horch.common import CUDA
+from horch.ops import one_hot
 from horch.models.utils import unfreeze, freeze
 from horch.train.engine import Engine
 from horch.train.trainer import _trainer_callback_wrap, _terminate_on_iterations

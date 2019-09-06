@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import select, sample, _concat, expand_last_dim
+from horch.ops import sample, _concat, expand_last_dim, select
 from horch.detection.one import MultiBoxLoss
 from horch.detection.bbox import BBox
 from horch.detection.iou import iou_mn

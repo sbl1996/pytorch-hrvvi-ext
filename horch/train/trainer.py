@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
@@ -127,10 +128,16 @@ class Trainer:
         self._timer = Timer()
         self._epochs = 0
 
+        self._verbose = True
+
         self.model.to(self.device)
 
+    def _print(self, msg):
+        if self._verbose:
+            print(msg)
+
     def _log_epochs(self, engine, epochs):
-        print("Epoch %d/%d" %
+        self._print("Epoch %d/%d" %
               (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine, on_iter=False):
@@ -163,7 +170,7 @@ class Trainer:
                     pass
                     self.writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history[name].append(val)
-        print(msg)
+        self._print(msg)
 
     def _log_val_results(self, engine, evaluator, per_epochs=1):
         if engine.state.epoch % per_epochs != 0:
@@ -179,7 +186,7 @@ class Trainer:
                     pass
                     self.writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history["val_" + name].append(val)
-        print(msg)
+        self._print(msg)
 
     def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
 
@@ -302,7 +309,7 @@ class Trainer:
         filename = "%s_trainer_%d.pth" % (self.name, self.epochs())
         fp = d / filename
         torch.save(self.state_dict(), fp)
-        print("Save trainer as %s" % fp)
+        self._print("Save trainer as %s" % fp)
 
     def load(self):
         d = Path(self.save_path)
@@ -312,7 +319,7 @@ class Trainer:
             raise FileNotFoundError("No checkpoint to load for %s in %s" % (self.name, self.save_path))
         fp = max(saves, key=lambda f: f.stat().st_mtime)
         self.load_state_dict(torch.load(fp, map_location=self.device))
-        print("Load trainer from %s" % fp)
+        self._print("Load trainer from %s" % fp)
 
     def epochs(self):
         return self._epochs
@@ -404,7 +411,7 @@ class ValSet:
                 for i, v in enumerate(val):
                     trainer.writer.add_scalar("%s-%d" % (name, i + 1), v, trainer.epochs())
             trainer.metric_history[fname].append(val)
-        print(msg)
+        trainer._print(msg)
 
 
 class ValSets:
@@ -425,4 +432,4 @@ class ValSets:
             v.log_results()
 
 def print_lr(trainer):
-    print(trainer.optimizer.param_groups[0]['lr'])
+    trainer._print(trainer.optimizer.param_groups[0]['lr'])

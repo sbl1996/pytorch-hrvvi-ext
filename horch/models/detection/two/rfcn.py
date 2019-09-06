@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import detach, tuplify, _concat, inverse_sigmoid
+from horch.common import detach, tuplify
+from horch.ops import _concat, inverse_sigmoid
 from horch.models.utils import bias_init_constant, weight_init_normal
 from horch.models.modules import Sequential, Conv2d
 from horch.models.detection.head import to_pred

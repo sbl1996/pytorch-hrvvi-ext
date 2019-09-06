@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, tuplify, _concat
+from horch.common import tuplify
+from horch.ops import _concat, one_hot
 from horch.detection import soft_nms_cpu, BBox, nms, calc_grid_sizes
 from horch.detection.one import flatten_preds
 from horch.detection.anchor.generator import AnchorGeneratorBase

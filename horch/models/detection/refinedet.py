@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import tuplify, inverse_sigmoid
+from horch.common import tuplify
+from horch.ops import inverse_sigmoid
 from horch.detection import BBox
 from horch.detection.one import MultiBoxLoss, flatten_preds, anchor_based_inference, match_anchors, target_to_coords
 from horch.models.detection.head import SSDHead

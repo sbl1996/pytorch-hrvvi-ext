@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from horch.common import _concat
+from horch.ops import _concat
 from toolz import curry
 from horch.ext.summary import summary
 

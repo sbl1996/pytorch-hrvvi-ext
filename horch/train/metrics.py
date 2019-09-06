@@ -17,6 +17,7 @@ from ignite.metrics.metric import Metric
 from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
+from horch.ops import inverse_sigmoid
 from horch.functools import lmap
 from horch.detection import BBox
 from horch.detection.eval import mean_average_precision, average_precision

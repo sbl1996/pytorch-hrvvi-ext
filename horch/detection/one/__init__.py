@@ -1,7 +1,7 @@
 import random
 from collections import defaultdict
 
-from horch.common import select, _concat
+from horch.ops import _concat, select
 from horch.detection import generate_mlvl_anchors, calc_grid_sizes
 from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.transforms import Transform
@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch import one_hot
+from horch.ops import one_hot
 from horch.nn.loss import focal_loss2
 
 from horch.detection.bbox import BBox

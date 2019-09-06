@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import one_hot, inverse_sigmoid
+from horch.ops import inverse_sigmoid, one_hot
 from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.detection.one import flatten, flatten_preds
 from horch.models.detection.head import to_pred
