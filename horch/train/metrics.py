@@ -7,6 +7,7 @@ from toolz.curried import get, groupby
 
 import cv2
 import torch
+import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 
@@ -16,6 +17,8 @@ from ignite.metrics.metric import Metric
 
 from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
+
+from sklearn.metrics import roc_auc_score
 
 from horch.ops import inverse_sigmoid
 from horch.functools import lmap
@@ -179,6 +182,49 @@ class Accuracy(IgniteAccuracy):
     def output_transform(output):
         preds, target = get(["preds", "target"], output)
         return preds[0], target[0]
+
+
+class EpochSummary(Metric):
+
+    def __init__(self, metric_func):
+        super().__init__()
+        self.metric_func = metric_func
+
+    def reset(self):
+        self.preds = []
+        self.targets = []
+
+    def update(self, output):
+        preds, target = get(["preds", "target"], output)
+        self.preds.append(preds[0])
+        self.targets.append(target[0])
+
+    def compute(self):
+        preds = torch.cat(self.preds, dim=0)
+        targets = torch.cat(self.targets, dim=0)
+        return self.metric_func(preds, targets)
+
+
+class ROCAUC(Metric):
+
+    def __init__(self):
+        super().__init__()
+
+    def reset(self):
+        self.preds = []
+        self.targets = []
+
+    def update(self, output):
+        preds, target = get(["preds", "target"], output)
+        self.preds.append(preds[0])
+        self.targets.append(target[0])
+
+    def compute(self):
+        preds = torch.cat(self.preds, dim=0)
+        targets = torch.cat(self.targets, dim=0)
+        y_score = F.softmax(preds, dim=1)[:, 1].cpu().numpy()
+        y_true = targets.cpu().numpy()
+        return roc_auc_score(y_true, y_score)
 
 
 class Bleu(Average):

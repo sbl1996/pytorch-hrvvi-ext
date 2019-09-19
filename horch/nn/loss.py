@@ -87,3 +87,16 @@ def normal_nll_loss(x, mu, var, eps=1e-6):
     nll = -(logli.sum(dim=1).mean())
 
     return nll
+
+
+def conf_penalty(input, beta=0.1):
+    p = F.softmax(input, dim=1)
+    loss = (torch.log(p) * (beta * p - 1)).sum(dim=1).mean()
+    return loss
+
+@curry
+def cross_entropy(input, target, weight=None, confidence_penalty=None):
+    loss = F.cross_entropy(input, target, weight)
+    if confidence_penalty:
+        loss = loss + conf_penalty(input, beta=confidence_penalty)
+    return loss
