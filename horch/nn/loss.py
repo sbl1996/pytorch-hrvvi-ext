@@ -2,6 +2,7 @@ import math
 
 import torch
 import torch.nn.functional as F
+from toolz import curry
 
 
 def inverse_sigmoid(x):
