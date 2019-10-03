@@ -18,19 +18,19 @@ def fmt_path(fp):
     return Path(fp).expanduser().absolute()
 
 
-def apply_dir(dir: Path, f: Callable[[Path], Any], recursive=True) -> None:
+def apply_dir(dir: Path, f: Callable[[Path], Any], suffix=None, recursive=True) -> None:
     for fp in dir.iterdir():
-        # hidden files
         if fp.name.startswith('.'):
             continue
         elif fp.is_dir():
             if recursive:
-                apply_dir(fp, f, recursive)
-            continue
+                apply_dir(fp, f, recursive, suffix)
         elif fp.is_file():
-            f(fp)
-        else:
-            continue
+            if suffix is None:
+                f(fp)
+            elif fp.suffix == suffix:
+                f(fp)
+
 
 
 def rename(fp: Path, new_name: str, stem=True):
