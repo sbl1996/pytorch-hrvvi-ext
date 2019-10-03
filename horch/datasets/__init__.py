@@ -74,10 +74,10 @@ class Subset(Dataset):
         return img, target
 
     def get_image(self, idx):
-        return self.dataset.get_image([self.indices[idx]])
+        return self.dataset.get_image(self.indices[idx])
 
     def get_target(self, idx):
-        return self.dataset.get_target([self.indices[idx]])
+        return self.dataset.get_target(self.indices[idx])
 
 
     def __len__(self):
