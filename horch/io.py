@@ -1,6 +1,16 @@
+import os
 import json
 from pathlib import Path
 from typing import Callable, Any
+
+
+def read_lines(fp):
+    return fmt_path(fp).read_text().splitlines()
+
+
+def write_lines(fp, lines):
+    fmt_path(fp).write_text(os.linesep.join(lines))
+    return fp
 
 
 def read_json(fp):
@@ -19,6 +29,8 @@ def fmt_path(fp):
 
 
 def apply_dir(dir: Path, f: Callable[[Path], Any], suffix=None, recursive=True) -> None:
+    if isinstance(dir, str):
+        dir = fmt_path(dir)
     for fp in dir.iterdir():
         if fp.name.startswith('.'):
             continue
