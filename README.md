@@ -106,40 +106,36 @@ Transoforms in `horch` transform inputs and targets of datasets simultaneously, 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from torch.utils.data import DataLoader
-from torch.optim import Adam, SGD
+from torch.optim import SGD
 
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
 
-from horch.datasets import train_test_split, Fullset
+from horch.datasets import train_test_split
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.models.utils import summary
 from horch.models.cifar.efficientnet import efficientnet_b0
 from horch.train import Trainer, Save
 from horch.train.metrics import Accuracy, TrainLoss
-from horch.transforms import InputTransform
 from horch.transforms.ext import Cutout, CIFAR10Policy
 
 # Data Augmentation
 
-train_transforms = InputTransform(
-    Compose([
-        RandomCrop(32, padding=4, fill=128),
-        RandomHorizontalFlip(),
-        CIFAR10Policy(),
-        ToTensor(),
-        Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
-        Cutout(1, 16),
-    ])
-)
+train_transform = Compose([
+    RandomCrop(32, padding=4, fill=128),
+    RandomHorizontalFlip(),
+    CIFAR10Policy(),
+    ToTensor(),
+    Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
+    Cutout(1, 16),
+])
 
-test_transform = InputTransform(
-    Compose([
-        ToTensor(),
-        Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
-    ])
-)
+test_transform = Compose([
+    ToTensor(),
+    Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
+])
 
 # Dataset
 
@@ -147,16 +143,15 @@ data_home = "datasets/CIFAR10"
 ds = CIFAR10(data_home, train=True, download=True)
 ds_train, ds_val = train_test_split(
     ds, test_ratio=0.02,
-    transform=train_transforms,
+    transform=train_transform,
     test_transform=test_transform,
 )
-ds_test = Fullset(CIFAR10(data_home, train=False,
-                          download=True), test_transform)
+ds_test = CIFAR10(data_home, train=False, download=True, transform=test_transform)
 
 # Define network, loss and optimizer
-net = efficientnet_b0(num_classes=10, dropout=0.2, drop_connect=0.3)
+net = efficientnet_b0(num_classes=10, dropout=0.3, drop_connect=0.2)
 criterion = nn.CrossEntropyLoss()
-optimizer = SGD(net.parameters(), lr=0.05, momentum=0.9, dampening=0, weight_decay=1e-4, nesterov=True)
+optimizer = SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=1e-4, nesterov=True)
 lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.001)
 
 # Define metrics

@@ -44,8 +44,8 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         self.warmup_eta_min = warmup_eta_min
         self.gamma = gamma
         self._gamma = 1.0
-        super().__init__(optimizer, last_epoch)
         self.T_cur = last_epoch
+        super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
         lrs = []
