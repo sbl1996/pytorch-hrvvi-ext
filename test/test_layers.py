@@ -1,8 +1,8 @@
-# import torch
-#
-# from horch import cuda
-# from horch.nn.psroi_align import PSRoIAlign
-# from horch.detection import BBox
+import torch
+
+from horch import cuda
+from horch.nn.psroi_align import PSRoIAlign
+from horch.detection import BBox
 #
 #
 # def test_psroi_align():
@@ -69,20 +69,20 @@
 #     out.sum().backward()
 #
 #
-# def test_psroi_align_cuda():
-#
-#     out_channels = 2
-#     pooled_width = 3
-#     pooled_height = 3
-#     output_size = (pooled_width, pooled_height)
-#     sampling_ratio = 2
-#     l = PSRoIAlign(out_channels, output_size,
-#                    sampling_ratio=sampling_ratio, adaptive=True)
-#     x = torch.randn(2, out_channels * pooled_height * pooled_width, 7, 5)
-#     roi = BBox.convert(torch.rand(6, 4), BBox.XYWH, BBox.LTRB)
-#     indices = torch.tensor([0, 0, 0, 1, 1, 1.]).view(6, 1)
-#     roi = torch.cat([indices, roi], dim=1)
-#     res = l(x, roi)
-#     res_cuda = l(cuda(x), cuda(roi))
-#     diff = res - res_cuda.cpu()
-#     assert diff.mean() < 1e-8
+def test_psroi_align_cuda():
+
+    out_channels = 2
+    pooled_width = 3
+    pooled_height = 3
+    output_size = (pooled_width, pooled_height)
+    sampling_ratio = 2
+    l = PSRoIAlign(out_channels, output_size,
+                   sampling_ratio=sampling_ratio, adaptive=True)
+    x = torch.randn(2, out_channels * pooled_height * pooled_width, 7, 5)
+    roi = BBox.convert(torch.rand(6, 4), BBox.XYWH, BBox.LTRB)
+    indices = torch.tensor([0, 0, 0, 1, 1, 1.]).view(6, 1)
+    roi = torch.cat([indices, roi], dim=1)
+    res = l(x, roi)
+    res_cuda = l(cuda(x), cuda(roi))
+    diff = res - res_cuda.cpu()
+    assert diff.mean() < 1e-8
