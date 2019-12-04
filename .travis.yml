@@ -1,0 +1,11 @@
+language: python
+python:
+  - "3.6"
+  - "3.7"
+
+before_install:
+  - pip install pybind11
+  - pip install -U git+https://github.com/sbl1996/hpycocotools.git
+
+install:
+  - pip install -e .[coco]

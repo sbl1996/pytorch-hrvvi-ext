@@ -11,11 +11,10 @@ pip install pybind11
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
 
 # Install with extras if you want to use these provided datasets
-pip install -U git+https://github.com/sbl1996/hpycocotools.git
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git#egg=pytorch-hrvvi-ext[coco]
 
 # Install unstable version with latest features
-pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git@dev#egg=pytorch-hrvvi-ext[coco]
+pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git@gluon#egg=pytorch-hrvvi-ext[coco]
 ```
 
 

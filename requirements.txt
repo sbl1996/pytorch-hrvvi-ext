@@ -1,0 +1,15 @@
+torch
+torchvision
+numpy
+bidict
+nltk
+toolz
+pytorch-ignite
+Pillow>5.0.0
+xmltodict
+googledrivedownloader
+tensorboardX
+pybind11
+sklearn
+opencv-python
+pytorchcv
