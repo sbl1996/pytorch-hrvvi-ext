@@ -18,7 +18,7 @@ from ignite.metrics.metric import Metric
 from nltk.translate.bleu_score import corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, f1_score
 
 from horch.ops import inverse_sigmoid
 from horch.functools import lmap
@@ -379,14 +379,18 @@ class SegmentationMeanIoU(Average):
     def output_transform(self, output):
         targets, preds, batch_size = get(
             ["target", "preds", "batch_size"], output)
-        gts = targets[0]
-        if isinstance(gts[0], Image.Image):
-            gts = [np.array(img) for img in gts]
-        elif torch.is_tensor(gts):
-            gts = gts.cpu().byte().numpy()
+        targets = targets[0]
+        preds = preds[0].argmax(dim=1)
+
+        if isinstance(targets[0], Image.Image):
+            targets = [np.array(img) for img in targets]
+        elif torch.is_tensor(targets):
+            targets = targets.cpu().byte().numpy()
+
+        preds = preds.cpu().byte().numpy()
 
         v = np.mean([
-            mean_iou(preds[i], gts[i], self.num_classes)
+            mean_iou(preds[i], targets[i], self.num_classes)
             for i in range(batch_size)
         ])
 
@@ -411,22 +415,57 @@ class PixelAccuracy(Average):
         targets, preds, batch_size = get(
             ["target", "preds", "batch_size"], output)
 
-        gts = targets[0]
-        if isinstance(gts[0], Image.Image):
-            gts = [np.array(img) for img in gts]
-        elif torch.is_tensor(gts):
-            gts = gts.cpu().byte().numpy()
+        ys = targets[0]
+        ps = preds[0]
+        ps = ps.argmax(dim=1)
+        # if isinstance(gts[0], Image.Image):
+        #     gts = [np.array(img) for img in gts]
+        # elif torch.is_tensor(gts):
+        #     gts = gts.cpu().byte().numpy()
 
         accs = []
         for i in range(batch_size):
-            g = gts[i]
-            p = preds[i]
-            tp = (g == p).sum()
+            y = ys[i]
+            p = ps[i]
+            tp = (y == p).sum()
             if self.ignore_index is not None:
-                tp += (g == self.ignore_index).sum()
-            accs.append(tp / np.prod(g.shape))
+                tp += (y == self.ignore_index).sum()
+            accs.append(tp / np.prod(y.shape))
         acc = np.mean(accs)
         return acc, batch_size
+
+
+class F1Score(Average):
+    r"""
+    Args:
+
+    Inputs:
+        target (list of list of horch.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
+    """
+
+    def __init__(self, ignore_index=255):
+        self.ignore_index = ignore_index
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        targets, preds, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+
+        ys = targets[0]
+        ps = preds[0]
+        ps = ps.argmax(dim=1)
+        # if isinstance(gts[0], Image.Image):
+        #     gts = [np.array(img) for img in gts]
+        # elif torch.is_tensor(gts):
+        #     gts = gts.cpu().byte().numpy()
+
+        p = ps.cpu().byte().numpy().ravel()
+        y = ys.cpu().byte().numpy().ravel()
+        sample_weight = y != self.ignore_index
+        f1 = f1_score(y, p, sample_weight=sample_weight)
+        return f1, batch_size
 
 
 class CocoAveragePrecision(Average):

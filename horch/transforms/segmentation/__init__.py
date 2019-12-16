@@ -222,3 +222,30 @@ class RandomHorizontalFlip(JointTransform):
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
+
+
+class RandomVerticalFlip(JointTransform):
+    """Vertically flip the given PIL Image randomly with a given probability.
+
+    Args:
+        p (float): probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def __call__(self, img, mask):
+        """
+        Args:
+            img (PIL Image): Image to be flipped.
+
+        Returns:
+            PIL Image: Randomly flipped image.
+        """
+        if random.random() < self.p:
+            return TF.vflip(img), TF.vflip(mask)
+        return img, mask
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
