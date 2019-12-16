@@ -418,10 +418,6 @@ class PixelAccuracy(Average):
         ys = targets[0]
         ps = preds[0]
         ps = ps.argmax(dim=1)
-        # if isinstance(gts[0], Image.Image):
-        #     gts = [np.array(img) for img in gts]
-        # elif torch.is_tensor(gts):
-        #     gts = gts.cpu().byte().numpy()
 
         accs = []
         for i in range(batch_size):
@@ -430,7 +426,7 @@ class PixelAccuracy(Average):
             tp = (y == p).sum()
             if self.ignore_index is not None:
                 tp += (y == self.ignore_index).sum()
-            accs.append(tp / np.prod(y.shape))
+            accs.append(tp.cpu().item() / np.prod(y.shape))
         acc = np.mean(accs)
         return acc, batch_size
 
@@ -456,16 +452,13 @@ class F1Score(Average):
         ys = targets[0]
         ps = preds[0]
         ps = ps.argmax(dim=1)
-        # if isinstance(gts[0], Image.Image):
-        #     gts = [np.array(img) for img in gts]
-        # elif torch.is_tensor(gts):
-        #     gts = gts.cpu().byte().numpy()
 
         p = ps.cpu().byte().numpy().ravel()
         y = ys.cpu().byte().numpy().ravel()
         sample_weight = y != self.ignore_index
         f1 = f1_score(y, p, sample_weight=sample_weight)
         return f1, batch_size
+
 
 
 class CocoAveragePrecision(Average):
