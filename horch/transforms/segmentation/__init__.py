@@ -47,10 +47,12 @@ class Resize(JointTransform):
             ``PIL.Image.BILINEAR``
     """
 
-    def __init__(self, size):
+    def __init__(self, size, image_interpolation=Image.BILINEAR, label_interpolation=Image.NEAREST):
         super().__init__()
         assert isinstance(size, int) or (isinstance(size, Iterable) and len(size) == 2)
         self.size = size
+        self.image_interpolation = image_interpolation
+        self.label_interpolation = label_interpolation
 
     def __call__(self, img, mask):
         """
@@ -60,12 +62,13 @@ class Resize(JointTransform):
         Returns:
             PIL Image: Rescaled image.
         """
-        img = TF.resize(img, self.size, Image.BILINEAR)
-        mask = TF.resize(mask, self.size, Image.NEAREST)
+        img = TF.resize(img, self.size, self.image_interpolation)
+        mask = TF.resize(mask, self.size, self.label_interpolation)
         return img, mask
 
     def __repr__(self):
-        return self.__class__.__name__ + '(size={0})'.format(self.size)
+        return self.__class__.__name__ + '(size={}, image_interpolation={}, label_interpolation={})'.format(
+            self.size, self.image_interpolation, self.label_interpolation)
 
 
 class RandomCrop(JointTransform):
