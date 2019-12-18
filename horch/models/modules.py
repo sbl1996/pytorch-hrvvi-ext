@@ -1,10 +1,10 @@
-from toolz import curry
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.common import _tuple
+from horch.common import tuplify
 from horch.models.defaults import get_default_activation, get_default_norm_layer
 
 
@@ -99,20 +99,6 @@ def get_norm_layer(name, channels):
         raise NotImplementedError("No normalization named %s" % name)
 
 
-def get_attention(name, **kwargs):
-    if not name:
-        return Identity()
-    name = name.lower()
-    if name == 'se':
-        return SEModule(**kwargs)
-    elif name == 'sem':
-        return SELayerM(**kwargs)
-    elif name == 'cbam':
-        return CBAM(**kwargs)
-    else:
-        raise NotImplementedError("No attention module named %s" % name)
-
-
 def get_activation(name):
     if isinstance(name, nn.Module):
         return name
@@ -134,6 +120,26 @@ def get_activation(name):
         raise NotImplementedError("No activation named %s" % name)
 
 
+def PreConv2d(in_channels, out_channels,
+              kernel_size, stride=1,
+              padding='same', dilation=1, groups=1, bias=False,
+              norm_layer='default', activation='default'):
+    if padding == 'same':
+        if isinstance(kernel_size, tuple):
+            kh, kw = kernel_size
+            ph = (kh - 1) // 2
+            pw = (kw - 1) // 2
+            padding = (ph, pw)
+        else:
+            padding = (kernel_size - 1) // 2
+    return nn.Sequential(OrderedDict([
+        ("bn", get_norm_layer(norm_layer, in_channels)),
+        ("relu", get_activation(activation)),
+        ("conv", nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
+                           padding=padding, dilation=dilation, groups=groups, bias=bias))
+    ]))
+
+
 def Conv2d(in_channels, out_channels,
            kernel_size, stride=1,
            padding='same', dilation=1, groups=1, bias=None,
@@ -145,7 +151,8 @@ def Conv2d(in_channels, out_channels,
         # else:
         if mid_norm_layer is None:
             mid_norm_layer = norm_layer
-        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, bias, mid_norm_layer, norm_layer, activation, transposed)
+        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, bias, mid_norm_layer, norm_layer,
+                        activation, transposed)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
             kh, kw = kernel_size
@@ -242,120 +249,26 @@ def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
         raise NotImplementedError("No activation named %s" % name)
 
 
-class SEModule(nn.Module):
-    def __init__(self, in_channels, reduction=8):
-        super().__init__()
-        channels = in_channels // reduction
-        self.pool = nn.AdaptiveAvgPool2d(1)
-        self.layers = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU(True),
-            nn.Linear(channels, in_channels),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x):
-        b, c = x.size()[:2]
-        s = self.pool(x).view(b, c)
-        s = self.layers(s).view(b, c, 1, 1)
-        return x * s
-
-
-class CBAMChannelAttention(nn.Module):
-    def __init__(self, in_channels, reduction=8):
-        super().__init__()
-        channels = in_channels // reduction
-        self.mlp = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU(True),
-            nn.Linear(channels, in_channels),
-        )
-
-    def forward(self, x):
-        b, c = x.size()[:2]
-        aa = F.adaptive_avg_pool2d(x, 1).view(b, c)
-        aa = self.mlp(aa)
-        am = F.adaptive_max_pool2d(x, 1).view(b, c)
-        am = self.mlp(am)
-        a = torch.sigmoid(aa + am).view(b, c, 1, 1)
-        return x * a
-
-
-class CBAMSpatialAttention(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = Conv2d(2, 1, kernel_size=7, norm_layer='bn')
-
-    def forward(self, x):
-        aa = x.mean(dim=1, keepdim=True)
-        am = x.max(dim=1, keepdim=True)[0]
-        a = torch.cat([aa, am], dim=1)
-        a = torch.sigmoid(self.conv(a))
-        return x * a
-
-
-class CBAM(nn.Module):
-    def __init__(self, in_channels, reduction=4):
-        super().__init__()
-        self.channel = CBAMChannelAttention(in_channels, reduction)
-        self.spatial = CBAMSpatialAttention()
-
-    def forward(self, x):
-        x = self.channel(x)
-        x = self.spatial(x)
-        return x
-
-
-class SELayerM(nn.Module):
-    def __init__(self, in_channels, reduction=4):
-        super().__init__()
-        channels = in_channels // reduction
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.layers = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU6(True),
-            nn.Linear(channels, in_channels),
-            HardSigmoid(True),
-        )
-
-    def forward(self, x):
-        b, c = x.size()[:2]
-        s = self.avgpool(x).view(b, c)
-        s = self.layers(s).view(b, c, 1, 1)
-        return x * s
-
-
-@curry
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
              padding='same', bias=True, mid_norm_layer='default',
              norm_layer=None, activation=None, transposed=False):
     return nn.Sequential(
         Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,
-               norm_layer=mid_norm_layer, transposed=transposed),
+               norm_layer=mid_norm_layer, transposed=transposed, activation=activation),
         Conv2d(in_channels, out_channels, kernel_size=1,
-               norm_layer=norm_layer, activation=activation, bias=bias),
+               norm_layer=norm_layer, bias=bias),
     )
 
 
 class Sequential(nn.Sequential):
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
-        if 'inference' in kwargs:
-            self._inference = kwargs['inference']
 
     def forward(self, *xs):
         for module in self._modules.values():
-            xs = module(*_tuple(xs))
+            xs = module(*tuplify(xs))
         return xs
-
-    def inference(self, *xs):
-        self.eval()
-        with torch.no_grad():
-            xs = self.forward(*xs)
-        preds = self._inference(*_tuple(xs))
-        self.train()
-        return preds
 
 
 class Identity(nn.Module):
@@ -366,29 +279,138 @@ class Identity(nn.Module):
         return x
 
 
-class DropConnect(nn.Module):
-    def __init__(self, p=0.2):
-        super().__init__()
-        assert 0 <= p <= 1, "drop probability has to be between 0 and 1, but got %f" % p
-        self.p = p
-
-    def forward(self, x):
-        if not self.training or self.p == 0:
-            return x
-        keep_prob = 1.0 - self.p
-        batch_size = x.size(0)
-        t = torch.rand(batch_size, 1, 1, 1, dtype=x.dtype, device=x.device) < keep_prob
-        x = (x / keep_prob).masked_fill(t, 0)
-        return x
-
-    def extra_repr(self):
-        return 'p={}'.format(self.p)
-
-
 class Flatten(nn.Module):
     def __init__(self):
         super().__init__()
 
-
     def forward(self, x):
         return x.view(x.size(0), -1)
+
+
+def seq(*modules):
+    mods = []
+    for k, v in modules:
+        if v is not None:
+            mods.append((k, v))
+    return nn.Sequential(OrderedDict(mods))
+
+
+class L2Norm(nn.Module):
+    def __init__(self, n_channels, scale):
+        super(L2Norm, self).__init__()
+        self.n_channels = n_channels
+        self.gamma = scale
+        self.eps = 1e-10
+        self.weight = nn.Parameter(torch.zeros(self.n_channels, dtype=torch.float32))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.constant_(self.weight, self.gamma)
+
+    def forward(self, x):
+        norm = x.pow(2).sum(dim=1, keepdim=True).sqrt() + self.eps
+        x = torch.div(x, norm)
+        out = self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x) * x
+        return out
+
+
+class SelfAttention(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv_theta = Conv2d(in_channels, in_channels // 8, kernel_size=1)
+
+        self.conv_phi = Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.pool_phi = nn.MaxPool2d(kernel_size=2, stride=(2, 2))
+
+        self.conv_g = Conv2d(in_channels, in_channels // 2, kernel_size=1)
+        self.pool_g = nn.MaxPool2d(kernel_size=2, stride=(2, 2))
+
+        self.conv_attn = Conv2d(in_channels // 2, in_channels, kernel_size=1)
+
+        self.sigma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        theta = self.conv_theta(x)
+        theta = theta.view(b, -1, h * w)
+
+        phi = self.conv_phi(x)
+        phi = self.pool_phi(phi)
+        phi = phi.view(b, -1, h * w // 4)
+
+        attn = torch.bmm(theta.permute(0, 2, 1), phi)
+        attn = F.softmax(attn, dim=-1)
+
+        g = self.conv_g(x)
+        g = self.pool_g(g)
+        g = g.view(b, -1, h * w // 4)
+
+        attn_g = torch.bmm(g, attn.permute(0, 2, 1))
+        attn_g = attn_g.view(b, -1, h, w)
+        attn_g = self.conv_attn(attn_g)
+
+        x = x + self.sigma * attn_g
+        return x
+
+
+class SelfAttention2(nn.Module):
+    def __init__(self, in_channels, reduction=8):
+        super().__init__()
+        channels = in_channels // reduction
+        self.conv_theta = Conv2d(in_channels, channels, kernel_size=1)
+        self.conv_phi = Conv2d(in_channels, channels, kernel_size=1)
+        self.conv_g = Conv2d(in_channels, channels, kernel_size=1)
+        self.conv_attn = Conv2d(channels, in_channels, kernel_size=1)
+        self.sigma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        theta = self.conv_theta(x)
+        theta = theta.view(b, -1, h * w)
+
+        phi = self.conv_phi(x)
+        phi = phi.view(b, -1, h * w)
+
+        attn = torch.bmm(theta.permute(0, 2, 1), phi)
+        attn = F.softmax(attn, dim=-1)
+
+        g = self.conv_g(x)
+        g = g.view(b, -1, h * w)
+
+        attn_g = torch.bmm(g, attn.permute(0, 2, 1))
+        attn_g = attn_g.view(b, -1, h, w)
+        attn_g = self.conv_attn(attn_g)
+
+        x = x + self.sigma * attn_g
+        return x
+
+
+class ConditionalBatchNorm2d(nn.Module):
+
+    def __init__(self, num_features, num_classes, momentum=0.001):
+        super().__init__()
+        self.num_features = num_features
+        self.bn = nn.BatchNorm2d(num_features, affine=False, momentum=momentum)
+        self.embed = nn.Embedding(num_classes, num_features * 2)
+        self.embed.weight.data[:, :num_features].normal_(1, 0.02)  # Initialise scale at N(1, 0.02)
+        self.embed.weight.data[:, num_features:].zero_()  # Initialise bias at 0
+
+    def forward(self, x, y):
+        out = self.bn(x)
+        gamma, beta = self.embed(y).chunk(2, 1)
+        out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
+        return out
+
+class SharedConditionalBatchNorm2d(nn.Module):
+
+    def __init__(self, num_features, embedding, momentum=0.001):
+        super().__init__()
+        self.num_features = num_features
+        self.bn = nn.BatchNorm2d(num_features, affine=False, momentum=momentum)
+        self.embedding = embedding
+
+    def forward(self, x, y):
+        out = self.bn(x)
+        gamma, beta = self.embed(y).chunk(2, 1)
+        out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
+        return out

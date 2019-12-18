@@ -253,10 +253,8 @@ class AdaBoundW(Optimizer):
                 step_size.div_(denom).clamp_(lower_bound, upper_bound).mul_(exp_avg)
 
                 if group['weight_decay'] != 0:
-                    decayed_weights = torch.mul(p.data, group['weight_decay'])
-                    p.data.add_(-step_size)
-                    p.data.sub_(decayed_weights)
-                else:
-                    p.data.add_(-step_size)
+                    weight_decay = group['lr'] / group['initial_lr'] * group['weight_decay']
+                    p.data.sub_(weight_decay, p.data)
+                p.data.add_(-step_size)
 
         return loss

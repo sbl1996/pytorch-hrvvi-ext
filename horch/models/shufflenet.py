@@ -1,125 +1,303 @@
-import functools
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-__all__ = ['ShuffleNetV2', 'shufflenetv2_x0_5', 'shufflenetv2_x1_0', 'shufflenetv2_x1_5', 'shufflenetv2_x2_0']
-
-model_urls = {
-    'shufflenetv2_x0.5':
-        'https://github.com/barrh/Shufflenet-v2-Pytorch/releases/download/v0.1.0/shufflenetv2_x0.5-f707e7126e.pt',
-    'shufflenetv2_x1.0':
-        'https://github.com/barrh/Shufflenet-v2-Pytorch/releases/download/v0.1.0/shufflenetv2_x1-5666bf0f80.pt',
-    'shufflenetv2_x1.5': None,
-    'shufflenetv2_x2.0': None,
-}
+from horch.models.modules import Conv2d, get_activation
+from horch.models.attention import SEModule
 
 
-def channel_shuffle(x, groups):
-    batchsize, num_channels, height, width = x.data.size()
-    channels_per_group = num_channels // groups
-
-    # reshape
-    x = x.view(batchsize, groups,
-               channels_per_group, height, width)
-
-    x = torch.transpose(x, 1, 2).contiguous()
-
-    # flatten
-    x = x.view(batchsize, -1, height, width)
-
+def channel_shuffle(x, g):
+    n, c, h, w = x.size()
+    x = x.view(n, g, c // g, h, w).permute(
+        0, 2, 1, 3, 4).contiguous().view(n, c, h, w)
     return x
 
 
-class InvertedResidual(nn.Module):
-    def __init__(self, inp, oup, stride):
-        super(InvertedResidual, self).__init__()
-
-        if not (1 <= stride <= 3):
-            raise ValueError('illegal stride value')
-        self.stride = stride
-
-        branch_features = oup // 2
-        assert (self.stride != 1) or (inp == branch_features << 1)
-
-        pw_conv11 = functools.partial(nn.Conv2d, kernel_size=1, stride=1, padding=0, bias=False)
-        dw_conv33 = functools.partial(self.depthwise_conv,
-                                      kernel_size=3, stride=self.stride, padding=1)
-
-        if self.stride > 1:
-            self.branch1 = nn.Sequential(
-                dw_conv33(inp, inp),
-                nn.BatchNorm2d(inp),
-                pw_conv11(inp, branch_features),
-                nn.BatchNorm2d(branch_features),
-                nn.ReLU(inplace=True),
-            )
-
-        self.branch2 = nn.Sequential(
-            pw_conv11(inp if (self.stride > 1) else branch_features, branch_features),
-            nn.BatchNorm2d(branch_features),
-            nn.ReLU(inplace=True),
-            dw_conv33(branch_features, branch_features),
-            nn.BatchNorm2d(branch_features),
-            pw_conv11(branch_features, branch_features),
-            nn.BatchNorm2d(branch_features),
-            nn.ReLU(inplace=True),
-        )
-
-    @staticmethod
-    def depthwise_conv(i, o, kernel_size, stride=1, padding=0, bias=False):
-        return nn.Conv2d(i, o, kernel_size, stride, padding, bias=bias, groups=i)
+class ShuffleBlock(nn.Module):
+    def __init__(self, groups):
+        super().__init__()
+        self.groups = groups
 
     def forward(self, x):
-        if self.stride == 1:
-            x1, x2 = x.chunk(2, dim=1)
-            out = torch.cat((x1, self.branch2(x2)), dim=1)
+        return channel_shuffle(x, g=self.groups)
+
+
+class BasicBlock(nn.Module):
+    def __init__(self, in_channels, shuffle_groups=2):
+        super().__init__()
+        channels = in_channels // 2
+        self.conv1 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer='default',
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2):
+        super().__init__()
+        channels = out_channels - in_channels // 2
+        self.conv1 = Conv2d(
+            in_channels // 2, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer='default',
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default',
+        )
+        self.shortcut = nn.Sequential()
+        if in_channels != out_channels:
+            self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
+                                   norm_layer='default')
+        self.relu = get_activation('default')
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        identity = x2
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x2 = x2 + self.shortcut(identity)
+        x2 = self.relu(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+
+class SEBlock(nn.Module):
+    def __init__(self, in_channels, shuffle_groups=2):
+        super().__init__()
+        channels = in_channels // 2
+        self.conv1 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer='default',
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.se = SEModule(channels, reduction=2)
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x2 = self.se(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+
+class SEResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2):
+        super().__init__()
+        channels = out_channels - in_channels // 2
+        self.conv1 = Conv2d(
+            in_channels // 2, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.conv2 = Conv2d(
+            channels, channels, kernel_size=3, groups=channels,
+            norm_layer='default',
+        )
+        self.conv3 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default',
+        )
+        self.shortcut = nn.Sequential()
+        self.se = SEModule(channels, reduction=2)
+        if in_channels != out_channels:
+            self.shortcut = Conv2d(in_channels // 2, channels, kernel_size=1,
+                                   norm_layer='default')
+        self.relu = get_activation('default')
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        c = x.size(1) // 2
+        x1 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
+        identity = x2
+        x2 = self.conv1(x2)
+        x2 = self.conv2(x2)
+        x2 = self.conv3(x2)
+        x2 = self.se(x2)
+        x2 = x2 + self.shortcut(identity)
+        x2 = self.relu(x2)
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+
+class DownBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, shuffle_groups=2):
+        super().__init__()
+        channels = out_channels // 2
+        self.conv11 = Conv2d(
+            in_channels, in_channels, kernel_size=3, stride=2, groups=in_channels,
+            norm_layer='default',
+        )
+        self.conv12 = Conv2d(
+            in_channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.conv21 = Conv2d(
+            in_channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.conv22 = Conv2d(
+            channels, channels, kernel_size=3, stride=2, groups=channels,
+            norm_layer='default',
+        )
+        self.conv23 = Conv2d(
+            channels, channels, kernel_size=1,
+            norm_layer='default', activation='default',
+        )
+        self.shuffle = ShuffleBlock(shuffle_groups)
+
+    def forward(self, x):
+        x1 = self.conv11(x)
+        x1 = self.conv12(x1)
+
+        x2 = self.conv21(x)
+        x2 = self.conv22(x2)
+        x2 = self.conv23(x2)
+
+        x = torch.cat((x1, x2), dim=1)
+        x = self.shuffle(x)
+        return x
+
+
+class ShuffleNetV2_L(nn.Module):
+    cfg = {
+        50: [
+            [64, 244, 488, 976, 1952, 2048],
+            [3, 4, 6, 3],
+        ],
+        164: [
+            [64, 340, 680, 1360, 2720, 2048],
+            [10, 10, 23, 10],
+        ]
+
+    }
+
+    def __init__(self, version, num_classes=1000, with_se=False):
+        super().__init__()
+        channels = self.cfg[version][0]
+        self.channels = channels
+        num_layers = self.cfg[version][1]
+        self.num_layers = num_layers
+        block = SEResBlock if with_se else ResBlock
+
+        self.conv1 = Conv2d(
+            3, channels[0], kernel_size=3, stride=2,
+            norm_layer='default', activation='default'
+        )
+        self.maxpool = nn.MaxPool2d(
+            kernel_size=3, stride=2, padding=1,
+        )
+        self.stage2 = self._make_layer(block, num_layers[0], channels[0], channels[1], stride=1)
+        self.stage3 = self._make_layer(block, num_layers[1], channels[1], channels[2])
+        self.stage4 = self._make_layer(block, num_layers[2], channels[2], channels[3])
+        self.stage5 = self._make_layer(block, num_layers[3], channels[3], channels[4])
+        self.conv6 = Conv2d(channels[4], channels[5], kernel_size=1)
+
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(channels[5], num_classes)
+
+    def _make_layer(self, block, num_layers, in_channels, out_channels, stride=2):
+        layers = []
+        if stride == 2:
+            layers.append(DownBlock(in_channels, out_channels))
         else:
-            out = torch.cat((self.branch1(x), self.branch2(x)), dim=1)
+            layers.append(block(in_channels, out_channels))
+        for i in range(num_layers - 1):
+            layers.append(block(out_channels, out_channels))
+        return nn.Sequential(*layers)
 
-        out = channel_shuffle(out, 2)
-
-        return out
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.maxpool(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
+        x = self.stage4(x)
+        x = self.stage5(x)
+        x = self.conv6(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
 
 
 class ShuffleNetV2(nn.Module):
-    def __init__(self, stages_repeats, stages_out_channels, num_classes=1000):
-        super(ShuffleNetV2, self).__init__()
+    cfg = {
+        0.5: [24, 48, 96, 192, 1024],
+        1: [24, 116, 232, 464, 1024],
+        1.5: [24, 176, 352, 704, 1024],
+        2: [24, 244, 488, 976, 2048],
+    }
 
-        if len(stages_repeats) != 3:
-            raise ValueError('expected stages_repeats as list of 3 positive ints')
-        if len(stages_out_channels) != 5:
-            raise ValueError('expected stages_out_channels as list of 5 positive ints')
-        self._stage_out_channels = stages_out_channels
+    def __init__(self, mult=0.5, num_classes=1000, with_se=False):
+        super().__init__()
+        num_layers = [4, 8, 4]
+        self.num_layers = num_layers
+        channels = self.cfg[mult]
+        self.out_channels = channels
+        block = SEBlock if with_se else BasicBlock
 
-        input_channels = 3
-        output_channels = self._stage_out_channels[0]
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(input_channels, output_channels, 3, 2, 1, bias=False),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace=True),
+        self.conv1 = Conv2d(
+            3, channels[0], kernel_size=3, stride=2,
+            norm_layer='default', activation='default'
         )
-        input_channels = output_channels
-
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-
-        stage_names = ['stage{}'.format(i) for i in [2, 3, 4]]
-        for name, repeats, output_channels in zip(
-                stage_names, stages_repeats, self._stage_out_channels[1:]):
-            seq = [InvertedResidual(input_channels, output_channels, 2)]
-            for i in range(repeats - 1):
-                seq.append(InvertedResidual(output_channels, output_channels, 1))
-            setattr(self, name, nn.Sequential(*seq))
-            input_channels = output_channels
-
-        output_channels = self._stage_out_channels[-1]
-        self.conv5 = nn.Sequential(
-            nn.Conv2d(input_channels, output_channels, 1, 1, 0, bias=False),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace=True),
+        self.maxpool = nn.MaxPool2d(
+            kernel_size=3, stride=2, padding=1,
         )
+        self.stage2 = self._make_layer(block, num_layers[0], channels[0], channels[1])
+        self.stage3 = self._make_layer(block, num_layers[1], channels[1], channels[2])
+        self.stage4 = self._make_layer(block, num_layers[2], channels[2], channels[3])
+        self.conv5 = Conv2d(channels[3], channels[4], kernel_size=1)
 
-        self.fc = nn.Linear(output_channels, num_classes)
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(channels[4], num_classes)
+
+    def _make_layer(self, block, num_layers, in_channels, out_channels):
+        layers = [DownBlock(in_channels, out_channels)]
+        for i in range(num_layers - 1):
+            layers.append(block(out_channels))
+        return nn.Sequential(*layers)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -128,54 +306,15 @@ class ShuffleNetV2(nn.Module):
         x = self.stage3(x)
         x = self.stage4(x)
         x = self.conv5(x)
-        x = x.mean([2, 3])  # globalpool
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
 
 
-def _shufflenetv2(arch, pretrained, progress, *args, **kwargs):
-    model = ShuffleNetV2(*args, **kwargs)
-
-    if pretrained:
-        model_url = model_urls[arch]
-        if model_url is None:
-            raise NotImplementedError('pretrained {} is not supported as of now'.format(arch))
-        else:
-            from torch.hub import load_state_dict_from_url
-            state_dict = load_state_dict_from_url(model_url, progress=progress)
-            model.load_state_dict(state_dict)
-
-    return model
+def shufflenet_v2(mult=0.5, **kwargs):
+    return ShuffleNetV2(mult, **kwargs)
 
 
-def shufflenetv2_x0_5(pretrained=False, progress=True, **kwargs):
-    return _shufflenetv2('shufflenetv2_x0.5', pretrained, progress,
-                         [4, 8, 4], [24, 48, 96, 192, 1024], **kwargs)
-
-
-def shufflenetv2_x1_0(pretrained=False, progress=True, **kwargs):
-    return _shufflenetv2('shufflenetv2_x1.0', pretrained, progress,
-                         [4, 8, 4], [24, 116, 232, 464, 1024], **kwargs)
-
-
-def shufflenetv2_x1_5(pretrained=False, progress=True, **kwargs):
-    return _shufflenetv2('shufflenetv2_x1.5', pretrained, progress,
-                         [4, 8, 4], [24, 176, 352, 704, 1024], **kwargs)
-
-
-def shufflenetv2_x2_0(pretrained=False, progress=True, **kwargs):
-    return _shufflenetv2('shufflenetv2_x2.0', pretrained, progress,
-                         [4, 8, 4], [24, 244, 488, 976, 2048], **kwargs)
-
-
-def shufflenetv2(mult=1.0, pretrained=False, **kwargs):
-    if mult == 0.5:
-        return shufflenetv2_x0_5(pretrained=pretrained, **kwargs)
-    elif mult == 1.0:
-        return shufflenetv2_x1_0(pretrained=pretrained, **kwargs)
-    elif mult == 1.5:
-        return shufflenetv2_x1_5(pretrained=pretrained, **kwargs)
-    elif mult == 2.0:
-        return shufflenetv2_x2_0(pretrained=pretrained, **kwargs)
-    else:
-        raise ValueError("Only [0.5, 1.0, 1.5, 2.0] are supported.")
+def shufflenet_v2_large(version=50, **kwargs):
+    return ShuffleNetV2_L(version, **kwargs)

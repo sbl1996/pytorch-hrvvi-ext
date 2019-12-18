@@ -1,17 +1,17 @@
 from collections.abc import Sequence
 
 import torch
-from horch.common import Args
+from horch.common import ProtectedSeq
 from horch.functools import find
 
 
 def to_device(args, device):
     if torch.is_tensor(args):
         return args.to(device=device)
-    elif isinstance(args, Args):
-        for arg in args[0]:
+    elif isinstance(args, ProtectedSeq):
+        for arg in args.seq:
             if torch.is_tensor(arg):
-                return args[0]
+                return args.seq
         return args
     elif isinstance(args, Sequence):
         return args.__class__(to_device(arg, device)

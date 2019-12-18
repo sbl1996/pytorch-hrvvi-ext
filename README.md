@@ -1,4 +1,6 @@
-# Overview
+# Horch
+[![Build Status](https://travis-ci.com/sbl1996/pytorch-hrvvi-ext.svg?branch=gluon)](https://travis-ci.com/sbl1996/pytorch-hrvvi-ext)
+
 [pytorch-hrvvi-ext](https://github.com/sbl1996/pytorch-hrvvi-ext) is my extension to PyTorch, which contains many "out of the box" tools to facilitate my everyday study. It is very easy to use them and integrate them to your projects.
 I will call it `horch` below because of `import horch`.
 
@@ -11,11 +13,10 @@ pip install pybind11
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
 
 # Install with extras if you want to use these provided datasets
-pip install -U git+https://github.com/sbl1996/hpycocotools.git
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git#egg=pytorch-hrvvi-ext[coco]
 
 # Install unstable version with latest features
-pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git@dev#egg=pytorch-hrvvi-ext[coco]
+pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git@gluon#egg=pytorch-hrvvi-ext[coco]
 ```
 
 
@@ -106,40 +107,36 @@ Transoforms in `horch` transform inputs and targets of datasets simultaneously, 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from torch.utils.data import DataLoader
-from torch.optim import Adam, SGD
+from torch.optim import SGD
 
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
 
-from horch.datasets import train_test_split, Fullset
+from horch.datasets import train_test_split
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.models.utils import summary
 from horch.models.cifar.efficientnet import efficientnet_b0
 from horch.train import Trainer, Save
 from horch.train.metrics import Accuracy, TrainLoss
-from horch.transforms import InputTransform
 from horch.transforms.ext import Cutout, CIFAR10Policy
 
 # Data Augmentation
 
-train_transforms = InputTransform(
-    Compose([
-        RandomCrop(32, padding=4, fill=128),
-        RandomHorizontalFlip(),
-        CIFAR10Policy(),
-        ToTensor(),
-        Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
-        Cutout(1, 16),
-    ])
-)
+train_transform = Compose([
+    RandomCrop(32, padding=4, fill=128),
+    RandomHorizontalFlip(),
+    CIFAR10Policy(),
+    ToTensor(),
+    Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
+    Cutout(1, 16),
+])
 
-test_transform = InputTransform(
-    Compose([
-        ToTensor(),
-        Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
-    ])
-)
+test_transform = Compose([
+    ToTensor(),
+    Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
+])
 
 # Dataset
 
@@ -147,16 +144,15 @@ data_home = "datasets/CIFAR10"
 ds = CIFAR10(data_home, train=True, download=True)
 ds_train, ds_val = train_test_split(
     ds, test_ratio=0.02,
-    transform=train_transforms,
+    transform=train_transform,
     test_transform=test_transform,
 )
-ds_test = Fullset(CIFAR10(data_home, train=False,
-                          download=True), test_transform)
+ds_test = CIFAR10(data_home, train=False, download=True, transform=test_transform)
 
 # Define network, loss and optimizer
-net = efficientnet_b0(num_classes=10, dropout=0.2, drop_connect=0.3)
+net = efficientnet_b0(num_classes=10, dropout=0.3, drop_connect=0.2)
 criterion = nn.CrossEntropyLoss()
-optimizer = SGD(net.parameters(), lr=0.05, momentum=0.9, dampening=0, weight_decay=1e-4, nesterov=True)
+optimizer = SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=1e-4, nesterov=True)
 lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.001)
 
 # Define metrics
@@ -206,7 +202,7 @@ import horch
 from horch import cuda
 from horch.datasets import train_test_split, Fullset, CocoDetection
 
-from horch.train import Trainer, Save
+from horch.train import Trainer, Save, misc_collate
 from horch.train.optimizer import AdamW
 from horch.train.metrics import TrainLoss, COCOEval
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
@@ -214,11 +210,11 @@ from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.transforms import Compose, ToTensor
 from horch.transforms.detection import Resize, ToPercentCoords, SSDTransform
 
-from horch.detection import generate_mlvl_anchors, misc_collate, find_priors_coco
+from horch.detection import generate_mlvl_anchors,  find_priors_coco
 from horch.detection.one import MatchAnchors
 
 from horch.models.utils import summary
-from horch.models.detection.backbone import SNet
+from horch.models.backbone import SNet
 from horch.models.detection.refinedet import RefineLoss, AnchorRefineInference, RefineDet
 
 # Describe the dataset
@@ -329,18 +325,18 @@ import horch
 from horch import cuda
 from horch.datasets import SVHNDetection, train_test_split, Fullset, Subset
 
-from horch.train import Trainer, Save, ValSet
+from horch.train import Trainer, Save, ValSet, misc_collate
 from horch.train.optimizer import AdamW
 from horch.train.metrics import TrainLoss, COCOEval
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 
 from horch.transforms.detection import Compose, Resize, ToTensor, ToPercentCoords
 
-from horch.detection import get_locations, misc_collate
+from horch.detection import calc_grid_sizes
 
 from horch.models.utils import summary
 from horch.models.detection import OneStageDetector
-from horch.models.detection.backbone import ShuffleNetV2
+from horch.models.backbone import ShuffleNetV2
 from horch.models.detection.enhance import stacked_fpn
 from horch.models.detection.head import RetinaHead
 from horch.models.detection.fovea import FoveaLoss, FoveaInference, FoveaTransform, get_mlvl_centers
@@ -350,7 +346,7 @@ width = 192
 height = 96
 levels = [3, 4, 5]
 strides = [2 ** l for l in levels]
-locations = get_locations((width, height), strides)
+locations = calc_grid_sizes((width, height), strides)
 mlvl_centers = get_mlvl_centers(locations)
 
 area_thresholds = [

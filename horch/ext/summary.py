@@ -21,9 +21,18 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             summary[m_key]["input_shape"] = list(input[0].size())
             summary[m_key]["input_shape"][0] = batch_size
             if isinstance(output, (list, tuple)):
-                summary[m_key]["output_shape"] = [
-                    [-1] + list(o.size())[1:] for o in output
-                ]
+                if isinstance(output[0], (list, tuple)):
+                    summary[m_key]["output_shape"] = [
+                        [-1] + list(o.size())[1:]
+                        for os in output
+                        for o in os
+                    ]
+                else:
+                    output_shape = []
+                    for o in output:
+                        if torch.is_tensor(o):
+                            output_shape.append([-1] + list(o.size())[1:])
+                    summary[m_key]["output_shape"] = output_shape
             else:
                 summary[m_key]["output_shape"] = list(output.size())
                 summary[m_key]["output_shape"][0] = batch_size
@@ -31,10 +40,10 @@ def summary(model, input_size, batch_size=-1, dtype=None):
             if module not in visited:
                 params = 0
                 if hasattr(module, "weight") and hasattr(module.weight, "size"):
-                    params += torch.prod(torch.LongTensor(list(module.weight.size())))
+                    params += module.weight.size().numel()
                     summary[m_key]["trainable"] = module.weight.requires_grad
                 if hasattr(module, "bias") and hasattr(module.bias, "size"):
-                    params += torch.prod(torch.LongTensor(list(module.bias.size())))
+                    params += module.bias.size().numel()
                 summary[m_key]["nb_params"] = params
                 visited.add(module)
             else:
@@ -121,7 +130,7 @@ def summary(model, input_size, batch_size=-1, dtype=None):
                            batch_size * 4. / (1024 ** 2.)) for size in input_size])
     total_output_size = abs(2. * total_output * 4. /
                             (1024 ** 2.))  # x2 for gradients
-    total_params_size = abs(total_params.numpy() * 4. / (1024 ** 2.))
+    total_params_size = abs(total_params * 4. / (1024 ** 2.))
     total_size = total_params_size + total_output_size + total_input_size
 
     print("================================================================")

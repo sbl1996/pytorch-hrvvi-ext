@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
@@ -11,11 +12,19 @@ from ignite.engine import Engine, Events
 from ignite.handlers import Timer
 from tensorboardX import SummaryWriter
 
-from horch.common import CUDA, detach
+from horch.common import CUDA, detach, tuplify
 from horch.train.metrics import TrainLoss, Loss
 from horch.train._utils import _prepare_batch, set_lr
+from torch.nn.utils import clip_grad_value_
 from torch.utils.data import DataLoader
 from typing import Sequence, Dict
+
+
+def set_training(model):
+    model.train()
+    for m in model.modules():
+        if "BatchNorm" in type(m).__name__ and hasattr(m, "frozen") and m.frozen:
+            m.eval()
 
 
 def create_supervised_evaluator(model, metrics=None,
@@ -33,8 +42,7 @@ def create_supervised_evaluator(model, metrics=None,
                 preds = model.inference(*input)
             else:
                 preds = model(*input)
-            if torch.is_tensor(preds):
-                preds = (preds,)
+            preds = tuplify(preds)
             output = {
                 "preds": preds,
                 "target": target,
@@ -52,35 +60,29 @@ def create_supervised_evaluator(model, metrics=None,
 
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch, fp16=False):
+        device=None, prepare_batch=_prepare_batch, grad_clip_value=None):
     if metrics is None:
         metrics = {}
     if device:
         model.to(device)
 
     def _update(engine, batch):
-        model.train()
+        set_training(model)
         optimizer.zero_grad()
-        input, target = prepare_batch(batch, device=device)
-        preds = model(*input)
-        if torch.is_tensor(preds):
-            preds = (preds,)
-        loss = criterion(*preds, *target)
-        if fp16:
-            from apex import amp
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            optimizer.step()
-        else:
-            loss.backward()
-            optimizer.step()
-        output = {
-            "preds": detach(preds),
-            "target": detach(target),
+        inputs, targets = prepare_batch(batch, device=device)
+        preds = tuplify(model(*inputs))
+        loss = criterion(*preds, *targets)
+        loss.backward()
+        optimizer.step()
+        if grad_clip_value:
+            clip_grad_value_(model.parameters(), grad_clip_value)
+        outs = {
+            "target": detach(targets),
             "loss": loss.item(),
-            "batch_size": input[0].size(0),
+            "batch_size": inputs[0].size(0),
+            "preds": preds,
         }
-        return output
+        return outs
 
     engine = Engine(_update)
     for name, metric in metrics.items():
@@ -126,19 +128,28 @@ class Trainer:
         self._timer = Timer()
         self._epochs = 0
 
+        self._verbose = True
+
         self.model.to(self.device)
 
+    def _print(self, msg):
+        if self._verbose:
+            print(msg)
+
     def _log_epochs(self, engine, epochs):
-        print("Epoch %d/%d" %
+        self._print("Epoch %d/%d" %
               (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
-    def _lr_scheduler_step(self, engine):
+    def _lr_scheduler_step(self, engine, on_iter=False):
         data_loader = engine.state.dataloader
         iteration = engine.state.iteration - 1
         iters_per_epoch = len(data_loader)
         cur_iter = iteration % iters_per_epoch
         if self.lr_scheduler:
-            self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
+            if on_iter:
+                self.lr_scheduler.step(self.epochs() * iters_per_epoch + cur_iter)
+            else:
+                self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
 
     def _attach_timer(self, engine):
         self._timer.attach(engine, start=Events.EPOCH_STARTED)
@@ -159,7 +170,7 @@ class Trainer:
                     pass
                     self.writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history[name].append(val)
-        print(msg)
+        self._print(msg)
 
     def _log_val_results(self, engine, evaluator, per_epochs=1):
         if engine.state.epoch % per_epochs != 0:
@@ -175,17 +186,17 @@ class Trainer:
                     pass
                     self.writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
             self.metric_history["val_" + name].append(val)
-        print(msg)
+        self._print(msg)
 
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=()):
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device)
+            self.metrics, self.device, grad_clip_value=grad_clip_value)
         self._attach_timer(engine)
 
         engine.add_event_handler(
-            Events.ITERATION_STARTED, self._lr_scheduler_step)
+            Events.ITERATION_STARTED, self._lr_scheduler_step, lr_step_on_iter)
 
         engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
 
@@ -213,7 +224,7 @@ class Trainer:
 
         for callback in callbacks:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, wrap(callback), self)
+                Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
 
         if iterations:
             engine.add_event_handler(
@@ -230,17 +241,18 @@ class Trainer:
             hist = keyfilter(lambda k: not k.startswith("val_"), hist)
         return hist
 
-    def fit1(self, train_loader, epochs, validate=None, save=None, callbacks=()):
+    def fit1(self, train_loader, epochs, validate=None, save=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
         validate = ValSet.parse(validate, self)
 
         engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer, self.metrics, self.device)
+            self.model, self.criterion, self.optimizer,
+            self.metrics, self.device, grad_clip_value=grad_clip_value)
         self._attach_timer(engine)
 
         engine.add_event_handler(
             Events.EPOCH_STARTED, self._log_epochs, epochs)
         engine.add_event_handler(
-            Events.ITERATION_STARTED, self._lr_scheduler_step)
+            Events.ITERATION_STARTED, self._lr_scheduler_step, lr_step_on_iter)
 
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, self._increment_epoch)
@@ -248,9 +260,9 @@ class Trainer:
             Events.EPOCH_COMPLETED, self._log_results)
 
         engine.add_event_handler(
-            Events.EPOCH_COMPLETED, wrap(validate.evaluate))
+            Events.EPOCH_COMPLETED, _trainer_callback_wrap(validate.evaluate))
         engine.add_event_handler(
-            Events.EPOCH_COMPLETED, wrap(validate.log_results))
+            Events.EPOCH_COMPLETED, _trainer_callback_wrap(validate.log_results))
 
         # Set checkpoint
         if save:
@@ -260,46 +272,13 @@ class Trainer:
 
         for callback in callbacks:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, wrap(callback), self)
+                Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
 
         engine.run(train_loader, epochs)
 
         # Return history
         hist = {metric: hist[-epochs:]
                 for metric, hist in self.metric_history.items()}
-        return hist
-
-    def fit2(self, train_loader, epochs=1, save=None, callbacks=()):
-
-        engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer,
-            self.metrics, self.device)
-
-        engine.add_event_handler(Events.ITERATION_STARTED, self._lr_scheduler_step)
-
-        self._timer.attach(engine, start=Events.EPOCH_STARTED)
-        engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
-
-        engine.add_event_handler(Events.EPOCH_COMPLETED, self._increment_epoch)
-        engine.add_event_handler(Events.EPOCH_COMPLETED, self._log_results)
-
-        # Set checkpoint
-        if save:
-            checkpoint_handler = save.parse(self)
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
-
-        for callback in callbacks:
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, wrap(callback), self)
-
-        # Run
-        engine.run(train_loader, epochs)
-
-        # Return history
-        hist = {metric: hist[-epochs:]
-                for metric, hist in self.metric_history.items()}
-        hist = keyfilter(lambda k: not k.startswith("val_"), hist)
         return hist
 
     def state_dict(self):
@@ -330,7 +309,7 @@ class Trainer:
         filename = "%s_trainer_%d.pth" % (self.name, self.epochs())
         fp = d / filename
         torch.save(self.state_dict(), fp)
-        print("Save trainer as %s" % fp)
+        self._print("Save trainer as %s" % fp)
 
     def load(self):
         d = Path(self.save_path)
@@ -340,7 +319,7 @@ class Trainer:
             raise FileNotFoundError("No checkpoint to load for %s in %s" % (self.name, self.save_path))
         fp = max(saves, key=lambda f: f.stat().st_mtime)
         self.load_state_dict(torch.load(fp, map_location=self.device))
-        print("Load trainer from %s" % fp)
+        self._print("Load trainer from %s" % fp)
 
     def epochs(self):
         return self._epochs
@@ -356,7 +335,7 @@ class Trainer:
         set_lr(lr, self.optimizer, self.lr_scheduler)
 
 
-def wrap(f):
+def _trainer_callback_wrap(f):
     def func(engine, *args, **kwargs):
         return f(*args, **kwargs)
 
@@ -423,16 +402,16 @@ class ValSet:
             return
         msg = "%s%s ------\t" % (self.name, " " * max(0, 8 - len(self.name)))
         for name, val in self.evaluator.state.metrics.items():
-            name = self.name + "_" + name
+            fname = self.name + "_" + name
             if isinstance(val, float):
                 msg += "%s: %.4f\t" % (name, val)
-                trainer.writer.add_scalar(name, val, trainer.epochs())
+                trainer.writer.add_scalar(fname, val, trainer.epochs())
             else:
                 msg += "%s: %s\t" % (name, val)
                 for i, v in enumerate(val):
                     trainer.writer.add_scalar("%s-%d" % (name, i + 1), v, trainer.epochs())
-            trainer.metric_history[name].append(val)
-        print(msg)
+            trainer.metric_history[fname].append(val)
+        trainer._print(msg)
 
 
 class ValSets:
@@ -451,3 +430,6 @@ class ValSets:
     def log_results(self):
         for v in self.vals:
             v.log_results()
+
+def print_lr(trainer):
+    trainer._print(trainer.optimizer.param_groups[0]['lr'])

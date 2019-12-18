@@ -26,16 +26,12 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         T_mult (int, optional): A factor increases :math:`T_{i}` after a restart. Default: 1.
         eta_min (float, optional): Minimum learning rate. Default: 0.
         last_epoch (int, optional): The index of last epoch. Default: -1.
-        iters_per_epoch (int, optional):
-            Number of iterations per epoch. If provided, it will be used to set
-            weight decay dynamically as :math: `\lambda = \lambda_{norm}\sqrt{\frac{b}{BT}}`.
 
     .. _SGDR\: Stochastic Gradient Descent with Warm Restarts:
         https://arxiv.org/abs/1608.03983
     """
 
-    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, gamma=1.0,
-                 decoupled_weight_decay=False, iters_per_epoch=None, last_epoch=-1):
+    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, warmup_eta_min=None, gamma=1.0, last_epoch=-1):
         if T_0 <= 0 or not isinstance(T_0, int):
             raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
         if T_mult < 1 or not isinstance(T_mult, int):
@@ -45,18 +41,17 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         self.T_mult = T_mult
         self.eta_min = eta_min
         self.warmup = warmup
-        self.decoupled_weight_decay = decoupled_weight_decay
-        self.iters_per_epoch = iters_per_epoch
+        self.warmup_eta_min = warmup_eta_min
         self.gamma = gamma
         self._gamma = 1.0
-        super().__init__(optimizer, last_epoch)
         self.T_cur = last_epoch
+        super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
         lrs = []
         for base_lr in self.base_lrs:
             if self.last_epoch < self.warmup:
-                eta_min = base_lr * 0.1
+                eta_min = base_lr * 0.1 if self.warmup_eta_min is None else self.warmup_eta_min
                 # T_cur = self.last_epoch
                 T_cur = self.T_cur + self.warmup
                 T_i = self.warmup
@@ -109,12 +104,6 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
             self.last_epoch = math.floor(epoch + self.warmup)
         for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
             param_group['lr'] = lr
-            if self.decoupled_weight_decay:
-                defaults = self.optimizer.defaults
-                base_weight_decay = defaults['weight_decay']
-                if self.iters_per_epoch:
-                    base_weight_decay *= math.sqrt(1 / (self.iters_per_epoch * self.T_i))
-                param_group['weight_decay'] = lr / defaults['lr'] * base_weight_decay
 
 
 class CyclicLR(_LRScheduler):
@@ -175,6 +164,8 @@ class CyclicLR(_LRScheduler):
         cycle_momentum (bool): If ``True``, momentum is cycled inversely
             to learning rate between 'base_momentum' and 'max_momentum'.
             Default: True
+        momentum_key (str): momentum for SGD or betas for Adam.
+            Default: 'momentum'
         base_momentum (float or list): Initial momentum which is the
             lower boundary in the cycle for each parameter group.
             Default: 0.8
@@ -212,11 +203,12 @@ class CyclicLR(_LRScheduler):
                  max_lr,
                  step_size_up=2000,
                  step_size_down=None,
-                 mode='triangular',
+                 mode='auto',
                  gamma=1.,
                  scale_fn=None,
                  scale_mode='cycle',
                  cycle_momentum=True,
+                 momentum_key='momentum',
                  base_momentum=0.8,
                  max_momentum=0.9,
                  last_epoch=-1):
@@ -238,10 +230,15 @@ class CyclicLR(_LRScheduler):
         self.total_size = step_size_up + step_size_down
         self.step_ratio = step_size_up / self.total_size
 
-        if mode not in ['triangular', 'triangular2', 'exp_range'] \
+        if mode not in ['triangular', 'triangular2', 'exp_range', 'auto'] \
                 and scale_fn is None:
             raise ValueError('mode is invalid and scale_fn is None')
 
+        if mode == 'auto':
+            if max_lr / base_lr >= 10:
+                mode = 'exp_range'
+            else:
+                mode = 'triangular'
         self.mode = mode
         self.gamma = gamma
 
@@ -260,18 +257,27 @@ class CyclicLR(_LRScheduler):
             self.scale_mode = scale_mode
 
         self.cycle_momentum = cycle_momentum
+        self.momentum_key = momentum_key
         if cycle_momentum:
-            if 'momentum' not in optimizer.defaults:
+            if momentum_key not in optimizer.defaults:
                 raise ValueError('optimizer must support momentum with `cycle_momentum` option enabled')
 
             base_momentums = self._format_param('base_momentum', optimizer, base_momentum)
             if last_epoch == -1:
                 for momentum, group in zip(base_momentums, optimizer.param_groups):
-                    group['momentum'] = momentum
-        self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
-        self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
+                    if momentum_key in group:
+                        if momentum_key == 'momentum':
+                            group['momentum'] = momentum
+                        elif momentum_key == 'betas':
+                            betas = group['betas']
+                            group['betas'] = betas.__class__([momentum, *betas[1:]])
+            if momentum_key == 'momentum':
+                self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+            elif momentum_key == 'betas':
+                self.base_momentums = list(map(lambda group: group['betas'][0], optimizer.param_groups))
+            self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
 
-        super(CyclicLR, self).__init__(optimizer, last_epoch)
+        super().__init__(optimizer, last_epoch)
 
     def _format_param(self, name, optimizer, param):
         """Return correctly formatted lr/momentum for each param group."""
@@ -290,7 +296,7 @@ class CyclicLR(_LRScheduler):
         return 1 / (2. ** (x - 1))
 
     def _exp_range_scale_fn(self, x):
-        return self.gamma**(x)
+        return self.gamma ** (x)
 
     def get_lr(self):
         """Calculates the learning rate at batch index. This function treats
@@ -299,8 +305,9 @@ class CyclicLR(_LRScheduler):
         If `self.cycle_momentum` is ``True``, this function has a side effect of
         updating the optimizer's momentum.
         """
-        cycle = math.floor(1 + self.last_epoch / self.total_size)
-        x = 1. + self.last_epoch / self.total_size - cycle
+        last_epoch = self.last_epoch
+        cycle = math.floor(1 + last_epoch / self.total_size)
+        x = 1. + last_epoch / self.total_size - cycle
         if x <= self.step_ratio:
             scale_factor = x / self.step_ratio
         else:
@@ -312,7 +319,7 @@ class CyclicLR(_LRScheduler):
             if self.scale_mode == 'cycle':
                 lr = base_lr + base_height * self.scale_fn(cycle)
             else:
-                lr = base_lr + base_height * self.scale_fn(self.last_epoch)
+                lr = base_lr + base_height * self.scale_fn(last_epoch)
             lrs.append(lr)
 
         if self.cycle_momentum:
@@ -322,9 +329,295 @@ class CyclicLR(_LRScheduler):
                 if self.scale_mode == 'cycle':
                     momentum = max_momentum - base_height * self.scale_fn(cycle)
                 else:
-                    momentum = max_momentum - base_height * self.scale_fn(self.last_epoch)
+                    momentum = max_momentum - base_height * self.scale_fn(last_epoch)
                 momentums.append(momentum)
             for param_group, momentum in zip(self.optimizer.param_groups, momentums):
-                param_group['momentum'] = momentum
+                if self.momentum_key == 'momentum':
+                    param_group['momentum'] = momentum
+                elif self.momentum_key == 'betas':
+                    betas = param_group['betas']
+                    param_group['betas'] = betas.__class__([momentum, *betas[1:]])
+
+        return lrs
+
+
+class CyclicStepLR(_LRScheduler):
+    r"""
+    Class that defines cyclic learning rate that decays the learning rate linearly till the end of cycle and then restarts
+    at the maximum value.
+    """
+
+    def __init__(self, optimizer, base_lr=0.1, max_lr=0.5, step_size_up=1, step_size_down=4, steps=(
+            50, 100, 130, 160, 190, 220, 250, 280), gamma=0.5, step_mode='linear', last_epoch=-1):
+        assert len(steps) > 1, 'Please specify step intervals.'
+        self.optimizer = optimizer
+
+        base_lrs = self._format_param('base_lr', optimizer, base_lr)
+        if last_epoch == -1:
+            for lr, group in zip(base_lrs, optimizer.param_groups):
+                group['lr'] = lr
+
+        self.max_lrs = self._format_param('max_lr', optimizer, max_lr)
+
+        self.step_size_up = step_size_up
+        self.step_size_down = step_size_down
+        self.cycle_len = self.step_size_up + self.step_size_down
+        self.steps = steps
+        self.gamma = gamma
+        assert step_mode in ['linear', 'exp']
+        self.step_mode = step_mode
+        super().__init__(optimizer, last_epoch)
+
+    def _format_param(self, name, optimizer, param):
+        if isinstance(param, (list, tuple)):
+            if len(param) != len(optimizer.param_groups):
+                raise ValueError("expected {} values for {}, got {}".format(
+                    len(optimizer.param_groups), name, len(param)))
+            return param
+        else:
+            return [param] * len(optimizer.param_groups)
+
+    def get_lr(self):
+        step = len([s for s in self.steps if s <= self.last_epoch])
+        gamma = self.gamma ** step
+        epoch = self.last_epoch % self.cycle_len
+
+        lrs = []
+        for base_lr, max_lr in zip(self.base_lrs, self.max_lrs):
+            min_lr = base_lr * gamma
+            max_lr = max_lr * gamma
+            if epoch < self.step_size_up:
+                if self.step_mode == 'linear':
+                    lr = min_lr + epoch / self.step_size_up * (max_lr - min_lr)
+                elif self.step_mode == 'exp':
+                    lr = min_lr * ((max_lr / min_lr) ** (epoch / self.step_size_up))
+            else:
+                if self.step_mode == 'linear':
+                    lr = min_lr + (self.cycle_len - epoch) / self.step_size_down * (max_lr - min_lr)
+                elif self.step_mode == 'exp':
+                    lr = min_lr * ((max_lr / min_lr) ** ((self.cycle_len - epoch) / self.step_size_down))
+            lrs.append(lr)
+        return lrs
+
+
+class OneCyclePolicy(_LRScheduler):
+    """Sets the learning rate of each parameter group according to
+    cyclical learning rate policy (CLR). The policy cycles the learning
+    rate between two boundaries with a constant frequency, as detailed in
+    the paper `Cyclical Learning Rates for Training Neural Networks`_.
+    The distance between the two boundaries can be scaled on a per-iteration
+    or per-cycle basis.
+
+    Cyclical learning rate policy changes the learning rate after every batch.
+    `step` should be called after a batch has been used for training.
+
+    This class has three built-in policies, as put forth in the paper:
+    "linear":
+        Learning rates cycle between two boundaries linearly.
+    "exp":
+        Learning rates cycle between two boundaries exponentially.
+
+    This implementation was adapted from the github repo: `bckenstler/CLR`_
+
+    Parameters
+    ----------
+    optimizer : Optimizer
+        Wrapped optimizer.
+    base_lr : float or list
+        Initial learning rate which is the lower boundary in the cycle for each parameter group.
+    max_lr : float or list
+        Upper learning rate boundaries in the cycle
+        for each parameter group. Functionally,
+        it defines the cycle amplitude (max_lr - base_lr).
+        The lr at any cycle is the sum of base_lr
+        and some scaling of the amplitude; therefore
+        max_lr may not actually be reached depending on
+        scaling function.
+    step_size : int
+        Number of training iterations in the
+        increasing half and decreasing half of a cycle.
+    mode (str): One of {linear, exp}.
+        Values correspond to policies detailed above.
+        Default: 'linear'
+    end_step_size : int
+        Number of iterations in the end stage after the cycle.
+    gamma : float
+        Number of scale factor in the end stage
+        when lr will decrease from base_lr to base_lr * gamma.
+        Default: 0.01
+    cycle_momentum : bool
+        If ``True``, momentum is cycled inversely
+        to learning rate between 'base_momentum' and 'max_momentum'.
+        Default: True
+    base_momentum : float or list
+        Initial momentum which is the
+        lower boundary in the cycle for each parameter group.
+        Default: 0.8
+    max_momentum : float or list
+        Upper momentum boundaries in the cycle for each parameter group.
+        Functionally, it defines the cycle amplitude (max_momentum - base_momentum).
+        The momentum at any cycle is the difference of max_momentum
+        and some scaling of the amplitude; therefore
+        base_momentum may not actually be reached depending on
+        scaling function. Default: 0.9
+    last_epoch : int
+        The index of the last batch. This parameter is used when
+        resuming a training job. Since `step()` should be invoked after each
+        batch instead of after each epoch, this number represents the total
+        number of *batches* computed, not the total number of epochs computed.
+        When last_epoch=-1, the schedule is started from the beginning.
+        Default: -1
+
+
+    .. _Cyclical Learning Rates for Training Neural Networks: https://arxiv.org/abs/1506.01186
+    .. _Super Convegence: https://arxiv.org/abs/708.07120
+    .. _bckenstler/CLR: https://github.com/bckenstler/CLR
+    """
+
+    def __init__(self,
+                 optimizer,
+                 base_lr,
+                 max_lr,
+                 step_size,
+                 mode='linear',
+                 end_step_size=1,
+                 gamma=0.01,
+                 cycle_momentum=True,
+                 base_momentum=0.85,
+                 max_momentum=0.95,
+                 cycle_wd=False,
+                 last_epoch=-1):
+
+        if not isinstance(optimizer, Optimizer):
+            raise TypeError('{} is not an Optimizer'.format(
+                type(optimizer).__name__))
+        self.optimizer = optimizer
+
+        base_lrs = self._format_param('base_lr', optimizer, base_lr)
+        if last_epoch == -1:
+            for lr, group in zip(base_lrs, optimizer.param_groups):
+                group['lr'] = lr
+
+        self.max_lrs = self._format_param('max_lr', optimizer, max_lr)
+
+        step_size = float(step_size)
+        self.total_size = step_size * 2
+        self.step_ratio = 1 / 2
+
+        if mode not in ['linear', 'exp']:
+            raise ValueError('mode is invalid.')
+
+        self.mode = mode
+        self.end_steps = end_step_size
+        self.gamma = gamma
+
+        self.cycle_wd = cycle_wd
+        self.cycle_momentum = cycle_momentum
+        if cycle_momentum:
+            if 'momentum' in optimizer.defaults:
+                self.momentum_key = 'momentum'
+            elif 'betas' in optimizer.defaults:
+                self.momentum_key = 'betas'
+            else:
+                raise ValueError('optimizer must support momentum with `cycle_momentum` option enabled')
+
+            base_momentums = self._format_param('base_momentum', optimizer, base_momentum)
+            if last_epoch == -1:
+                for momentum, group in zip(base_momentums, optimizer.param_groups):
+                    self.set_momentum(group, momentum)
+
+            if self.momentum_key == 'momentum':
+                self.base_momentums = list(map(lambda group: group['momentum'], optimizer.param_groups))
+            elif self.momentum_key == 'betas':
+                self.base_momentums = list(map(lambda group: group['betas'][0], optimizer.param_groups))
+            self.max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
+
+        super().__init__(optimizer, last_epoch)
+
+    def _format_param(self, name, optimizer, param):
+        """Return correctly formatted lr/momentum for each param group."""
+        if isinstance(param, (list, tuple)):
+            if len(param) != len(optimizer.param_groups):
+                raise ValueError("expected {} values for {}, got {}".format(
+                    len(optimizer.param_groups), name, len(param)))
+            return param
+        else:
+            return [param] * len(optimizer.param_groups)
+
+    def set_momentum(self, param_group, momentum):
+        if self.momentum_key == 'momentum':
+            param_group['momentum'] = momentum
+        elif self.momentum_key == 'betas':
+            betas = param_group['betas']
+            param_group['betas'] = betas.__class__([momentum, *betas[1:]])
+
+    def get_lr(self):
+        """Calculates the learning rate at batch index. This function treats
+        `self.last_epoch` as the last batch index.
+
+        If `self.cycle_momentum` is ``True``, this function has a side effect of
+        updating the optimizer's momentum.
+        """
+        last_epoch = self.last_epoch
+        lrs = []
+        init_lr = self.optimizer.defaults['lr']
+        wd = self.optimizer.defaults['weight_decay']
+
+        if last_epoch >= self.total_size + self.end_steps:
+            for base_lr, param_group in zip(self.base_lrs, self.optimizer.param_groups):
+                lr = base_lr * self.gamma
+                lrs.append(lr)
+                if self.cycle_wd and wd != 0:
+                    param_group['weight_decay'] = init_lr * wd / base_lr
+
+            if self.cycle_momentum:
+                for param_group, max_momentum in zip(self.optimizer.param_groups, self.max_momentums):
+                    self.set_momentum(param_group, max_momentum)
+
+        elif last_epoch >= self.total_size:
+            epoch = last_epoch - self.total_size
+            scale_factor = 1 - epoch / self.end_steps
+            for base_lr, param_group in zip(self.base_lrs, self.optimizer.param_groups):
+                max_lr = base_lr
+                min_lr = base_lr * self.gamma
+                if self.mode == 'linear':
+                    lr = min_lr + (max_lr - min_lr) * scale_factor
+                else:
+                    lr = min_lr * ((max_lr / min_lr) ** scale_factor)
+                lrs.append(lr)
+                if self.cycle_wd and wd != 0:
+                    param_group['weight_decay'] = init_lr * wd / base_lr
+
+            if self.cycle_momentum:
+                for param_group, max_momentum in zip(self.optimizer.param_groups, self.max_momentums):
+                    self.set_momentum(param_group, max_momentum)
+
+        else:
+            cycle = math.floor(1 + last_epoch / self.total_size)
+            x = 1. + last_epoch / self.total_size - cycle
+            if x <= self.step_ratio:
+                scale_factor = x / self.step_ratio
+            else:
+                scale_factor = (x - 1) / (self.step_ratio - 1)
+
+            for base_lr, max_lr, param_group in zip(self.base_lrs, self.max_lrs, self.optimizer.param_groups):
+                if self.mode == 'linear':
+                    lr = base_lr + (max_lr - base_lr) * scale_factor
+                else:
+                    lr = base_lr * ((max_lr / base_lr) ** scale_factor)
+                lrs.append(lr)
+                if self.cycle_wd and wd != 0:
+                    param_group['weight_decay'] = init_lr * wd / lr
+
+            if self.cycle_momentum:
+                momentums = []
+                for base_momentum, max_momentum in zip(self.base_momentums, self.max_momentums):
+                    if self.mode == 'linear':
+                        momentum = base_momentum + (max_momentum - base_momentum) * scale_factor
+                    else:
+                        momentum = base_momentum * ((max_momentum / base_momentum) ** scale_factor)
+                    momentums.append(momentum)
+                for param_group, momentum in zip(self.optimizer.param_groups, momentums):
+                    self.set_momentum(param_group, momentum)
 
         return lrs

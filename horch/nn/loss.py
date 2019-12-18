@@ -2,6 +2,7 @@ import math
 
 import torch
 import torch.nn.functional as F
+from toolz import curry
 
 
 def inverse_sigmoid(x):
@@ -73,3 +74,30 @@ def loc_kl_loss(loc_p, log_var_p, loc_t, reduction='sum'):
         return loss.sum()
     else:
         return loss.mean()
+
+
+def normal_nll_loss(x, mu, var, eps=1e-6):
+    """
+    Calculate the negative log likelihood
+    of normal distribution.
+    This needs to be minimised.
+    Treating Q(cj | x) as a factored Gaussian.
+    """
+
+    logli = -0.5 * (var.mul(2 * math.pi) + eps).log() - (x - mu).pow(2).div(var.mul(2.0) + eps)
+    nll = -(logli.sum(dim=1).mean())
+
+    return nll
+
+
+def conf_penalty(input, beta=0.1):
+    p = F.softmax(input, dim=1)
+    loss = (torch.log(p) * (beta * p - 1)).sum(dim=1).mean()
+    return loss
+
+@curry
+def cross_entropy(input, target, weight=None, confidence_penalty=None):
+    loss = F.cross_entropy(input, target, weight)
+    if confidence_penalty:
+        loss = loss + conf_penalty(input, beta=confidence_penalty)
+    return loss

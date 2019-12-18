@@ -8,6 +8,7 @@ from horch.models.modules import Conv2d, get_activation, get_norm_layer
 class PadChannel(nn.Module):
     def __init__(self, channels):
         super().__init__()
+        assert channels >= 0
         self.c = channels
 
     def forward(self, x):
@@ -80,17 +81,20 @@ class PyramidNet(nn.Module):
                  num_classes,
                  block,
                  widening_fractor,
-                 num_layers):
+                 num_layers,
+                 strides=(1, 2, 2)):
         super().__init__()
+        assert len(num_layers) == len(strides)
         self.add_channel = widening_fractor / sum(num_layers)
         self.in_channels = start_channels
         self.channels = start_channels
-        self.features = nn.Sequential(
-            Conv2d(3, start_channels, kernel_size=3, norm_layer='default'),
-            self._make_layer(block, num_layers[0], stride=1),
-            self._make_layer(block, num_layers[1], stride=2),
-            self._make_layer(block, num_layers[2], stride=2),
-        )
+
+        layers = [Conv2d(3, start_channels, kernel_size=3, norm_layer='default')]
+
+        for n, s in zip(num_layers, strides):
+            layers.append(self._make_layer(block, n, stride=s))
+
+        self.features = nn.Sequential(*layers)
         assert (start_channels + widening_fractor) * block.expansion == self.in_channels
         self.post_activ = nn.Sequential(
             get_norm_layer('default', self.in_channels),

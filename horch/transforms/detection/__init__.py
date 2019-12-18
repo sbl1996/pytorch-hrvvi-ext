@@ -8,8 +8,45 @@ from PIL import Image
 import torchvision.transforms.functional as VF
 from torchvision.transforms import ColorJitter
 
-from horch.transforms import JointTransform, Compose, ToTensor, InputTransform, RandomChoice, RandomApply, UseOriginal
+from horch.transforms import JointTransform, Compose, InputTransform, RandomChoice, RandomApply, UseOriginal
 from horch.transforms.detection import functional as HF
+
+
+class BoxList:
+    def __init__(self, boxes):
+        super().__init__()
+        self.boxes = boxes
+
+    def __len__(self):
+        return len(self.boxes)
+
+    def __getitem__(self, item):
+        return self.boxes[item]
+
+    def __iter__(self):
+        return iter(self.boxes)
+
+    def __repr__(self):
+        return repr(self.boxes)
+
+
+class ToTensor(JointTransform):
+
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, img, anns):
+        return VF.to_tensor(img), BoxList(anns)
+
+
+class SubtractMeans(JointTransform):
+    def __init__(self, mean=(123, 117, 104)):
+        super().__init__()
+        self.mean = mean
+
+    def __call__(self, img, anns):
+        img -= img.new_tensor(self.mean).view(-1, 1, 1) / 255
+        return img, anns
 
 
 class RandomExpand(JointTransform):
@@ -24,9 +61,13 @@ class RandomExpand(JointTransform):
         Range of expand ratio.
     """
 
-    def __init__(self, ratios=(1, 4)):
+    def __init__(self, ratios=(1, 4), mean=0):
         super().__init__()
         self.ratios = ratios
+        if mean != 0:
+            assert isinstance(mean, Sequence)
+            mean = tuple(round(x * 255) for x in mean)
+        self.mean = mean
 
     def __call__(self, img, anns):
         width, height = img.size
@@ -34,7 +75,7 @@ class RandomExpand(JointTransform):
         left = random.uniform(0, width * ratio - width)
         top = random.uniform(0, height * ratio - height)
         expand_image = Image.new(
-            img.mode, (int(width * ratio), int(height * ratio)))
+            img.mode, (int(width * ratio), int(height * ratio)), self.mean)
         expand_image.paste(img, (int(left), int(top)))
 
         new_anns = HF.move(anns, left, top)
@@ -47,7 +88,6 @@ class RandomExpand(JointTransform):
         format_string += '(ratio={0})'.format(tuple(round(r, 4)
                                                     for r in self.ratios))
         return format_string
-
 
 
 class RandomSampleCrop(JointTransform):
@@ -112,7 +152,8 @@ class RandomResizedCrop(JointTransform):
         Minimal area fraction requirement of the original bounding box.
     """
 
-    def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), min_area_frac=0.25, interpolation=Image.BILINEAR):
+    def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), min_area_frac=0.25,
+                 interpolation=Image.BILINEAR):
         super().__init__()
         if isinstance(size, tuple):
             self.size = size
@@ -323,26 +364,20 @@ class RandomVerticalFlip(JointTransform):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-def SSDTransform(size, color_jitter=True, scale=(0.1, 1), expand=(1, 4), min_area_frac=0.25):
+def SSDTransform(size, mean=0, color_jitter=True, expand=(1, 4)):
     transforms = []
     if color_jitter:
         transforms.append(
-            InputTransform(
-                ColorJitter(
-                    brightness=0.1, contrast=0.5,
-                    saturation=0.5, hue=0.05,
-                )
+            ColorJitter(
+                brightness=0.5, contrast=0.5,
+                saturation=0.5, hue=18 / 255,
             )
         )
     transforms += [
         RandomApply([
-            RandomExpand(expand),
+            RandomExpand(expand, mean=mean),
         ]),
-        RandomChoice([
-            UseOriginal(),
-            RandomSampleCrop(),
-            RandomResizedCrop(size, scale=scale, ratio=(1/2, 2/1), min_area_frac=min_area_frac),
-        ]),
+        RandomSampleCrop(),
         RandomHorizontalFlip(),
         Resize(size)
     ]

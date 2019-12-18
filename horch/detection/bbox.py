@@ -29,18 +29,19 @@ class BBox:
         else:
             return transform_bbox(bbox, format, to)
 
-    def __init__(self, image_id, category_id, bbox, score=None, format=1, area=None, segmentation=None, **kwargs):
+    def __init__(self, image_id, category_id, bbox, score=None, is_difficult=False, format=1, area=None, segmentation=None, **kwargs):
         self.image_id = image_id
         self.category_id = category_id
         self.score = score
+        self.is_difficult = is_difficult
         self.bbox = transform_bbox(
             bbox, format=format, to=1)
-        self.area = area or get_bbox_area(bbox, format=format)
+        self.area = area
         self.segmentation = segmentation
 
     def __repr__(self):
-        return "BBox(image_id=%s, category_id=%s, bbox=%s, score=%s, area=%s)" % (
-            self.image_id, self.category_id, self.bbox, self.score, self.area
+        return "BBox(image_id=%s, category_id=%s, bbox=%s, score=%s, is_difficult=%s, area=%s)" % (
+            self.image_id, self.category_id, self.bbox, self.score, self.is_difficult, self.area
         )
 
     def to_ann(self):
@@ -51,6 +52,7 @@ class BBox:
             'category_id': self.category_id,
             'score': self.score,
             'bbox': bbox,
+            'is_difficult': self.is_difficult,
             'area': self.area,
         }
         if self.segmentation is not None:
@@ -125,7 +127,7 @@ def boxes_ltwh_to_xywh(boxes, inplace=False):
         return boxes
     boxes_lt = boxes[..., :2]
     boxes_wh = boxes[..., 2:]
-    boxes_xy = boxes_lt - boxes_wh / 2
+    boxes_xy = boxes_lt + boxes_wh / 2
     return torch.cat((boxes_xy, boxes_wh), dim=-1)
 
 

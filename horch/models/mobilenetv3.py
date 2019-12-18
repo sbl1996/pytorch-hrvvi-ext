@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, SELayerM, get_activation, Identity, SEModule
+from horch.models.modules import Conv2d, get_activation, Identity
+from horch.models.attention import SEModule, SELayerM
 
 
 def _make_divisible(v, divisor=8, min_value=None):

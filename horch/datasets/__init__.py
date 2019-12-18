@@ -1,12 +1,33 @@
+import math
+
 import numpy as np
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose
 from horch.transforms import InputTransform
 
+BACKENDS = {
+    'PIL': 0,
+    'cv2': 1,
+}
+__BACKEND__ = 0
+
+
+def get_backend():
+    global __BACKEND__
+    return __BACKEND__
+
+
+def set_backend(name):
+    assert name in BACKENDS, "%s is not a valid backend, %s are supported." % (name, list(BACKENDS.keys()))
+    global __BACKEND__
+    __BACKEND__ = BACKENDS[name]
+
+
 from horch.datasets.captcha import Captcha, CaptchaDetectionOnline, CaptchaOnline, CaptchaSegmentationOnline
 from horch.datasets.coco import CocoDetection
-from horch.datasets.voc import VOCDetection, VOCSegmentation
+from horch.datasets.voc import VOCDetection, VOCSegmentation, VOCDetectionConcat
 from horch.datasets.svhn import SVHNDetection
+from horch.datasets.animefaces import AnimeFaces
 
 
 class Fullset(Dataset):
@@ -19,11 +40,12 @@ class Fullset(Dataset):
         input, target = self.dataset[idx]
         return self.transform(input, target)
 
+    def to_coco(self):
+        assert hasattr(self.dataset, "to_coco"), "Dataset don't support to_coco"
+        return self.dataset.to_coco()
+
     def __len__(self):
         return len(self.dataset)
-
-    # def __getattr__(self, attr):
-    #     return getattr(self.dataset, attr)
 
     def __repr__(self):
         return "Fullset(%s)" % self.dataset
@@ -51,6 +73,13 @@ class Subset(Dataset):
 
         return img, target
 
+    def get_image(self, idx):
+        return self.dataset.get_image(self.indices[idx])
+
+    def get_target(self, idx):
+        return self.dataset.get_target(self.indices[idx])
+
+
     def __len__(self):
         return len(self.indices)
 
@@ -61,9 +90,6 @@ class Subset(Dataset):
         else:
             indices = [self.indices[i] for i in indices]
         return self.dataset.to_coco(indices)
-
-    # def __getattr__(self, attr):
-    #     return getattr(self.dataset, attr)
 
     def __repr__(self):
         fmt_str = 'Subset of ' + self.dataset.__class__.__name__ + '\n'
@@ -106,3 +132,13 @@ class CachedDataset(Dataset):
         if self.cache[idx] is None:
             self.cache[idx] = self.dataset[idx]
         return self.cache[idx]
+
+
+def batchify(ds, batch_size):
+    n = len(ds)
+    n_batches = math.ceil(n / batch_size)
+    for i in range(n_batches):
+        start = i * batch_size
+        end = min((i + 1) * batch_size, n)
+        batch = [ds[j] for j in range(start, end)]
+        yield batch
