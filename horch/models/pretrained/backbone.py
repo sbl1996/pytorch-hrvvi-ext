@@ -1,5 +1,6 @@
 from difflib import get_close_matches
 
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.models.backbone import _check_levels, backbone_forward
@@ -279,10 +280,10 @@ class EfficientNet(nn.Module):
             features.final_block
         )
 
-        self.out_channels = [
+        self.out_channels = np.array([
             get_out_channels(getattr(self, ("layer%d" % i)))
             for i in feature_levels
-        ]
+        ])
 
     def forward(self, x):
         outs = []
