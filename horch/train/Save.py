@@ -11,7 +11,7 @@ class ByMetric:
 
     def parse(self, trainer):
         mat = re.match(
-            "(?P<sign>-?)(?P<dataset>[a-zA-Z]+)_(?P<metric>[a-zA-Z]+)", self.metric)
+            "(?P<sign>-?)(?P<dataset>[a-zA-Z0-9]+)_(?P<metric>[a-zA-Z0-9]+)", self.metric)
         assert mat, "save by metric must be of form `-?<valset_name>?_<test_metric>`"
         sign = -1 if mat.group('sign') else 1
         metric_name = mat.group("metric")

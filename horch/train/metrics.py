@@ -431,7 +431,7 @@ class PixelAccuracy(Average):
         return acc, batch_size
 
 
-class F1Score(Average):
+class MultiClassF1Score(Average):
     r"""
     Args:
 
@@ -459,6 +459,41 @@ class F1Score(Average):
         f1 = f1_score(y, p, sample_weight=sample_weight)
         return f1, batch_size
 
+
+class F1Score(Average):
+    r"""
+    Args:
+
+    Inputs:
+        target (list of list of horch.Detection.BBox): ground truth bounding boxes
+        preds: (batch_size, h, w, c)
+        predict: preds -> detected bounding boxes like `target` with additional `confidence`
+    """
+
+    def __init__(self, threshold=0.5, ignore_index=None):
+        self.threshold = threshold
+        self.ignore_index = ignore_index
+        super().__init__(self.output_transform)
+
+    def output_transform(self, output):
+        targets, preds, batch_size = get(
+            ["target", "preds", "batch_size"], output)
+
+        y = targets[0]
+        p = preds[0]
+        if p.ndim == 4:
+            if p.size(1) == 1:
+                p = torch.sigmoid(p.squeeze(1))
+            elif p.size(1) == 2:
+                p = torch.softmax(p, dim=1)[:, 1, :, :]
+        elif p.ndim == 3:
+            p = torch.sigmoid(p)
+        p = p > self.threshold
+        p = p.cpu().long().numpy().ravel()
+        y = y.cpu().long().numpy().ravel()
+        sample_weight = None if self.ignore_index is None else (y != self.ignore_index)
+        f1 = f1_score(y, p, sample_weight=sample_weight)
+        return f1, batch_size
 
 
 class CocoAveragePrecision(Average):
