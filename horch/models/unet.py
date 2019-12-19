@@ -37,11 +37,13 @@ class Upsample(nn.Module):
         assert mode in ['deconv', 'interp']
         self.mode = mode
         if mode == 'deconv':
-            self.conv = Conv2d(in_channels, out_channels, 2, 2, transposed=True)
+            self.conv = Conv2d(in_channels, out_channels, 2, 2, transposed=True,
+                               norm_layer='default')
         else:
             self.conv = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                Conv2d(in_channels, out_channels, 1),
+                Conv2d(in_channels, out_channels, 1,
+                       norm_layer='default'),
             )
 
     def forward(self, x):
