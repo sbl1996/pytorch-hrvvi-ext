@@ -1,11 +1,13 @@
 from difflib import get_close_matches
 
 import torch.nn as nn
+import torch.nn.functional as F
 from horch.models.backbone import _check_levels, backbone_forward
 from horch.models.modules import Sequential, L2Norm
 from horch.models.pretrained.vovnet import vovnet27_slim, vovnet39, vovnet57
 
 from pytorchcv.model_provider import get_model as ptcv_get_model
+from pytorchcv.models.efficientnet import calc_tf_padding
 
 from horch.models.pretrained.mobilenetv3 import mobilenetv3_large
 from horch.models.utils import get_out_channels, calc_out_channels, conv_to_atrous, decimate
@@ -233,12 +235,15 @@ class EfficientNet(nn.Module):
         backbone = ptcv_get_model(name, pretrained=pretrained)
         del backbone.output
         features = backbone.features
-
+        self._kernel_sizes = [3]
+        self._strides = [2]
         self.layer1 = nn.Sequential(
-            features.init_block,
+            features.init_block.conv,
             features.stage1,
             features.stage2.unit1.conv1,
         )
+        self._kernel_sizes.append(features.stage2.unit1.kernel_size)
+        self._strides.append(features.stage2.unit1.stride)
         self.layer2 = nn.Sequential(
             features.stage2.unit1.conv2,
             features.stage2.unit1.se,
@@ -246,6 +251,8 @@ class EfficientNet(nn.Module):
             features.stage2[1:],
             features.stage3.unit1.conv1,
         )
+        self._kernel_sizes.append(features.stage3.unit1.kernel_size)
+        self._strides.append(features.stage3.unit1.stride)
         self.layer3 = nn.Sequential(
             features.stage3.unit1.conv2,
             features.stage3.unit1.se,
@@ -253,6 +260,8 @@ class EfficientNet(nn.Module):
             features.stage3[1:],
             features.stage4.unit1.conv1,
         )
+        self._kernel_sizes.append(features.stage4.unit1.kernel_size)
+        self._strides.append(features.stage4.unit1.stride)
         self.layer4 = nn.Sequential(
             features.stage4.unit1.conv2,
             features.stage4.unit1.se,
@@ -260,6 +269,8 @@ class EfficientNet(nn.Module):
             features.stage4[1:],
             features.stage5.unit1.conv1,
         )
+        self._kernel_sizes.append(features.stage5.unit1.kernel_size)
+        self._strides.append(features.stage5.unit1.stride)
         self.layer5 = nn.Sequential(
             features.stage5.unit1.conv2,
             features.stage5.unit1.se,
@@ -274,7 +285,33 @@ class EfficientNet(nn.Module):
         ]
 
     def forward(self, x):
-        return backbone_forward(self, x)
+        outs = []
+        x = F.pad(x, calc_tf_padding(x, self._kernel_sizes[0], self._strides[0]))
+        x = self.layer1(x)
+        if 1 in self.feature_levels:
+            outs.append(x)
+
+        x = F.pad(x, calc_tf_padding(x, self._kernel_sizes[1], self._strides[1]))
+        x = self.layer2(x)
+        if 2 in self.feature_levels:
+            outs.append(x)
+
+        x = F.pad(x, calc_tf_padding(x, self._kernel_sizes[2], self._strides[2]))
+        x = self.layer3(x)
+        if 3 in self.feature_levels:
+            outs.append(x)
+
+        x = F.pad(x, calc_tf_padding(x, self._kernel_sizes[3], self._strides[3]))
+        x = self.layer4(x)
+        if 4 in self.feature_levels:
+            outs.append(x)
+
+        x = F.pad(x, calc_tf_padding(x, self._kernel_sizes[4], self._strides[4]))
+        if 5 in self.forward_levels:
+            x = self.layer5(x)
+            if 5 in self.feature_levels:
+                outs.append(x)
+        return outs
 
 
 class ProxylessNAS(nn.Module):

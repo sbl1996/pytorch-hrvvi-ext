@@ -441,7 +441,7 @@ class F1Score(Average):
         predict: preds -> detected bounding boxes like `target` with additional `confidence`
     """
 
-    def __init__(self, ignore_index=255):
+    def __init__(self, ignore_index=None):
         self.ignore_index = ignore_index
         super().__init__(self.output_transform)
 
@@ -455,7 +455,7 @@ class F1Score(Average):
 
         p = ps.cpu().byte().numpy().ravel()
         y = ys.cpu().byte().numpy().ravel()
-        sample_weight = y != self.ignore_index
+        sample_weight = None if self.ignore_index is None else (y != self.ignore_index)
         f1 = f1_score(y, p, sample_weight=sample_weight)
         return f1, batch_size
 
