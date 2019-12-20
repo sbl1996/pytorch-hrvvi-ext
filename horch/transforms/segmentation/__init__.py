@@ -409,7 +409,6 @@ class RandomResizedCrop(JointTransform):
             PIL Image: Randomly cropped and resized image.
         """
         i, j, h, w = self.get_params(image, self.scale, self.ratio)
-        print(i, j, h, w)
         image = TF.resized_crop(image, i, j, h, w, self.size, self.image_interpolation)
         label = TF.resized_crop(label, i, j, h, w, self.size, self.label_interpolation)
         return image, label
