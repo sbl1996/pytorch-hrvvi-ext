@@ -27,7 +27,7 @@ class UpBlock(nn.Module):
         self.drop_connect = DropConnect(drop_connect)
 
     def forward(self, x, p):
-        p = self.drop_connect(p)
+        x = self.drop_connect(x)
         x = torch.cat((x, p), dim=1)
         x = self.conv1(x)
         x = self.conv2(x)
