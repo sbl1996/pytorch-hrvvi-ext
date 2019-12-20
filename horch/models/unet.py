@@ -54,7 +54,7 @@ class Upsample(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels, channels, out_channels, up_mode='deconv', drop_connect=0.3):
+    def __init__(self, in_channels, channels, out_channels, up_mode='deconv', drop_connect=0):
         super().__init__()
         drop_rates = np.linspace(0, drop_connect, 5)
         self.down_conv1 = DownBlock(in_channels, channels)
