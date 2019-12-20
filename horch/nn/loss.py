@@ -101,3 +101,18 @@ def cross_entropy(input, target, weight=None, confidence_penalty=None):
     if confidence_penalty:
         loss = loss + conf_penalty(input, beta=confidence_penalty)
     return loss
+
+
+def f1_loss(input, target, eps=1e-8):
+    pred = torch.softmax(input, dim=1)[:, 1]
+    target = target.float()
+    tp = torch.sum(pred * target, dim=0)
+    tn = torch.sum((1 - pred) * (1 - target), dim=0)
+    fp = torch.sum((1 - pred) * target, dim=0)
+    fn = torch.sum(pred * (1 - target), dim=0)
+
+    p = tp / (tp + fp + eps)
+    r = tp / (tp + fn + eps)
+
+    f1 = 2 * p * r / (p + r + eps)
+    return 1 - torch.mean(f1)
