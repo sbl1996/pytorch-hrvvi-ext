@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.models.modules import Conv2d
+from horch.models.drop import DropConnect
 from horch.ops import inverse_sigmoid
 
 class DownBlock(nn.Sequential):
@@ -17,14 +18,16 @@ class DownBlock(nn.Sequential):
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, drop_connect):
         super().__init__()
         self.conv1 = Conv2d(in_channels * 2, out_channels, kernel_size=3,
             norm_layer='default', activation='default')
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
             norm_layer='default', activation='default')
+        self.drop_connect = DropConnect(drop_connect)
 
     def forward(self, x, p):
+        p = self.drop_connect(p)
         x = torch.cat((x, p), dim=1)
         x = self.conv1(x)
         x = self.conv2(x)
@@ -51,8 +54,9 @@ class Upsample(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels, channels, out_channels, up_mode='deconv'):
+    def __init__(self, in_channels, channels, out_channels, up_mode='deconv', drop_connect=0.3):
         super().__init__()
+        drop_rates = np.linspace(0, drop_connect, 5)
         self.down_conv1 = DownBlock(in_channels, channels)
         self.pool1 = nn.MaxPool2d(2, 2)
 
@@ -68,16 +72,16 @@ class UNet(nn.Module):
         self.down_conv5 = DownBlock(channels * 8, channels * 16)
 
         self.up4 = Upsample(channels * 16, channels * 8, mode=up_mode)
-        self.up_conv4 = UpBlock(channels * 8, channels * 8)
+        self.up_conv4 = UpBlock(channels * 8, channels * 8, drop_connect=drop_rates[3])
 
         self.up3 = Upsample(channels * 8, channels * 4, mode=up_mode)
-        self.up_conv3 = UpBlock(channels * 4, channels * 4)
+        self.up_conv3 = UpBlock(channels * 4, channels * 4, drop_connect=drop_rates[2])
 
         self.up2 = Upsample(channels * 4, channels * 2, mode=up_mode)
-        self.up_conv2 = UpBlock(channels * 2, channels * 2)
+        self.up_conv2 = UpBlock(channels * 2, channels * 2, drop_connect=drop_rates[1])
 
         self.up1 = Upsample(channels * 2, channels, mode=up_mode)
-        self.up_conv1 = UpBlock(channels, channels)
+        self.up_conv1 = UpBlock(channels, channels, drop_connect=drop_rates[0])
 
         self.pred = Conv2d(channels, out_channels, 1)
 
