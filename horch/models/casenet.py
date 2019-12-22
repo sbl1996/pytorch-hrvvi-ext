@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from horch.models.modules import Conv2d
 
+
 class CASENet(nn.Module):
     def __init__(self, backbone, side_in_channels, num_classes):
         super().__init__()

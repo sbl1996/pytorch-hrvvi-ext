@@ -18,7 +18,7 @@ class ConvBlock(nn.Sequential):
 class Upsample(nn.Module):
     def __init__(self, in_channels, out_channels, mode='deconv'):
         super().__init__()
-        assert mode in ['deconv', 'interp']
+        assert mode in ['deconv', 'upsample']
         self.mode = mode
         if mode == 'deconv':
             self.conv = Conv2d(in_channels, out_channels, 2, 2, transposed=True,

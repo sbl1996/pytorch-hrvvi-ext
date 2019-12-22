@@ -11,33 +11,56 @@ class ConvBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3,
-            norm_layer='default', activation='default')
+                            norm_layer='default', activation='default')
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
-            norm_layer='default', activation='default')
+                            norm_layer='default', activation='default')
 
 
-class Upsample(nn.Module):
-    def __init__(self, in_channels, out_channels, mode='deconv'):
+class DecoderDeconvBlock(nn.Module):
+    def __init__(self, in_channels1, in_channels2, out_channels):
         super().__init__()
-        assert mode in ['deconv', 'interp']
-        self.mode = mode
-        if mode == 'deconv':
-            self.conv = Conv2d(in_channels, out_channels, 2, 2, transposed=True,
-                               norm_layer='default', activation='relu')
-        else:
-            self.conv = nn.Sequential(
-                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                Conv2d(in_channels, out_channels, 1,
-                       norm_layer='default', activation='relu'),
-            )
+        self.deconv = Conv2d(in_channels2, out_channels, 4, 2, transposed=True,
+                             norm_layer='default', activation='relu')
+        self.conv = Conv2d(out_channels + in_channels1, out_channels, kernel_size=3,
+                           norm_layer='default', activation='default')
 
-    def forward(self, x):
-        return self.conv(x)
+    def forward(self, c, x):
+        x = torch.cat([c, self.deconv(x)], dim=1)
+        x = self.conv(x)
+        return x
+
+
+class DecoderUpsamplingBlock(nn.Module):
+
+    def __init__(self, in_channels1, in_channels2, out_channels):
+        super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.conv1 = Conv2d(in_channels1 + in_channels2, out_channels, kernel_size=3,
+                            norm_layer='default', activation='default')
+        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
+                            norm_layer='default', activation='default')
+
+    def forward(self, c, x):
+        x = torch.cat([c, self.upsample(x)], dim=1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels, channels, out_channels, up_mode='deconv'):
+    def __init__(self, backbone, in_channels_list, channels, num_classes, up_mode='deconv'):
         super().__init__()
+
+        if up_mode == 'deconv':
+            decoder_block = DecoderDeconvBlock
+        elif up_mode == 'upsample':
+            decoder_block = DecoderUpsamplingBlock
+
+        n_upsample_blocks = len(in_channels_list)
+
+        channels = in_channels_list[-1]
+        for i in range(n_upsample_blocks)
+            decode_stage = decoder_block(in_channels_list[-(i+2), ])
         self.down_conv1 = ConvBlock(in_channels, channels)
         self.pool1 = nn.MaxPool2d(2, 2)
 
