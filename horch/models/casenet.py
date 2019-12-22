@@ -21,19 +21,19 @@ class CASENet(nn.Module):
     def forward(self, x):
         size = x.shape[2:4]
         c1, c2, c3, _, c5 = self.backbone(x)
-        s1 = self.side1(c1)
-        s1 = F.interpolate(s1, size, mode='bilinear', align_corners=False)
-        s2 = self.side2(c2)
-        s2 = F.interpolate(s2, size, mode='bilinear', align_corners=False)
-        s3 = self.side3(c3)
-        s3 = F.interpolate(s3, size, mode='bilinear', align_corners=False)
-        s5 = self.side5(c5)
-        s5 = F.interpolate(s5, size, mode='bilinear', align_corners=False)
+        c1 = self.side1(c1)
+        c1 = F.interpolate(c1, size, mode='bilinear', align_corners=False)
+        c2 = self.side2(c2)
+        c2 = F.interpolate(c2, size, mode='bilinear', align_corners=False)
+        c3 = self.side3(c3)
+        c3 = F.interpolate(c3, size, mode='bilinear', align_corners=False)
+        c5 = self.side5(c5)
+        c5 = F.interpolate(c5, size, mode='bilinear', align_corners=False)
 
         xs = []
-        for i in range(s5.size(1)):
-            xs.append(s5[:, [i], :, :])
-            xs.extend([s1, s2, s3])
+        for i in range(c5.size(1)):
+            xs.append(c5[:, [i], :, :])
+            xs.extend([c1, c2, c3])
         x = torch.cat(xs, dim=1)
         x = self.conv(x)
         return x

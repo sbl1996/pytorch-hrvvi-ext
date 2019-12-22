@@ -45,7 +45,7 @@ class DecoderUpsamplingBlock(nn.Module):
 
 
 class CASEUNet(nn.Module):
-    def __init__(self, backbone, in_channels_list, num_classes, up_mode='deconv'):
+    def __init__(self, backbone, in_channels_list, num_classes, f_channels_list=None, up_mode='deconv'):
         super().__init__()
         self.backbone = backbone
         if up_mode == 'deconv':
@@ -55,15 +55,18 @@ class CASEUNet(nn.Module):
         else:
             raise ValueError
 
-        self.block2 = decoder_block(in_channels_list[2], in_channels_list[3], in_channels_list[2])
-        self.block1 = decoder_block(in_channels_list[1], in_channels_list[2], in_channels_list[1])
-        self.block0 = decoder_block(in_channels_list[0], in_channels_list[1], in_channels_list[0])
+        if f_channels_list is None:
+            f_channels_list = in_channels_list[:3]
 
-        self.side0 = Conv2d(in_channels_list[0], 1, 1,
+        self.block2 = decoder_block(in_channels_list[2], in_channels_list[3], f_channels_list[2])
+        self.block1 = decoder_block(in_channels_list[1], in_channels_list[2], f_channels_list[1])
+        self.block0 = decoder_block(in_channels_list[0], in_channels_list[1], f_channels_list[0])
+
+        self.side0 = Conv2d(f_channels_list[0], 1, 1,
                             norm_layer='default', activation='default')
-        self.side1 = Conv2d(in_channels_list[1], 1, 1,
+        self.side1 = Conv2d(f_channels_list[1], 1, 1,
                             norm_layer='default', activation='default')
-        self.side2 = Conv2d(in_channels_list[2], 1, 1,
+        self.side2 = Conv2d(f_channels_list[2], 1, 1,
                             norm_layer='default', activation='default')
         self.side3 = Conv2d(in_channels_list[3], num_classes, 1)
 
@@ -76,19 +79,19 @@ class CASEUNet(nn.Module):
         c1 = self.block1(c1, c2)
         c0 = self.block0(c0, c1)
 
-        s0 = self.side0(c0)
-        s0 = F.interpolate(s0, size, mode='bilinear', align_corners=False)
-        s1 = self.side1(c1)
-        s1 = F.interpolate(s1, size, mode='bilinear', align_corners=False)
-        s2 = self.side2(c2)
-        s2 = F.interpolate(s2, size, mode='bilinear', align_corners=False)
-        s3 = self.side3(c3)
-        s3 = F.interpolate(s3, size, mode='bilinear', align_corners=False)
+        c0 = self.side0(c0)
+        c0 = F.interpolate(c0, size, mode='bilinear', align_corners=False)
+        c1 = self.side1(c1)
+        c1 = F.interpolate(c1, size, mode='bilinear', align_corners=False)
+        c2 = self.side2(c2)
+        c2 = F.interpolate(c2, size, mode='bilinear', align_corners=False)
+        c3 = self.side3(c3)
+        c3 = F.interpolate(c3, size, mode='bilinear', align_corners=False)
 
         xs = []
-        for i in range(s3.size(1)):
-            xs.append(s3[:, [i], :, :])
-            xs.extend([s0, s1, s2])
+        for i in range(c3.size(1)):
+            xs.append(c3[:, [i], :, :])
+            xs.extend([c0, c1, c2])
         x = torch.cat(xs, dim=1)
         x = self.conv(x)
         return x
