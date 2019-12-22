@@ -107,6 +107,3 @@ class UNet(nn.Module):
 
         p = self.pred(d0)
         return p
-
-
-胡老师，这是本周的PPT，包含了NBE上Virtual histological staining of unlabeled tissue-autofluorescence images via deep learning与An explainable deep-learning algorithm for the detection of acute intracranial haemorrhage from small datasets这两篇文章的总结，您有时间的时候，我可以给您详细讲一下
