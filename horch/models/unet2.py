@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from horch.models.modules import Conv2d
 
+
 class ConvBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
