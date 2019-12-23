@@ -16,12 +16,18 @@ class CASENet(nn.Module):
                             norm_layer='default', activation='default')
         self.side5 = Conv2d(side_in_channels[3], num_classes, 1)
 
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout2d(dropout)
         self.conv = nn.Conv2d(4 * num_classes, num_classes, 1, groups=num_classes)
 
     def forward(self, x):
         size = x.shape[2:4]
         c1, c2, c3, _, c5 = self.backbone(x)
+
+        c1 = self.dropout(c1)
+        c2 = self.dropout(c2)
+        c3 = self.dropout(c3)
+        c5 = self.dropout(c5)
+
         c1 = self.side1(c1)
         c1 = F.interpolate(c1, size, mode='bilinear', align_corners=False)
         c2 = self.side2(c2)
@@ -36,6 +42,7 @@ class CASENet(nn.Module):
             xs.append(c5[:, [i], :, :])
             xs.extend([c1, c2, c3])
         x = torch.cat(xs, dim=1)
+
         x = self.dropout(x)
         x = self.conv(x)
         return x
