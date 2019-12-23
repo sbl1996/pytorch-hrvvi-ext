@@ -45,7 +45,7 @@ class DecoderUpsamplingBlock(nn.Module):
 
 
 class CASEUNet(nn.Module):
-    def __init__(self, backbone, in_channels_list, num_classes, f_channels_list=None, up_mode='deconv', dropout=0.2):
+    def __init__(self, backbone, in_channels_list, num_classes, f_channels_list=None, up_mode='deconv', dropout=0):
         super().__init__()
         self.backbone = backbone
         if up_mode == 'deconv':

@@ -5,7 +5,7 @@ from horch.models.modules import Conv2d
 
 
 class CASENet(nn.Module):
-    def __init__(self, backbone, side_in_channels, num_classes, dropout=0.2):
+    def __init__(self, backbone, side_in_channels, num_classes, dropout=0):
         super().__init__()
         self.backbone = backbone
         self.side1 = Conv2d(side_in_channels[0], 1, 1,

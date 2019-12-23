@@ -431,35 +431,6 @@ class PixelAccuracy(Average):
         return acc, batch_size
 
 
-class MultiClassF1Score(Average):
-    r"""
-    Args:
-
-    Inputs:
-        target (list of list of horch.Detection.BBox): ground truth bounding boxes
-        preds: (batch_size, h, w, c)
-        predict: preds -> detected bounding boxes like `target` with additional `confidence`
-    """
-
-    def __init__(self, ignore_index=None):
-        self.ignore_index = ignore_index
-        super().__init__(self.output_transform)
-
-    def output_transform(self, output):
-        targets, preds, batch_size = get(
-            ["target", "preds", "batch_size"], output)
-
-        ys = targets[0]
-        ps = preds[0]
-        ps = ps.argmax(dim=1)
-
-        p = ps.cpu().byte().numpy().ravel()
-        y = ys.cpu().byte().numpy().ravel()
-        sample_weight = None if self.ignore_index is None else (y != self.ignore_index)
-        f1 = f1_score(y, p, sample_weight=sample_weight)
-        return f1, batch_size
-
-
 class F1Score(Metric):
     r"""
     """
