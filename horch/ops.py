@@ -66,3 +66,7 @@ def select(t, dim, indices):
         return select1(t, indices)
     else:
         raise ValueError("dim could be only 0 or 1, not %d" % dim)
+
+
+def dims(t):
+    return tuple(range(t.ndim))

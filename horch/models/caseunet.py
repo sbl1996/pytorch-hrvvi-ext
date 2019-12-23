@@ -71,7 +71,20 @@ class CASEUNet(nn.Module):
         self.side3 = Conv2d(in_channels_list[3], num_classes, 1)
 
         self.dropout = nn.Dropout2d(dropout)
-        self.conv = nn.Conv2d(4 * num_classes, num_classes, 1, groups=num_classes)
+        self.pred = nn.Conv2d(4 * num_classes, num_classes, 1, groups=num_classes)
+
+    def get_parameters(self):
+        layers = [
+            self.block0, self.block1, self.block2,
+            self.side0, self.side1, self.side2, self.side3,
+            self.pred
+        ]
+        params = [
+            p
+            for l in layers
+            for p in l.parameters()
+        ]
+        return params
 
     def forward(self, x):
         size = x.shape[2:4]
@@ -104,7 +117,7 @@ class CASEUNet(nn.Module):
             xs.append(c3[:, [i], :, :])
             xs.extend([c0, c1, c2])
         x = torch.cat(xs, dim=1)
-        
+
         x = self.dropout(x)
-        x = self.conv(x)
+        x = self.pred(x)
         return x

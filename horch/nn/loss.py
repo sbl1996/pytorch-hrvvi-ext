@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from toolz import curry
 
+from horch.ops import dims
+
 
 def inverse_sigmoid(x):
     return math.log(x / (1-x))
@@ -103,16 +105,33 @@ def cross_entropy(input, target, weight=None, confidence_penalty=None):
     return loss
 
 
-def f1_loss(input, target, eps=1e-8):
-    pred = torch.softmax(input, dim=1)[:, 1]
-    target = target.float()
-    tp = torch.sum(pred * target, dim=0)
-    tn = torch.sum((1 - pred) * (1 - target), dim=0)
-    fp = torch.sum((1 - pred) * target, dim=0)
-    fn = torch.sum(pred * (1 - target), dim=0)
+def f1_loss(pred, target, eps=1e-8, average='samples'):
+    assert pred.shape == target.shape
+    assert pred.dtype == target.dtype
+    if average == 'samples':
+        dim = dims(pred)[1:]
+        tp = torch.sum(pred * target, dim=dim)
+        fp = torch.sum((1 - pred) * target, dim=dim)
+        fn = torch.sum(pred * (1 - target), dim=dim)
+    elif average == 'micro':
+        tp = torch.sum(pred * target)
+        fp = torch.sum((1 - pred) * target)
+        fn = torch.sum(pred * (1 - target))
+    else:
+        raise ValueError("`average` must be one of [`samples`, 'micro'], got `%s`" % average)
 
     p = tp / (tp + fp + eps)
     r = tp / (tp + fn + eps)
 
     f1 = 2 * p * r / (p + r + eps)
     return 1 - torch.mean(f1)
+
+
+def dice_loss(pred, target):
+    assert pred.shape == target.shape
+    assert pred.dtype == target.dtype
+    dim = dims(pred)
+    numerator = 2 * torch.sum(pred * target, dim=dim)
+    denominator = torch.sum(pred + target, dim=dim)
+    losses = 1 - (numerator + 1) / (denominator + 1)
+    return torch.mean(losses)
