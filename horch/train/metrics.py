@@ -460,20 +460,33 @@ class MultiClassF1Score(Average):
         return f1, batch_size
 
 
-class F1Score(Average):
+class F1Score(Metric):
     r"""
-    Args:
-
-    Inputs:
-        target (list of list of horch.Detection.BBox): ground truth bounding boxes
-        preds: (batch_size, h, w, c)
-        predict: preds -> detected bounding boxes like `target` with additional `confidence`
     """
 
-    def __init__(self, threshold=0.5, ignore_index=None):
+    def __init__(self, threshold=0.5, ignore_index=None, eps=1e-8):
         self.threshold = threshold
         self.ignore_index = ignore_index
+        self.eps = eps
         super().__init__(self.output_transform)
+
+    def reset(self):
+        self.tp = 0
+        self.fp = 0
+        self.fn = 0
+
+    def update(self, output):
+        tp, fp, fn = output
+        self.tp += tp
+        self.fp += fp
+        self.fn += fn
+
+    def compute(self):
+        p = self.tp / (self.tp + self.fp + self.eps)
+        r = self.tp / (self.tp + self.fn + self.eps)
+
+        f1 = 2 * p * r / (p + r + self.eps)
+        return f1
 
     def output_transform(self, output):
         targets, preds, batch_size = get(
@@ -489,11 +502,18 @@ class F1Score(Average):
         elif p.ndim == 3:
             p = torch.sigmoid(p)
         p = p > self.threshold
-        p = p.cpu().long().numpy().ravel()
-        y = y.cpu().long().numpy().ravel()
-        sample_weight = None if self.ignore_index is None else (y != self.ignore_index)
-        f1 = f1_score(y, p, sample_weight=sample_weight)
-        return f1, batch_size
+        p = p.long()
+        y = y.long()
+
+        if self.ignore_index is None:
+            w = torch.ones_like(y)
+        else:
+            w = (y != self.ignore_index).long()
+        tp = torch.sum(p * y * w).item()
+        fp = torch.sum((1 - p) * y * w).item()
+        fn = torch.sum(p * (1 - y) * w).item()
+        print(tp, fp, fn)
+        return tp, fp, fn
 
 
 class CocoAveragePrecision(Average):
