@@ -5,7 +5,7 @@ from horch.models.modules import Conv2d
 
 
 class CASENet(nn.Module):
-    def __init__(self, backbone, side_in_channels, num_classes):
+    def __init__(self, backbone, side_in_channels, num_classes, dropout=0.2):
         super().__init__()
         self.backbone = backbone
         self.side1 = Conv2d(side_in_channels[0], 1, 1,
@@ -16,6 +16,7 @@ class CASENet(nn.Module):
                             norm_layer='default', activation='default')
         self.side5 = Conv2d(side_in_channels[3], num_classes, 1)
 
+        self.dropout = nn.Dropout(dropout)
         self.conv = nn.Conv2d(4 * num_classes, num_classes, 1, groups=num_classes)
 
     def forward(self, x):
@@ -35,5 +36,6 @@ class CASENet(nn.Module):
             xs.append(c5[:, [i], :, :])
             xs.extend([c1, c2, c3])
         x = torch.cat(xs, dim=1)
+        x = self.dropout(x)
         x = self.conv(x)
         return x
