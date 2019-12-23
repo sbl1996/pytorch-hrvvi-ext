@@ -45,7 +45,7 @@ class DecoderUpsamplingBlock(nn.Module):
 
 
 class CASEUNet(nn.Module):
-    def __init__(self, backbone, in_channels_list, num_classes, f_channels_list=None, up_mode='deconv'):
+    def __init__(self, backbone, in_channels_list, num_classes, f_channels_list=None, up_mode='deconv', dropout=0.5):
         super().__init__()
         self.backbone = backbone
         if up_mode == 'deconv':
@@ -70,6 +70,7 @@ class CASEUNet(nn.Module):
                             norm_layer='default', activation='default')
         self.side3 = Conv2d(in_channels_list[3], num_classes, 1)
 
+        self.dropout = nn.Dropout(dropout)
         self.conv = nn.Conv2d(4 * num_classes, num_classes, 1, groups=num_classes)
 
     def forward(self, x):
@@ -93,5 +94,6 @@ class CASEUNet(nn.Module):
             xs.append(c3[:, [i], :, :])
             xs.extend([c0, c1, c2])
         x = torch.cat(xs, dim=1)
+        x = self.dropout(x)
         x = self.conv(x)
         return x
