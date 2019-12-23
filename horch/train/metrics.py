@@ -512,7 +512,6 @@ class F1Score(Metric):
         tp = torch.sum(p * y * w).item()
         fp = torch.sum((1 - p) * y * w).item()
         fn = torch.sum(p * (1 - y) * w).item()
-        print(tp, fp, fn)
         return tp, fp, fn
 
 
