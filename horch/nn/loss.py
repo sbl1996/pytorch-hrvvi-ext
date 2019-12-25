@@ -1,10 +1,12 @@
 import math
+import random
 
 import torch
 import torch.nn.functional as F
 from toolz import curry
 
-from horch.ops import dims
+from horch import cuda
+from horch.ops import dims, unsqueeze
 
 
 def inverse_sigmoid(x):
@@ -135,3 +137,57 @@ def dice_loss(pred, target):
     denominator = torch.sum(pred + target, dim=dim)
     losses = 1 - (numerator + 1) / (denominator + 1)
     return torch.mean(losses)
+
+
+def weighted_binary_cross_entropy_with_logits(input, target, ignore_index=None, reduction='mean'):
+    n = target.size()[1:].numel()
+    n = torch.full((len(target),), n, dtype=target.dtype, device=target.device)
+    dim = dims(target)[1:]
+    if ignore_index is not None:
+        weight = (target != ignore_index).float()
+        n = torch.sum(weight, dim=dim)
+        target = target.masked_fill(target == ignore_index, 0)
+    else:
+        weight = 1
+    n_pos = torch.sum(target, dim=dim)
+    pos_weight = n_pos / n
+    pos_weight = unsqueeze(pos_weight, dim)
+    neg_weight = 1 - pos_weight
+    weight *= target * pos_weight + (1 - target) * neg_weight
+    return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
+
+
+class SegmentationLoss:
+
+    def __init__(self, weight=None, ignore_index=255, p=0.01, loss='ce'):
+        if weight is not None:
+            self.weight = cuda(torch.from_numpy(weight).float())
+        else:
+            self.weight = None
+        self.ignore_index = ignore_index
+        self.p = p
+        self.loss = loss
+
+    def __call__(self, input, target):
+        input = input.squeeze(1)
+        target = target.type_as(input)
+        if self.loss == 'ce':
+            loss = F.binary_cross_entropy_with_logits(
+                input, target, pos_weight=self.weight)
+        elif self.loss == 'focal':
+            loss = focal_loss(input, target, weight=self.weight, ignore_index=self.ignore_index)
+        elif self.loss == 'f1':
+            pred = torch.sigmoid(input)
+            loss = f1_loss(pred, target, average='micro')
+        elif self.loss == 'dice':
+            pred = torch.sigmoid(input)
+            loss = dice_loss(pred, target)
+        elif self.loss == 'ce+dice':
+            pred = torch.sigmoid(input)
+            loss1 = F.binary_cross_entropy_with_logits(
+                input, target, pos_weight=self.weight)
+            loss2 = dice_loss(pred, target)
+            loss = loss1 + loss2
+        if random.random() < self.p:
+            print("seg: %.4f" % loss.item())
+        return loss

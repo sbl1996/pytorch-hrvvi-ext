@@ -70,3 +70,11 @@ def select(t, dim, indices):
 
 def dims(t):
     return tuple(range(t.ndim))
+
+
+def unsqueeze(t, dim):
+    if isinstance(dim, int):
+        dim = [dim]
+    for d in dim:
+        t = t.unsqueeze(d)
+    return t
