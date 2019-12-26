@@ -5,14 +5,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-<<<<<<< HEAD
-from horch.common import one_hot, inverse_sigmoid
-=======
 from horch.ops import inverse_sigmoid, one_hot
 from horch.detection.anchor.generator import AnchorGeneratorBase
 from horch.detection.one import flatten, flatten_preds
 from horch.models.detection.head import to_pred
->>>>>>> gluon
 from horch.models.modules import upsample_concat, Conv2d
 from horch.models.utils import get_last_conv, bias_init_constant
 from horch.nn.loss import focal_loss2
@@ -143,15 +139,9 @@ def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
         ious = iou_1m_with_size(size, mlvl_priors)
         max_iou, max_ind = ious.view(-1).max(dim=0)
         level, i = divmod(max_ind.item(), priors_per_level)
-<<<<<<< HEAD
-        if debug:
-            print("[%d,%d]: %.4f" % (level, i, max_iou.item()))
-        lx, ly = locations[level]
-=======
         # if debug:
         #     print("[%d,%d]: %.4f" % (level, i, max_iou.item()))
         lx, ly = grid_sizes[level]
->>>>>>> gluon
         pw, ph = mlvl_priors[level, i]
         cx, offset_x = divmod(x * lx, 1)
         cx = int(cx)
@@ -180,18 +170,12 @@ def match_anchors(anns, mlvl_priors, grid_sizes, ignore_thresh=None,
 
 class YOLOMatchAnchors(Transform):
 
-<<<<<<< HEAD
-    def __init__(self, mlvl_anchors, ignore_thresh=0.5, get_label=lambda x: x["category_id"], debug=False):
-        self.mlvl_priors = torch.stack([a[0, 0, :, 2:] for a in mlvl_anchors])
-        self.locations = [tuple(a.size()[:2]) for a in mlvl_anchors]
-=======
     def __init__(self, gen, ignore_thresh=0.5, get_label=lambda x: x["category_id"]):
         super().__init__()
         self.gen = gen
         self.mlvl_priors = gen.anchor_sizes
         self.levels = gen.levels
         self.strides = gen.strides
->>>>>>> gluon
         self.ignore_thresh = ignore_thresh
         self.get_label = get_label
 

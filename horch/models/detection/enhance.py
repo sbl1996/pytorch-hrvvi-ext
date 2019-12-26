@@ -4,13 +4,9 @@ from horch.common import tuplify
 from horch.models.block import mb_conv_block, MBConv
 from horch.models.detection.nasfpn import ReLUConvBN
 
-<<<<<<< HEAD
-from horch.models.modules import upsample_add, Conv2d, Sequential
-=======
 from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat
 from horch.models.detection.nasfpn import NASFPN
 from horch.models.utils import conv_to_atrous, remove_stride_padding
->>>>>>> gluon
 
 
 class TopDown(nn.Module):
@@ -137,11 +133,8 @@ class FPN(nn.Module):
         Number of input channels of every level, e.g., ``(256,512,1024)``
     f_channels : int
         Number of output channels.
-<<<<<<< HEAD
-=======
     extra_layers : tuple of ints
         Extra layers to add, e.g., ``(6, 7)``
->>>>>>> gluon
     lite : bool
         Whether to replace conv3x3 with depthwise seperable conv.
         Default: False
@@ -149,14 +142,6 @@ class FPN(nn.Module):
         Use bilinear upsampling when `interpolate` and ConvTransposed when `deconv`
         Default: `interpolate`
     """
-<<<<<<< HEAD
-    def __init__(self, in_channels_list, out_channels=256, lite=False, upsample='interpolate'):
-        super().__init__()
-        self.lat = Conv2d(in_channels_list[-1], out_channels, kernel_size=1, norm_layer='default')
-        if upsample == 'deconv':
-            self.topdowns = nn.ModuleList([
-                DeconvTopDown(c, out_channels, out_channels, lite=lite)
-=======
 
     def __init__(self, in_channels_list, f_channels=256, extra_layers=(), downsample='conv', lite=False,
                  upsample='interpolate'):
@@ -168,16 +153,11 @@ class FPN(nn.Module):
         if upsample == 'deconv':
             self.topdowns = nn.ModuleList([
                 DeconvTopDown(c, f_channels, f_channels, lite=lite)
->>>>>>> gluon
                 for c in in_channels_list[:-1]
             ])
         else:
             self.topdowns = nn.ModuleList([
-<<<<<<< HEAD
-                TopDown(c, out_channels, lite=lite)
-=======
                 TopDown(c, f_channels, lite=lite)
->>>>>>> gluon
                 for c in in_channels_list[:-1]
             ])
         self.out_channels = [f_channels] * (len(in_channels_list) + len(extra_layers))
@@ -284,16 +264,6 @@ def stacked_fpn(num_stacked, in_channels_list, extra_layers=(), f_channels=256, 
         Default: `interpolate`
     """
     assert num_stacked >= 2, "Use FPN directly if `num_stacked` is smaller than 2."
-<<<<<<< HEAD
-    num_levels = len(in_channels)
-    layers = [FPN(in_channels, f_channels, lite=lite)]
-    for i in range(1, num_stacked):
-        if i % 2 == 0:
-            layers.append(FPN([f_channels] * num_levels, f_channels, lite=lite, upsample=upsample))
-        else:
-            layers.append(FPN2([f_channels] * num_levels, f_channels, lite=lite))
-    return Sequential(*layers)
-=======
     layers = [FPN(in_channels_list, f_channels, extra_layers, lite=lite, upsample=upsample)]
     for i in range(1, num_stacked):
         if i % 2 == 0:
@@ -334,7 +304,6 @@ def stacked_nas_fpn(num_stacked, in_channels_list, extra_layers=(), f_channels=2
     m = Sequential(*layers)
     m.out_channels = m[-1].out_channels
     return m
->>>>>>> gluon
 
 
 class IDA(nn.Module):

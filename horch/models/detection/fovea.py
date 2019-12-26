@@ -292,11 +292,7 @@ class FoveaInference:
             dets = fovea_inference(
                 [p[i] for p in loc_preds],
                 [p[i] for p in cls_preds],
-<<<<<<< HEAD
-                self.mlvl_centers,
-=======
                 mlvl_centers,
->>>>>>> gluon
                 self.conf_threshold, self.iou_threshold,
                 self.topk1, self.nms_method, self.topk2,
             )

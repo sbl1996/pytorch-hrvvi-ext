@@ -435,10 +435,11 @@ class F1Score(Metric):
     r"""
     """
 
-    def __init__(self, threshold=0.5, ignore_index=None, eps=1e-8):
+    def __init__(self, threshold=0.5, ignore_index=None, eps=1e-8, from_logits=True):
         self.threshold = threshold
         self.ignore_index = ignore_index
         self.eps = eps
+        self.from_logits = from_logits
         super().__init__(self.output_transform)
 
     def reset(self):
@@ -467,11 +468,15 @@ class F1Score(Metric):
         p = preds[0]
         if p.ndim == 4:
             if p.size(1) == 1:
-                p = torch.sigmoid(p.squeeze(1))
+                p = p.squeeze(1)
+                if self.from_logits:
+                    p = torch.sigmoid(p)
             elif p.size(1) == 2:
-                p = torch.softmax(p, dim=1)[:, 1, :, :]
+                if self.from_logits:
+                    p = torch.softmax(p, dim=1)[:, 1, :, :]
         elif p.ndim == 3:
-            p = torch.sigmoid(p)
+            if self.from_logits:
+                p = torch.sigmoid(p)
         p = p > self.threshold
         p = p.long()
         y = y.long()
