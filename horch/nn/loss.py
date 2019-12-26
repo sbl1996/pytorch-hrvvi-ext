@@ -157,9 +157,10 @@ def weighted_binary_cross_entropy_with_logits(input, target, ignore_index=None, 
     return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
 
 
+
 class SegmentationLoss:
 
-    def __init__(self, weight=None, ignore_index=255, p=0.01, loss='ce'):
+    def __init__(self, weight=None, ignore_index=255, p=0.01, loss='bce'):
         if weight is not None:
             self.weight = cuda(torch.from_numpy(weight).float())
         else:
@@ -171,7 +172,7 @@ class SegmentationLoss:
     def __call__(self, input, target):
         input = input.squeeze(1)
         target = target.type_as(input)
-        if self.loss == 'ce':
+        if self.loss == 'bce':
             loss = F.binary_cross_entropy_with_logits(
                 input, target, pos_weight=self.weight)
         elif self.loss == 'focal':
@@ -182,7 +183,7 @@ class SegmentationLoss:
         elif self.loss == 'dice':
             pred = torch.sigmoid(input)
             loss = dice_loss(pred, target)
-        elif self.loss == 'ce+dice':
+        elif self.loss == 'bce+dice':
             pred = torch.sigmoid(input)
             loss1 = F.binary_cross_entropy_with_logits(
                 input, target, pos_weight=self.weight)
