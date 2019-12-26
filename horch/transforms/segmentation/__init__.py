@@ -2,6 +2,7 @@ import math
 import warnings
 import numbers
 import random
+import math
 
 import torch
 import numpy as np
@@ -258,7 +259,7 @@ class RandomVerticalFlip(JointTransform):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-class RandomRotation(object):
+class RandomCenterCroppedRotation(JointTransform):
     """Rotate the image by angle.
 
     Args:
@@ -280,7 +281,7 @@ class RandomRotation(object):
 
     """
 
-    def __init__(self, degrees, resample=False, expand=False, center=None):
+    def __init__(self, degrees, resample=False):
         if isinstance(degrees, numbers.Number):
             if degrees < 0:
                 raise ValueError("If degrees is a single number, it must be positive.")
@@ -291,8 +292,6 @@ class RandomRotation(object):
             self.degrees = degrees
 
         self.resample = resample
-        self.expand = expand
-        self.center = center
 
     @staticmethod
     def get_params(degrees):
@@ -305,7 +304,7 @@ class RandomRotation(object):
 
         return angle
 
-    def __call__(self, img):
+    def __call__(self, image, label):
         """
         Args:
             img (PIL Image): Image to be rotated.
@@ -313,19 +312,30 @@ class RandomRotation(object):
         Returns:
             PIL Image: Rotated image.
         """
-
         angle = self.get_params(self.degrees)
-
-        return TF.rotate(img, angle, self.resample, self.expand, self.center)
+        image = image.rotate(angle, resample=self.resample, expand=False)
+        image = center_crop_from_rotated(image, angle)
+        label = label.rotate(angle, resample=self.resample, expand=False)
+        label = center_crop_from_rotated(label, angle)
+        return image, label
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '(degrees={0}'.format(self.degrees)
         format_string += ', resample={0}'.format(self.resample)
-        format_string += ', expand={0}'.format(self.expand)
-        if self.center is not None:
-            format_string += ', center={0}'.format(self.center)
         format_string += ')'
         return format_string
+
+
+def center_crop_from_rotated(img, angle):
+    w, h = img.size
+    assert w == h
+    radian = math.fabs(angle / 180 * math.pi)
+    L = w
+    s = L / (np.sin(radian) + np.cos(radian))
+    l = t = math.ceil((L - s) / 2)
+    r = b = math.floor((L + s) / 2)
+    img = img.crop([l, t, r, b])
+    return img
 
 
 class RandomResizedCrop(JointTransform):
