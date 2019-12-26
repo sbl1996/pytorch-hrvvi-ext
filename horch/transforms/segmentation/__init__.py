@@ -259,7 +259,7 @@ class RandomVerticalFlip(JointTransform):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-class RandomCenterCroppedRotation(JointTransform):
+class RandomRotation(JointTransform):
     """Rotate the image by angle.
 
     Args:
@@ -281,7 +281,7 @@ class RandomCenterCroppedRotation(JointTransform):
 
     """
 
-    def __init__(self, degrees, resample=False):
+    def __init__(self, degrees, resample=False, label_resample=Image.NEAREST, expand=False, center=None, center_crop=False):
         if isinstance(degrees, numbers.Number):
             if degrees < 0:
                 raise ValueError("If degrees is a single number, it must be positive.")
@@ -291,7 +291,16 @@ class RandomCenterCroppedRotation(JointTransform):
                 raise ValueError("If degrees is a sequence, it must be of len 2.")
             self.degrees = degrees
 
+        if center_crop:
+            assert not expand
+            assert center is None
+            assert np.all(np.abs(degrees) <= 45)
+        self.center_crop = center_crop
         self.resample = resample
+        self.label_resample = label_resample
+        self.expand = expand
+        self.center = center
+
 
     @staticmethod
     def get_params(degrees):
@@ -313,15 +322,21 @@ class RandomCenterCroppedRotation(JointTransform):
             PIL Image: Rotated image.
         """
         angle = self.get_params(self.degrees)
-        image = image.rotate(angle, resample=self.resample, expand=False)
-        image = center_crop_from_rotated(image, angle)
-        label = label.rotate(angle, resample=self.resample, expand=False)
-        label = center_crop_from_rotated(label, angle)
+        image = image.rotate(angle, resample=self.resample, expand=self.expand, center=self.center)
+        label = label.rotate(angle, resample=self.label_resample, expand=self.expand, center=self.center)
+        if self.center_crop:
+            image = center_crop_from_rotated(image, angle)
+            label = center_crop_from_rotated(label, angle)
         return image, label
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '(degrees={0}'.format(self.degrees)
         format_string += ', resample={0}'.format(self.resample)
+        format_string += ', label_resample={0}'.format(self.label_resample)
+        format_string += ', expand={0}'.format(self.expand)
+        if self.center is not None:
+            format_string += ', center={0}'.format(self.center)
+        format_string += ', center_crop={0}'.format(self.center_crop)
         format_string += ')'
         return format_string
 
