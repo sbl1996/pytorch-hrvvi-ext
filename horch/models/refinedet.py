@@ -55,7 +55,7 @@ class SideHead(nn.Module):
 
 
 class RefinEDet(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=256):
+    def __init__(self, backbone, in_channels_list, f_channels=128):
         super().__init__()
         self.backbone = backbone
         self.r_head = SideHead(in_channels_list)
@@ -67,6 +67,7 @@ class RefinEDet(nn.Module):
             TransferConnection(in_channels_list[-1], f_channels, last=True)
         )
         self.d_head = SideHead([f_channels] * len(in_channels_list))
+        self.pred = nn.Conv2d(2, 1, 1)
 
     def get_param_groups(self):
         group1 = self.backbone.parameters()
@@ -91,9 +92,6 @@ class RefinEDet(nn.Module):
         dcs.reverse()
 
         d_pred = self.d_head(*dcs)
-        if self.training:
-            return r_pred, d_pred
-        else:
-            p = torch.sigmoid(r_pred) + torch.sigmoid(d_pred)
-            p = torch.clamp_max(p, 1.0)
-            return p
+        pred = torch.cat([r_pred, d_pred], dim=1)
+        pred = self.pred(pred)
+        return pred
