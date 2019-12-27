@@ -40,7 +40,7 @@ class SideHead(nn.Module):
             Conv2d(c, 1, 1, norm_layer='default', activation='default')
             for c in side_in_channels
         ])
-        self.pred = nn.Conv2d(len(side_in_channels), 1, 1)
+        # self.pred = nn.Conv2d(len(side_in_channels), 1, 1)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -49,9 +49,9 @@ class SideHead(nn.Module):
             p = side(c)
             p = F.interpolate(p, size, mode='bilinear', align_corners=False)
             ps.append(p)
-        p = torch.cat(ps, dim=1)
-        p = self.pred(p)
-        return p
+        # p = torch.cat(ps, dim=1)
+        # p = self.pred(p)
+        return tuple(ps)
 
 
 class RefinEDet(nn.Module):
@@ -67,7 +67,7 @@ class RefinEDet(nn.Module):
             TransferConnection(in_channels_list[-1], f_channels, last=True)
         )
         self.d_head = SideHead([f_channels] * len(in_channels_list))
-        self.pred = nn.Conv2d(2, 1, 1)
+        self.fuse = nn.Conv2d(len(in_channels_list) * 2, 1, 1)
 
     def get_param_groups(self):
         group1 = self.backbone.parameters()
@@ -84,14 +84,24 @@ class RefinEDet(nn.Module):
     def forward(self, x):
         c1, c2, c3, _, c5 = self.backbone(x)
         cs = [c1, c2, c3, c5]
-        r_pred = self.r_head(*cs)
+        # r_pred = self.r_head(*cs)
+        r_sides = self.r_head(*cs)
 
         dcs = [self.tcbs[-1](cs[-1])]
         for c, tcb in zip(reversed(cs[:-1]), reversed(self.tcbs[:-1])):
             dcs.append(tcb(c, dcs[-1]))
         dcs.reverse()
 
-        d_pred = self.d_head(*dcs)
-        pred = torch.cat([r_pred, d_pred], dim=1)
-        pred = self.pred(pred)
-        return pred
+        # d_pred = self.d_head(*dcs)
+        d_sides = self.d_head(*dcs)
+        sides = r_sides + d_sides
+        pred = torch.cat(sides, dim=1)
+        pred = self.fuse(pred)
+        if self.training:
+            return sides, pred
+        else:
+            preds = [*sides, pred]
+            preds = torch.cat(preds, dim=1)
+            preds = torch.sigmoid(preds)
+            p = torch.mean(preds, dim=1)
+            return p

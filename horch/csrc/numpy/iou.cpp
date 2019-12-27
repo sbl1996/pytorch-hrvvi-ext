@@ -52,6 +52,40 @@ template <typename T> inline T iou_11(const T *a, const T *b) {
     return interS / (Sa + Sb - interS);
 }
 
+void non_max_suppression(const uint8_t *img, int64_t m, int64_t n, const float *angle, uint8_t *out) {
+
+    for (int i = 1; i < m - 1; ++i) {
+        for (int j = 1; j < n - 1; ++j) {
+            auto q = 255;
+            auto r = 255;
+            auto c = i * n + j;
+            auto a = angle[c];
+            if (((0 <= a) && (a < 22.5)) || (157.5 <= a) && (a <= 180)) {
+                q = img[i * n + j + 1];
+                r = img[i * n + j - 1];
+            }
+            else if ((22.5 <= a) && (a < 67.5)) {
+                q = img[(i + 1) * n + j - 1];
+                r = img[(i - 1) * n + j + 1];
+            }
+            else if ((67.5 <= a) && (a < 112.5)) {
+                q = img[(i + 1) * n + j];
+                r = img[(i - 1) * n + j];
+            }
+            else if ((112.5 <= a) && (a < 157.5)) {
+                q = img[(i - 1) * n + j - 1];
+                r = img[(i + 1) * n + j + 1];
+            }
+
+            if ((img[c] >= q) && (img[c] >= r)) {
+                out[c] = img[c];
+            }
+            else {
+                out[c] = 0;
+            }
+        }
+    }
+}
 
 template <typename T> void iou_mm(const T *boxes, int64_t n, T *out) {
 
@@ -174,6 +208,17 @@ Py_iou_mm(py::array_t<T, py::array::c_style | py::array::forcecast> boxes) {
     return out;
 }
 
+py::array_t<uint8_t>
+Py_non_max_suppression(
+    py::array_t<uint8_t, py::array::c_style | py::array::forcecast> img,
+    py::array_t<float, py::array::c_style | py::array::forcecast> angle) {
+    int64_t m = img.shape(0);
+    int64_t n = img.shape(1);
+    auto out = py::array_t<uint8_t>({m, n});
+    non_max_suppression(img.data(), m, n, angle.data(), out.mutable_data());
+    return out;
+}
+
 template <typename T>
 py::array_t<T>
 Py_iou_mn(py::array_t<T, py::array::c_style | py::array::forcecast> boxes1,
@@ -200,4 +245,5 @@ PYBIND11_MODULE(_numpy, m) {
     m.def("iou_mn", &Py_iou_mn<float>, "iou_mn");
     m.def("iou_11", &Py_iou_11<double>, "iou_11");
     m.def("iou_11", &Py_iou_11<float>, "iou_11");
+    m.def("ed_nms", &Py_non_max_suppression, "ed_nms");
 }

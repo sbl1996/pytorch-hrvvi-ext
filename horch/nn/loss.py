@@ -175,7 +175,7 @@ def weighted_binary_cross_entropy_with_logits(input, target, ignore_index=None, 
     pos_weight = n_pos / n
     pos_weight = unsqueeze(pos_weight, dim)
     neg_weight = 1 - pos_weight
-    weight *= target * pos_weight + (1 - target) * neg_weight
+    weight *= target * neg_weight + (1 - target) * pos_weight
     return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
 
 
