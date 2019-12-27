@@ -107,7 +107,7 @@ def cross_entropy(input, target, weight=None, confidence_penalty=None):
     return loss
 
 
-def f1_loss(pred, target, eps=1e-8, average='samples'):
+def f1_loss(pred, target, eps=1e-8, average='micro'):
     assert pred.shape == target.shape
     assert pred.dtype == target.dtype
     if average == 'samples':
@@ -126,6 +126,28 @@ def f1_loss(pred, target, eps=1e-8, average='samples'):
     r = tp / (tp + fn + eps)
 
     f1 = 2 * p * r / (p + r + eps)
+    return 1 - torch.mean(f1)
+
+
+def f_beta_loss(pred, target, eps=1e-8, beta=1, average='micro'):
+    assert pred.shape == target.shape
+    assert pred.dtype == target.dtype
+    if average == 'samples':
+        dim = dims(pred)[1:]
+        tp = torch.sum(pred * target, dim=dim)
+        fp = torch.sum((1 - pred) * target, dim=dim)
+        fn = torch.sum(pred * (1 - target), dim=dim)
+    elif average == 'micro':
+        tp = torch.sum(pred * target)
+        fp = torch.sum((1 - pred) * target)
+        fn = torch.sum(pred * (1 - target))
+    else:
+        raise ValueError("`average` must be one of [`samples`, 'micro'], got `%s`" % average)
+
+    p = tp / (tp + fp + eps)
+    r = tp / (tp + fn + eps)
+
+    f1 = (1 + beta * beta) * p * r / ((beta * beta * p) + r + eps)
     return 1 - torch.mean(f1)
 
 
@@ -157,36 +179,36 @@ def weighted_binary_cross_entropy_with_logits(input, target, ignore_index=None, 
     return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
 
 
-
 class SegmentationLoss:
 
-    def __init__(self, weight=None, ignore_index=255, p=0.01, loss='bce'):
-        if weight is not None:
-            self.weight = cuda(torch.from_numpy(weight).float())
-        else:
-            self.weight = None
-        self.ignore_index = ignore_index
+    def __init__(self, p=0.01, loss='f1', **kwargs):
+        if 'weight' in kwargs:
+            kwargs['weight'] = cuda(torch.tensor(kwargs['weight']).float())
         self.p = p
         self.loss = loss
+        self.kwargs = kwargs
 
     def __call__(self, input, target):
         input = input.squeeze(1)
         target = target.type_as(input)
         if self.loss == 'bce':
             loss = F.binary_cross_entropy_with_logits(
-                input, target, pos_weight=self.weight)
+                input, target, **self.kwargs)
         elif self.loss == 'focal':
-            loss = focal_loss(input, target, weight=self.weight, ignore_index=self.ignore_index)
+            loss = focal_loss(input, target, **self.kwargs)
         elif self.loss == 'f1':
             pred = torch.sigmoid(input)
-            loss = f1_loss(pred, target, average='micro')
+            loss = f1_loss(pred, target, **self.kwargs)
+        elif self.loss == 'f_beta':
+            pred = torch.sigmoid(input)
+            loss = f_beta_loss(pred, target, **self.kwargs)
         elif self.loss == 'dice':
             pred = torch.sigmoid(input)
             loss = dice_loss(pred, target)
         elif self.loss == 'bce+dice':
             pred = torch.sigmoid(input)
             loss1 = F.binary_cross_entropy_with_logits(
-                input, target, pos_weight=self.weight)
+                input, target, **self.kwargs)
             loss2 = dice_loss(pred, target)
             loss = loss1 + loss2
         if random.random() < self.p:
