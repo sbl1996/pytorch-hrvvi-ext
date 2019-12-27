@@ -60,7 +60,8 @@ def create_supervised_evaluator(model, metrics=None,
 
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch, grad_clip_value=None):
+        device=None, prepare_batch=_prepare_batch,
+        grad_clip_value=None, accumulation_steps=1):
     if metrics is None:
         metrics = {}
     if device:
@@ -68,12 +69,13 @@ def create_supervised_trainer(
 
     def _update(engine, batch):
         set_training(model)
-        optimizer.zero_grad()
         inputs, targets = prepare_batch(batch, device=device)
         preds = tuplify(model(*inputs))
         loss = criterion(*preds, *targets)
         loss.backward()
-        optimizer.step()
+        if engine.state.iteration % accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
         if grad_clip_value:
             clip_grad_value_(model.parameters(), grad_clip_value)
         outs = {
@@ -188,11 +190,11 @@ class Trainer:
             self.metric_history["val_" + name].append(val)
         self._print(msg)
 
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
+    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False, accumulation_steps=1):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, grad_clip_value=grad_clip_value)
+            self.metrics, self.device, grad_clip_value=grad_clip_value, accumulation_steps=accumulation_steps)
         self._attach_timer(engine)
 
         engine.add_event_handler(
