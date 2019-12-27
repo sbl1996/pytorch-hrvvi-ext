@@ -17,7 +17,7 @@
 namespace py = pybind11;
 
 #define loop(i, n) for (int i = 0; i < n; i++)
-
+#define PI 3.14159265358979323846
 using namespace std;
 
 
@@ -52,32 +52,83 @@ template <typename T> inline T iou_11(const T *a, const T *b) {
     return interS / (Sa + Sb - interS);
 }
 
-template <typename T> void non_max_suppression(const T *img, int64_t m, int64_t n, const float *angle, T *out) {
+template <typename T> void non_max_suppression(const T *img, int64_t m, int64_t n, const float *radian, T *out) {
 
     for (int i = 1; i < m - 1; ++i) {
         for (int j = 1; j < n - 1; ++j) {
-            auto q = 255;
-            auto r = 255;
+            auto x = 1.0;
+            auto y = 1.0;
             auto c = i * n + j;
-            auto a = angle[c];
-            if (((0 <= a) && (a < 22.5)) || (157.5 <= a) && (a <= 180)) {
-                q = img[i * n + j + 1];
-                r = img[i * n + j - 1];
+            auto r = radian[c];
+            auto a = r / PI * 180.0;
+            if (a < 0) {
+                a += 180;
+            } else if (a >= 180) {
+                a -= 180;
+            }
+            if (((0 <= a) && (a < 22.5)) || (157.5 <= a) && (a < 180)) {
+                x = img[i * n + j + 1];
+                y = img[i * n + j - 1];
             }
             else if ((22.5 <= a) && (a < 67.5)) {
-                q = img[(i + 1) * n + j - 1];
-                r = img[(i - 1) * n + j + 1];
+                x = img[(i + 1) * n + j - 1];
+                y = img[(i - 1) * n + j + 1];
             }
             else if ((67.5 <= a) && (a < 112.5)) {
-                q = img[(i + 1) * n + j];
-                r = img[(i - 1) * n + j];
+                x = img[(i + 1) * n + j];
+                y = img[(i - 1) * n + j];
             }
             else if ((112.5 <= a) && (a < 157.5)) {
-                q = img[(i - 1) * n + j - 1];
-                r = img[(i + 1) * n + j + 1];
+                x = img[(i - 1) * n + j - 1];
+                y = img[(i + 1) * n + j + 1];
             }
 
-            if ((img[c] >= q) && (img[c] >= r)) {
+            if ((img[c] >= x) && (img[c] >= y)) {
+                out[c] = img[c];
+            }
+            else {
+                out[c] = 0;
+            }
+        }
+    }
+}
+
+template <typename T> void non_max_suppression_bilinear(const T *img, int64_t m, int64_t n, const float *radian, T *out) {
+
+    for (int i = 1; i < m - 1; ++i) {
+        for (int j = 1; j < n - 1; ++j) {
+            auto x = 1.0;
+            auto y = 1.0;
+            auto c = i * n + j;
+            auto r = radian[c];
+            auto a = r / PI * 180.0;
+            if (a < 0) {
+                a += 180;
+            } else if (a >= 180) {
+                a -= 180;
+            }
+            if ((0 <= a) && (a < 45)) {
+                auto d = std::tan(r);
+                x = (1 - d) * img[i * n + j + 1] + d * img[(i + 1) * n + j + 1];
+                y = (1 - d) * img[i * n + j - 1] + d * img[(i - 1) * n + j - 1];
+            }
+            else if ((45 <= a) && (a < 90)) {
+                auto d = 1 / std::tan(r);
+                x = (1 - d) * img[(i + 1) * n + j] + d * img[(i + 1) * n + j + 1];
+                y = (1 - d) * img[(i - 1) * n + j] + d * img[(i - 1) * n + j - 1];
+            }
+            else if ((90 <= a) && (a < 135)) {
+                auto d = std::tan(r);
+                x = (1 - d) * img[(i + 1) * n + j] + d * img[(i + 1) * n + j - 1];
+                y = (1 - d) * img[(i - 1) * n + j] + d * img[(i - 1) * n + j + 1];
+            }
+            else if ((135 <= a) && (a < 180)) {
+                auto d = 1 / std::tan(r);
+                x = (1 - d) * img[i * n + j - 1] + d * img[(i + 1) * n + j - 1];
+                y = (1 - d) * img[i * n + j + 1] + d * img[(i - 1) * n + j + 1];
+            }
+
+            if ((img[c] >= x) && (img[c] >= y)) {
                 out[c] = img[c];
             }
             else {
@@ -212,11 +263,11 @@ template <typename T>
 py::array_t<T>
 Py_non_max_suppression(
     py::array_t<T, py::array::c_style | py::array::forcecast> img,
-    py::array_t<float, py::array::c_style | py::array::forcecast> angle) {
+    py::array_t<float, py::array::c_style | py::array::forcecast> radian) {
     int64_t m = img.shape(0);
     int64_t n = img.shape(1);
     auto out = py::array_t<T>({m, n});
-    non_max_suppression(img.data(), m, n, angle.data(), out.mutable_data());
+    non_max_suppression(img.data(), m, n, radian.data(), out.mutable_data());
     return out;
 }
 
@@ -246,7 +297,8 @@ PYBIND11_MODULE(_numpy, m) {
     m.def("iou_mn", &Py_iou_mn<float>, "iou_mn");
     m.def("iou_11", &Py_iou_11<double>, "iou_11");
     m.def("iou_11", &Py_iou_11<float>, "iou_11");
-    m.def("ed_nms", &Py_non_max_suppression<uint8_t>, "ed_nms");
     m.def("ed_nms", &Py_non_max_suppression<float>, "ed_nms");
     m.def("ed_nms", &Py_non_max_suppression<double>, "ed_nms");
+    m.def("ed_nms_bilinear", &Py_non_max_suppression<float>, "ed_nms_bilinear");
+    m.def("ed_nms_bilinear", &Py_non_max_suppression<double>, "ed_nms_bilinear");
 }
