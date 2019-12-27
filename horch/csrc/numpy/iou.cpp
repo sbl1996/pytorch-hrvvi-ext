@@ -52,7 +52,7 @@ template <typename T> inline T iou_11(const T *a, const T *b) {
     return interS / (Sa + Sb - interS);
 }
 
-void non_max_suppression(const uint8_t *img, int64_t m, int64_t n, const float *angle, uint8_t *out) {
+template <typename T> void non_max_suppression(const T *img, int64_t m, int64_t n, const float *angle, T *out) {
 
     for (int i = 1; i < m - 1; ++i) {
         for (int j = 1; j < n - 1; ++j) {
@@ -208,13 +208,14 @@ Py_iou_mm(py::array_t<T, py::array::c_style | py::array::forcecast> boxes) {
     return out;
 }
 
-py::array_t<uint8_t>
+template <typename T>
+py::array_t<T>
 Py_non_max_suppression(
-    py::array_t<uint8_t, py::array::c_style | py::array::forcecast> img,
+    py::array_t<T, py::array::c_style | py::array::forcecast> img,
     py::array_t<float, py::array::c_style | py::array::forcecast> angle) {
     int64_t m = img.shape(0);
     int64_t n = img.shape(1);
-    auto out = py::array_t<uint8_t>({m, n});
+    auto out = py::array_t<T>({m, n});
     non_max_suppression(img.data(), m, n, angle.data(), out.mutable_data());
     return out;
 }
@@ -245,5 +246,7 @@ PYBIND11_MODULE(_numpy, m) {
     m.def("iou_mn", &Py_iou_mn<float>, "iou_mn");
     m.def("iou_11", &Py_iou_11<double>, "iou_11");
     m.def("iou_11", &Py_iou_11<float>, "iou_11");
-    m.def("ed_nms", &Py_non_max_suppression, "ed_nms");
+    m.def("ed_nms", &Py_non_max_suppression<uint8_t>, "ed_nms");
+    m.def("ed_nms", &Py_non_max_suppression<float>, "ed_nms");
+    m.def("ed_nms", &Py_non_max_suppression<double>, "ed_nms");
 }
