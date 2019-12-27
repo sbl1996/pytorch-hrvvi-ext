@@ -273,6 +273,18 @@ Py_non_max_suppression(
 
 template <typename T>
 py::array_t<T>
+Py_non_max_suppression_bilinear(
+    py::array_t<T, py::array::c_style | py::array::forcecast> img,
+    py::array_t<float, py::array::c_style | py::array::forcecast> radian) {
+    int64_t m = img.shape(0);
+    int64_t n = img.shape(1);
+    auto out = py::array_t<T>({m, n});
+    non_max_suppression_bilinear(img.data(), m, n, radian.data(), out.mutable_data());
+    return out;
+}
+
+template <typename T>
+py::array_t<T>
 Py_iou_mn(py::array_t<T, py::array::c_style | py::array::forcecast> boxes1,
           py::array_t<T, py::array::c_style | py::array::forcecast> boxes2) {
     int64_t m = boxes1.shape(0);
@@ -299,6 +311,6 @@ PYBIND11_MODULE(_numpy, m) {
     m.def("iou_11", &Py_iou_11<float>, "iou_11");
     m.def("ed_nms", &Py_non_max_suppression<float>, "ed_nms");
     m.def("ed_nms", &Py_non_max_suppression<double>, "ed_nms");
-    m.def("ed_nms_bilinear", &Py_non_max_suppression<float>, "ed_nms_bilinear");
-    m.def("ed_nms_bilinear", &Py_non_max_suppression<double>, "ed_nms_bilinear");
+    m.def("ed_nms_bilinear", &Py_non_max_suppression_bilinear<float>, "ed_nms_bilinear");
+    m.def("ed_nms_bilinear", &Py_non_max_suppression_bilinear<double>, "ed_nms_bilinear");
 }
