@@ -14,6 +14,7 @@ def conv(in_channels, out_channels):
     # nn.init.constant_(side[0].bias, 0)
     return side
 
+
 class RCF(nn.Module):
     def __init__(self):
         super().__init__()
@@ -61,7 +62,7 @@ class RCF(nn.Module):
         self.fuse5 = conv(21, 1)
 
         self.fuse = Conv2d(5, 1, 1)
-        nn.init.constant_(self.fuse.weight, 1/5)
+        nn.init.constant_(self.fuse.weight, 1 / 5)
         nn.init.constant_(self.fuse.bias, 0)
 
     def forward(self, x):
@@ -123,19 +124,27 @@ class RCF(nn.Module):
         p = torch.cat(ps, dim=1)
         p = self.fuse(p)
 
-        return ps, p
+        if self.training:
+            return ps, p
+        else:
+            return p
 
 
 class RCFLoss(nn.Module):
     def __init__(self, p=0):
         super().__init__()
         self.p = p
+        self.weight = cuda(torch.tensor(3.))
 
     def forward(self, ps, p, target):
         target = target.type_as(p)
-        loss = f1_loss(torch.sigmoid(torch.squeeze(p, 1)), target)
+        #         loss = f1_loss(torch.sigmoid(torch.squeeze(p, 1)), target)
+        #         loss = weighted_bce_loss(torch.squeeze(p, 1), target)
+        loss = F.binary_cross_entropy_with_logits(p[:, 0], target, pos_weight=self.weight)
         for p in ps:
-            loss += f1_loss(torch.sigmoid(torch.squeeze(p, 1)), target)
+            #             loss += f1_loss(torch.sigmoid(torch.squeeze(p, 1)), target)
+            #             loss += weighted_bce_loss(torch.squeeze(p, 1), target)
+            loss += F.binary_cross_entropy_with_logits(p[:, 0], target, pos_weight=self.weight)
         loss /= len(ps) + 1
         if random.random() < self.p:
             print("loss: %.4f" % loss.item())

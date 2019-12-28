@@ -538,5 +538,5 @@ class RandomErasing(JointTransform):
             x, y, h, w, v = self.get_params(image, scale=self.scale, ratio=self.ratio, value=self.value)
             image = TF.erase(image, x, y, h, w, v, self.inplace)
             if self.erase_label:
-                label = TF.erase(image, x, y, h, w, v, self.inplace)
+                label = TF.erase(label, x, y, h, w, v, self.inplace)
         return image, label
