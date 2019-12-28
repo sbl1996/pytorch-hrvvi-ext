@@ -76,6 +76,8 @@ def upsample_concat(x, y):
 
 
 def get_groups(channels, ref=32):
+    if channels == 1:
+        return 1
     xs = filter(lambda x: channels % x == 0, range(2, channels + 1))
     c = min(xs, key=lambda x: abs(x - ref))
     if c < 8:
