@@ -161,7 +161,7 @@ def dice_loss(pred, target):
     return torch.mean(losses)
 
 
-def weighted_binary_cross_entropy_with_logits(input, target, ignore_index=None, reduction='mean'):
+def weighted_bce_loss(input, target, ignore_index=None, reduction='mean', from_logits=True):
     n = target.size()[1:].numel()
     n = torch.full((len(target),), n, dtype=target.dtype, device=target.device)
     dim = dims(target)[1:]
@@ -176,7 +176,10 @@ def weighted_binary_cross_entropy_with_logits(input, target, ignore_index=None, 
     pos_weight = unsqueeze(pos_weight, dim)
     neg_weight = 1 - pos_weight
     weight *= target * neg_weight + (1 - target) * pos_weight
-    return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
+    if from_logits:
+        return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
+    else:
+        return F.binary_cross_entropy(input, target, weight, reduction=reduction)
 
 
 class SegmentationLoss:
@@ -212,5 +215,5 @@ class SegmentationLoss:
             loss2 = dice_loss(pred, target)
             loss = loss1 + loss2
         if random.random() < self.p:
-            print("seg: %.4f" % loss.item())
+            print("loss: %.4f" % loss.item())
         return loss
