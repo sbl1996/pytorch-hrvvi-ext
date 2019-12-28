@@ -172,10 +172,10 @@ def weighted_bce_loss(input, target, ignore_index=None, reduction='mean', from_l
     else:
         weight = 1
     n_pos = torch.sum(target, dim=dim)
-    pos_weight = n_pos / n
-    pos_weight = unsqueeze(pos_weight, dim)
-    neg_weight = 1 - pos_weight
-    weight *= target * neg_weight + (1 - target) * pos_weight
+    neg_weight = n_pos / n
+    neg_weight = unsqueeze(neg_weight, dim)
+    pos_weight = 1 - neg_weight
+    weight *= target * pos_weight + (1 - target) * neg_weight
     if from_logits:
         return F.binary_cross_entropy_with_logits(input, target, weight, reduction=reduction)
     else:

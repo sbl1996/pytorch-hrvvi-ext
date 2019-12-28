@@ -474,7 +474,7 @@ class RandomErasing(JointTransform):
         >>> ])
     """
 
-    def __init__(self, p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=0, inplace=False):
+    def __init__(self, p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=0, erase_label=False, inplace=False):
         assert isinstance(value, (numbers.Number, str, tuple, list))
         if (scale[0] > scale[1]) or (ratio[0] > ratio[1]):
             warnings.warn("range should be of kind (min, max)")
@@ -487,6 +487,7 @@ class RandomErasing(JointTransform):
         self.scale = scale
         self.ratio = ratio
         self.value = value
+        self.erase_label = erase_label
         self.inplace = inplace
 
     @staticmethod
@@ -536,4 +537,6 @@ class RandomErasing(JointTransform):
         if random.uniform(0, 1) < self.p:
             x, y, h, w, v = self.get_params(image, scale=self.scale, ratio=self.ratio, value=self.value)
             image = TF.erase(image, x, y, h, w, v, self.inplace)
+            if self.erase_label:
+                label = TF.erase(image, x, y, h, w, v, self.inplace)
         return image, label
