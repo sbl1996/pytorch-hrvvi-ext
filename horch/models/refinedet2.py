@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horch.models.modules import Conv2d, get_activation
 
+from horch.models.attention import CBAM
+from horch.models.modules import Conv2d, get_activation, SelfAttention2
 
 class TransferConnection(nn.Module):
     def __init__(self, in_channels, f_channels, last=False):
@@ -26,6 +27,7 @@ class TransferConnection(nn.Module):
 
     def forward(self, x, x_next=None):
         x = self.conv1(x)
+        x = self.attn(x)
         if not self.last:
             x_next = F.interpolate(x_next, x.size()[2:4], mode='bilinear', align_corners=False)
             x = x + x_next

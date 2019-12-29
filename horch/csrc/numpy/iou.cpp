@@ -118,12 +118,12 @@ template <typename T> void non_max_suppression_bilinear(const T *img, int64_t m,
                 y = (1 - d) * img[(i - 1) * n + j] + d * img[(i - 1) * n + j - 1];
             }
             else if ((90 <= a) && (a < 135)) {
-                auto d = std::tan(r);
+                auto d = std::tan(r - PI / 2);
                 x = (1 - d) * img[(i + 1) * n + j] + d * img[(i + 1) * n + j - 1];
                 y = (1 - d) * img[(i - 1) * n + j] + d * img[(i - 1) * n + j + 1];
             }
             else if ((135 <= a) && (a < 180)) {
-                auto d = 1 / std::tan(r);
+                auto d = 1 / std::tan(r - PI / 2);
                 x = (1 - d) * img[i * n + j - 1] + d * img[(i + 1) * n + j - 1];
                 y = (1 - d) * img[i * n + j + 1] + d * img[(i - 1) * n + j + 1];
             }
