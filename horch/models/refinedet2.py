@@ -27,7 +27,6 @@ class TransferConnection(nn.Module):
 
     def forward(self, x, x_next=None):
         x = self.conv1(x)
-        x = self.attn(x)
         if not self.last:
             x_next = F.interpolate(x_next, x.size()[2:4], mode='bilinear', align_corners=False)
             x = x + x_next
