@@ -112,6 +112,12 @@ class Trainer:
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
                  metrics=None, test_metrics=None, save_path=".", name="Net", fp16=False):
 
+        self.fp16 = fp16
+        model.to(self.device)
+        if self.fp16:
+            from apex import amp
+            model, optimizer = amp.initialize(self.model, optimizer, opt_level="O1")
+
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
@@ -135,10 +141,6 @@ class Trainer:
         self._epochs = 0
 
         self._verbose = True
-
-        self.fp16 = fp16
-        if not fp16:
-            self.model.to(self.device)
 
     def _print(self, msg):
         if self._verbose:
