@@ -113,6 +113,7 @@ class Trainer:
                  metrics=None, test_metrics=None, save_path=".", name="Net", fp16=False):
 
         self.fp16 = fp16
+        self.device = 'cuda' if CUDA else 'cpu'
         model.to(self.device)
         if self.fp16:
             from apex import amp
@@ -136,7 +137,6 @@ class Trainer:
         self.writer = SummaryWriter(log_dir)
 
         self.metric_history = defaultdict(list)
-        self.device = 'cuda' if CUDA else 'cpu'
         self._timer = Timer()
         self._epochs = 0
 
