@@ -114,7 +114,6 @@ class Trainer:
 
         self.fp16 = fp16
         self.device = 'cuda' if CUDA else 'cpu'
-        print("fku")
         model.to(self.device)
         if self.fp16:
             from apex import amp
