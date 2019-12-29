@@ -61,7 +61,8 @@ def create_supervised_evaluator(model, metrics=None,
 def create_supervised_trainer(
         model, criterion, optimizer, metrics=None,
         device=None, prepare_batch=_prepare_batch,
-        grad_clip_value=None, accumulation_steps=1):
+        grad_clip_value=None, accumulation_steps=1,
+        fp16=False):
     if metrics is None:
         metrics = {}
     if device:
@@ -72,7 +73,10 @@ def create_supervised_trainer(
         inputs, targets = prepare_batch(batch, device=device)
         preds = tuplify(model(*inputs))
         loss = criterion(*preds, *targets)
-        loss.backward()
+        if fp16:
+            from apex import amp
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
         if engine.state.iteration % accumulation_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
@@ -106,7 +110,7 @@ def _evaluate(engine, evaluator, val_loader, per_epochs):
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics=None, test_metrics=None, save_path=".", name="Net"):
+                 metrics=None, test_metrics=None, save_path=".", name="Net", fp16=False):
 
         self.model = model
         self.criterion = criterion
@@ -132,7 +136,9 @@ class Trainer:
 
         self._verbose = True
 
-        self.model.to(self.device)
+        self.fp16 = fp16
+        if not fp16:
+            self.model.to(self.device)
 
     def _print(self, msg):
         if self._verbose:
@@ -194,7 +200,8 @@ class Trainer:
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, grad_clip_value=grad_clip_value, accumulation_steps=accumulation_steps)
+            self.metrics, self.device, grad_clip_value=grad_clip_value,
+            accumulation_steps=accumulation_steps, fp16=self.fp16)
         self._attach_timer(engine)
 
         engine.add_event_handler(
