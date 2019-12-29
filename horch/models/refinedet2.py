@@ -56,7 +56,7 @@ class SideHead(nn.Module):
 
 
 class RefinEDet(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128, deep_supervision=False):
+    def __init__(self, backbone, in_channels_list, f_channels=128, deep_supervision=False, drop_rate=0.2):
         super().__init__()
         self.backbone = backbone
         self.deep_supervision = deep_supervision
@@ -68,16 +68,26 @@ class RefinEDet(nn.Module):
             TransferConnection(in_channels_list[-1], f_channels, last=True)
         )
         self.head = SideHead([f_channels] * len(in_channels_list))
-
+        self.dropout = nn.Dropout2d(drop_rate)
 
     def forward(self, x):
         c1, c2, c3, _, c5 = self.backbone(x)
         cs = [c1, c2, c3, c5]
 
+        cs = [
+            self.dropout(c)
+            for c in cs
+        ]
+
         dcs = [self.tcbs[-1](cs[-1])]
         for c, tcb in zip(reversed(cs[:-1]), reversed(self.tcbs[:-1])):
             dcs.append(tcb(c, dcs[-1]))
         dcs.reverse()
+
+        dcs = [
+            self.dropout(c)
+            for c in dcs
+        ]
 
         ps, p = self.head(*dcs)
         if self.deep_supervision and self.training:
