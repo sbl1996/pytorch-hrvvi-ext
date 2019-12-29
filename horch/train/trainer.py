@@ -117,7 +117,7 @@ class Trainer:
         model.to(self.device)
         if self.fp16:
             from apex import amp
-            model, optimizer = amp.initialize(self.model, optimizer, opt_level="O1")
+            model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
         self.model = model
         self.criterion = criterion
