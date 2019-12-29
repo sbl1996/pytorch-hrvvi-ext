@@ -34,9 +34,8 @@ class TransferConnection(nn.Module):
 
 
 class SideHead(nn.Module):
-    def __init__(self, side_in_channels, deep_supervision=False):
+    def __init__(self, side_in_channels):
         super().__init__()
-        self.deep_supervision = deep_supervision
         self.sides = nn.ModuleList([
             Conv2d(c, 1, 1, norm_layer='default', activation='default')
             for c in side_in_channels
@@ -53,10 +52,7 @@ class SideHead(nn.Module):
             ps.append(p)
         p = torch.cat(ps, dim=1)
         p = self.fuse(p)
-        if self.deep_supervision:
-            return ps, p
-        else:
-            return p
+        return ps, p
 
 
 class RefinEDet(nn.Module):
@@ -71,7 +67,7 @@ class RefinEDet(nn.Module):
         self.tcbs.append(
             TransferConnection(in_channels_list[-1], f_channels, last=True)
         )
-        self.head = SideHead([f_channels] * len(in_channels_list), deep_supervision)
+        self.head = SideHead([f_channels] * len(in_channels_list))
 
 
     def forward(self, x):
@@ -83,5 +79,8 @@ class RefinEDet(nn.Module):
             dcs.append(tcb(c, dcs[-1]))
         dcs.reverse()
 
-        p = self.head(*dcs)
-        return p
+        ps, p = self.head(*dcs)
+        if self.deep_supervision and self.training:
+            return ps, p
+        else:
+            return p
