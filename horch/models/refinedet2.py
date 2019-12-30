@@ -79,7 +79,7 @@ class RefinEDet(nn.Module):
             self.dropout(c)
             for c in cs
         ]
-        print(self.dropout.p)
+
         dcs = [self.tcbs[-1](cs[-1])]
         for c, tcb in zip(reversed(cs[:-1]), reversed(self.tcbs[:-1])):
             dcs.append(tcb(c, dcs[-1]))
