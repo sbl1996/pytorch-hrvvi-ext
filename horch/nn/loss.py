@@ -109,7 +109,6 @@ def cross_entropy(input, target, weight=None, confidence_penalty=None):
 
 def f1_loss(pred, target, eps=1e-8, average='micro'):
     assert pred.shape == target.shape
-    assert pred.dtype == target.dtype
     if average == 'samples':
         dim = dims(pred)[1:]
         tp = torch.sum(pred * target, dim=dim)
