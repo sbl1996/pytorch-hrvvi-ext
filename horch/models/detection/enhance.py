@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.common import tuplify
@@ -10,35 +11,45 @@ from horch.models.utils import conv_to_atrous, remove_stride_padding
 
 
 class TopDown(nn.Module):
-    def __init__(self, in_channels, f_channels, lite=False):
+    def __init__(self, in_channels, f_channels, lite=False, aggregate='add'):
         super().__init__()
+        self.aggregate = aggregate
         self.lat = Conv2d(
             in_channels, f_channels, kernel_size=1,
             norm_layer='default')
+        channels = f_channels * 2 if aggregate == 'cat' else f_channels
         self.conv = Conv2d(
-            f_channels, f_channels, kernel_size=5 if lite else 3,
+            channels, f_channels, kernel_size=5 if lite else 3,
             norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, c, p):
-        p = upsample_add(p, self.lat(c))
+        if self.aggregate == 'cat':
+            p = upsample_concat(p, self.lat(c))
+        else:
+            p = upsample_add(p, self.lat(c))
         p = self.conv(p)
         return p
 
 
 class DeconvTopDown(nn.Module):
-    def __init__(self, in_channels1, in_channels2, f_channels, lite=False):
+    def __init__(self, in_channels1, in_channels2, f_channels, lite=False, aggregate='add'):
         super().__init__()
+        self.aggregate = aggregate
         self.lat = Conv2d(
             in_channels1, f_channels, kernel_size=1,
             norm_layer='default')
         self.deconv = Conv2d(in_channels2, f_channels, kernel_size=4, stride=2,
                              norm_layer='default', depthwise_separable=lite, transposed=True)
+        channels = f_channels * 2 if aggregate == 'cat' else f_channels
         self.conv = Conv2d(
-            f_channels, f_channels, kernel_size=5 if lite else 3,
+            channels, f_channels, kernel_size=5 if lite else 3,
             norm_layer='default', activation='default', depthwise_separable=lite)
 
     def forward(self, c, p):
-        p = self.lat(c) + self.deconv(p)
+        if self.aggregate == 'cat':
+            p = torch.cat([self.lat(c), self.deconv(p)], dim=1)
+        else:
+            p = self.lat(c) + self.deconv(p)
         p = self.conv(p)
         return p
 
@@ -144,7 +155,7 @@ class FPN(nn.Module):
     """
 
     def __init__(self, in_channels_list, f_channels=256, extra_layers=(), downsample='conv', lite=False,
-                 upsample='interpolate'):
+                 upsample='interpolate', aggregate='add'):
         super().__init__()
         self.lat = Conv2d(in_channels_list[-1], f_channels, kernel_size=1, norm_layer='default')
         self.extra_layers = extra_layers
@@ -152,12 +163,12 @@ class FPN(nn.Module):
             self.extras = FPNExtraLayers(f_channels, extra_layers, f_channels, downsample=downsample, lite=lite)
         if upsample == 'deconv':
             self.topdowns = nn.ModuleList([
-                DeconvTopDown(c, f_channels, f_channels, lite=lite)
+                DeconvTopDown(c, f_channels, f_channels, lite=lite, aggregate=aggregate)
                 for c in in_channels_list[:-1]
             ])
         else:
             self.topdowns = nn.ModuleList([
-                TopDown(c, f_channels, lite=lite)
+                TopDown(c, f_channels, lite=lite, aggregate=aggregate)
                 for c in in_channels_list[:-1]
             ])
         self.out_channels = [f_channels] * (len(in_channels_list) + len(extra_layers))
