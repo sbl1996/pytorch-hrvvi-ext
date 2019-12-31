@@ -181,6 +181,20 @@ def weighted_bce_loss(input, target, ignore_index=None, reduction='mean', from_l
         return F.binary_cross_entropy(input, target, weight, reduction=reduction)
 
 
+def binary_focal_loss(input, target, pos_weight=0.25, gamma=2, reduction='mean'):
+    logpt = -F.binary_cross_entropy_with_logits(input, target)
+    pt = torch.exp(logpt)
+    loss = -((1 - pt) ** gamma) * logpt
+    if pos_weight is not None:
+        alpha = torch.full_like(target, pos_weight)
+        alpha[target == 0] = 1 - pos_weight
+        loss = loss * alpha
+    if reduction == 'mean':
+        return loss.mean()
+    else:
+        return loss.sum()
+
+
 class SegmentationLoss:
 
     def __init__(self, p=0.01, loss='f1', **kwargs):
@@ -195,7 +209,7 @@ class SegmentationLoss:
             loss = F.binary_cross_entropy_with_logits(
                 input, target, **self.kwargs)
         elif self.loss == 'focal':
-            loss = focal_loss(input, target, **self.kwargs)
+            loss = binary_focal_loss(input, target, **self.kwargs)
         elif self.loss == 'f1':
             pred = torch.sigmoid(input)
             loss = f1_loss(pred, target, **self.kwargs)
