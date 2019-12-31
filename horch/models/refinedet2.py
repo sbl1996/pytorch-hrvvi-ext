@@ -57,7 +57,7 @@ class SideHead(nn.Module):
 
 
 class RefinEDet(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128, deep_supervision=False, drop_rate=0.2):
+    def __init__(self, backbone, in_channels_list, f_channels=128, deep_supervision=False, drop_rate=0.0):
         super().__init__()
         self.backbone = backbone
         self.deep_supervision = deep_supervision

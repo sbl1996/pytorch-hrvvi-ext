@@ -184,8 +184,6 @@ def weighted_bce_loss(input, target, ignore_index=None, reduction='mean', from_l
 class SegmentationLoss:
 
     def __init__(self, p=0.01, loss='f1', **kwargs):
-        if 'weight' in kwargs:
-            kwargs['weight'] = cuda(torch.tensor(kwargs['weight']).float())
         self.p = p
         self.loss = loss
         self.kwargs = kwargs
