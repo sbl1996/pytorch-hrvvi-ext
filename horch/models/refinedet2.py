@@ -35,10 +35,11 @@ class TransferConnection(nn.Module):
 
 
 class SideHead(nn.Module):
+    
     def __init__(self, side_in_channels):
         super().__init__()
         self.sides = nn.ModuleList([
-            Conv2d(c, 1, 1)
+            Conv2d(c, 1, 1, norm_layer='default')
             for c in side_in_channels
         ])
         self.fuse = nn.Conv2d(len(side_in_channels), 1, 1, bias=False)
