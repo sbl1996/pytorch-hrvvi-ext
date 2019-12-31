@@ -298,20 +298,27 @@ class Trainer:
             "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": None,
+            "amp": None,
             "metric_history": self.metric_history,
         }
         if self.lr_scheduler:
             s["lr_scheduler"] = self.lr_scheduler.state_dict()
+        if self.fp16:
+            from apex import amp
+            s["amp"] = amp.state_dict()
         return s
 
     def load_state_dict(self, state_dict):
-        epochs, model, optimizer, lr_scheduler, metric_history = get(
-            ["epochs", "model", "optimizer", "lr_scheduler", "metric_history"], state_dict)
+        epochs, model, optimizer, lr_scheduler, amp_state, metric_history = get(
+            ["epochs", "model", "optimizer", "lr_scheduler", "amp", "metric_history"], state_dict)
         self._epochs = epochs
         self.model.load_state_dict(model)
         self.optimizer.load_state_dict(optimizer)
         if self.lr_scheduler and lr_scheduler:
             self.lr_scheduler.load_state_dict(lr_scheduler)
+        if self.fp16 and amp_state is not None:
+            from apex import amp
+            amp.load_state_dict(amp_state)
         self.metric_history = metric_history
 
     def save(self):

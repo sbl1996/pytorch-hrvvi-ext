@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.detection.enhance import FPN, FPN2
+from horch.models.detection.enhance import FPN, FPN2, YOLOFPN
 from horch.models.modules import Conv2d, get_activation
 
 
@@ -29,20 +29,22 @@ class SideHead(nn.Module):
 
 
 class PANet(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128):
+    def __init__(self, backbone, in_channels_list, f_channels_list=(128, 128, 256, 512)):
         super().__init__()
         self.backbone = backbone
-        self.fpn1 = FPN(in_channels_list, f_channels, upsample='deconv', aggregate='cat')
-        self.fpn2 = FPN2([f_channels] * len(in_channels_list), f_channels)
+        self.fpn = YOLOFPN(in_channels_list, f_channels_list)
+        # self.fpn1 = FPN(in_channels_list, f_channels, upsample='deconv', aggregate='cat')
+        # self.fpn2 = FPN2([f_channels] * len(in_channels_list), f_channels)
 
-        self.head = SideHead([f_channels] * len(in_channels_list))
+        self.head = SideHead(self.fpn.out_channels)
 
     def forward(self, x):
         c1, c2, c3, _, c5 = self.backbone(x)
         cs = [c1, c2, c3, c5]
 
-        ps = self.fpn1(*cs)
-        ps = self.fpn2(*ps)
+        cs = self.fpn(*cs)
+        # ps = self.fpn1(*cs)
+        # ps = self.fpn2(*ps)
 
-        ps, p = self.head(*ps)
+        ps, p = self.head(*cs)
         return p
