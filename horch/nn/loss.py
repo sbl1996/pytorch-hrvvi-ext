@@ -197,9 +197,10 @@ def binary_focal_loss(input, target, pos_weight=0.25, gamma=2, reduction='mean')
 
 class SegmentationLoss:
 
-    def __init__(self, p=0.01, loss='f1', **kwargs):
+    def __init__(self, p=0.01, loss='f1', scale=1.0, **kwargs):
         self.p = p
         self.loss = loss
+        self.scale = scale
         self.kwargs = kwargs
 
     def __call__(self, input, target):
@@ -225,6 +226,7 @@ class SegmentationLoss:
                 input, target, **self.kwargs)
             loss2 = dice_loss(pred, target)
             loss = loss1 + loss2
+        loss = loss * self.scale
         if random.random() < self.p:
             print("loss: %.4f" % loss.item())
         return loss
