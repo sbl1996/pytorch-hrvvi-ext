@@ -35,15 +35,16 @@ class TransferConnection(nn.Module):
 
 
 class SideHead(nn.Module):
-    
+
     def __init__(self, side_in_channels):
         super().__init__()
         self.sides = nn.ModuleList([
             Conv2d(c, 1, 1, norm_layer='default')
             for c in side_in_channels
         ])
-        self.fuse = nn.Conv2d(len(side_in_channels), 1, 1, bias=False)
+        self.fuse = nn.Conv2d(len(side_in_channels), 1, 1)
         nn.init.constant_(self.fuse.weight, 1 / (len(side_in_channels)))
+        nn.init.constant_(self.fuse.bias, 0)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
