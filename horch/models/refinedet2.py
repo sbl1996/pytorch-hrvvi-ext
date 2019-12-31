@@ -38,7 +38,7 @@ class SideHead(nn.Module):
     def __init__(self, side_in_channels):
         super().__init__()
         self.sides = nn.ModuleList([
-            Conv2d(c, 1, 1, norm_layer='default', activation='default')
+            Conv2d(c, 1, 1)
             for c in side_in_channels
         ])
         self.fuse = nn.Conv2d(len(side_in_channels), 1, 1, bias=False)
