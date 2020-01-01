@@ -79,7 +79,7 @@ class LocationAdaptiveLearner(nn.Module):
         self.conv2 = Conv2d(out_channels, out_channels, 1,
                             norm_layer='default', activation='default')
         self.conv3 = Conv2d(out_channels, out_channels, 1,
-                            norm_layer='default', activation='default')
+                            norm_layer='default')
 
     def forward(self, x):
         x = self.conv1(x) # (N, 4, H, W)
