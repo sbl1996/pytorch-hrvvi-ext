@@ -42,9 +42,12 @@ class SideHead(nn.Module):
             Conv2d(c, 1, 1, norm_layer='default')
             for c in side_in_channels
         ])
-        self.fuse = nn.Conv2d(len(side_in_channels), 1, 1)
-        nn.init.constant_(self.fuse.weight, 1 / (len(side_in_channels)))
-        nn.init.constant_(self.fuse.bias, 0)
+        self.side_w = Conv2d(side_in_channels[-1], len(side_in_channels), 1,
+                             norm_layer='default')
+        self.ada_learner = LocationAdaptiveLearner(len(side_in_channels), len(side_in_channels))
+        # self.fuse = nn.Conv2d(len(side_in_channels), 1, 1)
+        # nn.init.constant_(self.fuse.weight, 1 / (len(side_in_channels)))
+        # nn.init.constant_(self.fuse.bias, 0)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -53,9 +56,36 @@ class SideHead(nn.Module):
             p = side(c)
             p = F.interpolate(p, size, mode='bilinear', align_corners=False)
             ps.append(p)
+
         p = torch.cat(ps, dim=1)
-        p = self.fuse(p)
+
+        sw = self.side_w(cs[-1])
+        sw = F.interpolate(sw, size, mode='bilinear', align_corners=False)
+        sw = self.ada_learner(sw)
+        p = p * sw
+        p = torch.sum(p, dim=1, keepdim=True)
+
+        # p = self.fuse(p)
         return ps, p
+
+
+class LocationAdaptiveLearner(nn.Module):
+    """docstring for LocationAdaptiveLearner"""
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+
+        self.conv1 = Conv2d(in_channels, out_channels, 1,
+                            norm_layer='default', activation='default')
+        self.conv2 = Conv2d(out_channels, out_channels, 1,
+                            norm_layer='default', activation='default')
+        self.conv3 = Conv2d(out_channels, out_channels, 1,
+                            norm_layer='default', activation='default')
+
+    def forward(self, x):
+        x = self.conv1(x) # (N, 4, H, W)
+        x = self.conv2(x) # (N, 4, H, W)
+        x = self.conv3(x) # (N, 4, H, W)
+        return x
 
 
 class RefinEDet(nn.Module):
@@ -72,6 +102,18 @@ class RefinEDet(nn.Module):
         )
         self.head = SideHead([f_channels] * len(in_channels_list))
         self.dropout = nn.Dropout2d(drop_rate)
+
+    def get_param_groups(self):
+        group1 = self.backbone.parameters()
+        layers = [
+            *self.tcbs, self.head
+        ]
+        group2 = [
+            p
+            for l in layers
+            for p in l.parameters()
+        ]
+        return [group1, group2]
 
     def forward(self, x):
         c1, c2, c3, _, c5 = self.backbone(x)

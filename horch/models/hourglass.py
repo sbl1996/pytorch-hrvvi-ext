@@ -88,20 +88,15 @@ class Hourglass(nn.Module):
 
 
 class HourglassNet(nn.Module):
-    def __init__(self, block=Bottleneck, num_stacks=2, num_blocks=4, num_classes=1, depth=4):
+    def __init__(self, num_stacks=2, num_blocks=1, num_classes=1, depth=3, block=Bottleneck):
         super(HourglassNet, self).__init__()
 
         self.in_channels = 64
         self.channels = 128
         self.num_stacks = num_stacks
-        self.stem = nn.Sequential(
-            Conv2d(3, self.in_channels, kernel_size=3, stride=1,
-                   norm_layer='default', activation='default'),
-            Conv2d(self.in_channels, self.in_channels, kernel_size=3, stride=1,
-                   norm_layer='default', activation='default'),
-            Conv2d(self.in_channels, self.in_channels, kernel_size=3, stride=1,
-                   norm_layer='default', activation='default'),
-        )
+        self.conv1 = nn.Conv2d(3, self.in_channels, kernel_size=7, stride=1, padding=3, bias=True)
+        self.bn1 = nn.BatchNorm2d(self.in_channels)
+        self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_residual(block, self.in_channels, 1)
         self.layer2 = self._make_residual(block, self.in_channels, 1)
         self.layer3 = self._make_residual(block, self.channels, 1)
@@ -125,8 +120,10 @@ class HourglassNet(nn.Module):
         self.fc_ = nn.ModuleList(fc_)
         self.score_ = nn.ModuleList(score_)
 
-        self.side1 = Conv2d(128, 1, 1)
+        self.side1 = Conv2d(256, 1, 1)
         self.fuse = Conv2d(1 + num_stacks, 1, 1)
+        nn.init.constant_(self.fuse.weight, 1 / (1 + num_stacks))
+        nn.init.constant_(self.fuse.bias, 0)
 
     def _make_residual(self, block, planes, blocks, stride=1):
         downsample = None
@@ -151,13 +148,15 @@ class HourglassNet(nn.Module):
     def forward(self, x):
         size = x.size()[2:4]
         out = []
-        x = self.stem(x)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
 
         x = self.layer1(x)
-        out.append(self.side1(x))
-        x = self.maxpool(x)
         x = self.layer2(x)
         x = self.layer3(x)
+        out.append(self.side1(x))
+        x = self.maxpool(x)
 
         for i in range(self.num_stacks):
             y = self.hg[i](x)
@@ -177,4 +176,21 @@ class HourglassNet(nn.Module):
             ps.append(x)
         p = torch.cat(ps, dim=1)
         p = self.fuse(p)
-        return p
+        if self.training:
+            return ps, p
+        else:
+            return p
+
+
+# class DeepSupervisionLoss(nn.Module):
+#
+#     def __init__(self, p=0):
+#         self.p = p
+#
+#     def __call__(self, preds, fuse, target):
+#         target = target.type_as(target)
+#         loss = f1_loss(torch.sigmoid(fuse.squeeze(1)), target)
+#         for p in preds:
+#             loss += f1_loss(torch.sigmoid(p.squeeze(1)), target)
+#         loss /= len(preds) + 1
+#         return loss
