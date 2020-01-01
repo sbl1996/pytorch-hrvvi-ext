@@ -70,7 +70,7 @@ class JakiroNet(nn.Module):
         self.tcbs.append(
             TransferConnection(in_channels_list[-1], f_channels, last=True)
         )
-        self.classifier = Conv2d(f_channels, 2, 1)
+        self.side_c = Conv2d(f_channels, 2, 1)
         self.head1 = SideHead([f_channels] * len(in_channels_list))
         self.head2 = SideHead([f_channels] * len(in_channels_list))
         self.dropout = nn.Dropout2d(drop_rate)
@@ -107,16 +107,15 @@ class JakiroNet(nn.Module):
             for c in dcs
         ]
 
-        pc = self.classifier(dcs[-1])
-        pc = F.adaptive_avg_pool2d(pc, 1).view(b, 2)
-        c = pc.argmax(dim=1)
-        ps = []
-        for i in range(b):
-            i_dcs = [c[[i]] for c in dcs]
-            if c[i] == 0:
-                p = self.head1(*i_dcs)
-            else:
-                p = self.head2(*i_dcs)
-            ps.append(p)
-        p = torch.cat(ps, dim=0)
+        pc = self.side_c(dcs[-1])
+        pc = F.adaptive_avg_pool2d(pc, 1)
+        dcs1 = [
+            pc[:, [0]] * c for c in dcs
+        ]
+        dcs2 = [
+            pc[:, [1]] * c for c in dcs
+        ]
+        p1 = self.head1(*dcs1)
+        p2 = self.head2(*dcs2)
+        p = p1 + p2
         return p
