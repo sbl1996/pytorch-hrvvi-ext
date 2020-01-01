@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horch.models.modules import Conv2d, get_activation
 
+from horch.models.modules import Conv2d, get_activation
 
 class TransferConnection(nn.Module):
     def __init__(self, in_channels, f_channels, last=False):
@@ -34,13 +34,16 @@ class TransferConnection(nn.Module):
 
 
 class SideHead(nn.Module):
+
     def __init__(self, side_in_channels):
         super().__init__()
         self.sides = nn.ModuleList([
-            Conv2d(c, 1, 1, norm_layer='default', activation='default')
+            Conv2d(c, 1, 1, norm_layer='default')
             for c in side_in_channels
         ])
-        # self.pred = nn.Conv2d(len(side_in_channels), 1, 1)
+        self.fuse = nn.Conv2d(len(side_in_channels), 1, 1)
+        nn.init.constant_(self.fuse.weight, 1 / (len(side_in_channels)))
+        nn.init.constant_(self.fuse.bias, 0)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -49,16 +52,17 @@ class SideHead(nn.Module):
             p = side(c)
             p = F.interpolate(p, size, mode='bilinear', align_corners=False)
             ps.append(p)
-        # p = torch.cat(ps, dim=1)
-        # p = self.pred(p)
-        return tuple(ps)
+
+        p = torch.cat(ps, dim=1)
+        p = self.fuse(p)
+        return p
 
 
-class RefinEDet(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128):
+class JakiroNet(nn.Module):
+    def __init__(self, backbone, in_channels_list, f_channels=128, deep_supervision=False, drop_rate=0.0):
         super().__init__()
         self.backbone = backbone
-        self.r_head = SideHead(in_channels_list)
+        self.deep_supervision = deep_supervision
         self.tcbs = nn.ModuleList([
             TransferConnection(c, f_channels)
             for c in in_channels_list[:-1]
@@ -66,13 +70,15 @@ class RefinEDet(nn.Module):
         self.tcbs.append(
             TransferConnection(in_channels_list[-1], f_channels, last=True)
         )
-        self.d_head = SideHead([f_channels] * len(in_channels_list))
-        self.fuse = nn.Conv2d(len(in_channels_list) * 2, 1, 1)
+        self.side_c = Conv2d(f_channels, 2, 1, norm_layer='default')
+        self.head1 = SideHead([f_channels] * len(in_channels_list))
+        self.head2 = SideHead([f_channels] * len(in_channels_list))
+        self.dropout = nn.Dropout2d(drop_rate)
 
     def get_param_groups(self):
         group1 = self.backbone.parameters()
         layers = [
-            self.side1, self.side2, self.side3, self.side5, self.pred
+            *self.tcbs, self.head
         ]
         group2 = [
             p
@@ -82,26 +88,36 @@ class RefinEDet(nn.Module):
         return [group1, group2]
 
     def forward(self, x):
+        b = len(x)
         c1, c2, c3, _, c5 = self.backbone(x)
         cs = [c1, c2, c3, c5]
-        # r_pred = self.r_head(*cs)
-        r_sides = self.r_head(*cs)
+
+        cs = [
+            self.dropout(c)
+            for c in cs
+        ]
 
         dcs = [self.tcbs[-1](cs[-1])]
         for c, tcb in zip(reversed(cs[:-1]), reversed(self.tcbs[:-1])):
             dcs.append(tcb(c, dcs[-1]))
         dcs.reverse()
 
-        # d_pred = self.d_head(*dcs)
-        d_sides = self.d_head(*dcs)
-        sides = r_sides + d_sides
-        pred = torch.cat(sides, dim=1)
-        pred = self.fuse(pred)
-        if self.training:
-            return sides, pred
-        else:
-            preds = [*sides, pred]
-            preds = torch.cat(preds, dim=1)
-            preds = torch.sigmoid(preds)
-            p = torch.mean(preds, dim=1)
-            return p
+        dcs = [
+            self.dropout(c)
+            for c in dcs
+        ]
+
+        pc = self.side_c(dcs[-1])
+        pc = F.adaptive_avg_pool2d(pc, 1).view(b, 2)
+        c = pc.argmax(dim=1)
+        ps = []
+        for i in range(b):
+            i_dcs = [c[[i]] for c in dcs]
+            if c[i] == 0:
+                p = self.head1(*i_dcs)
+            else:
+                p = self.head2(*i_dcs)
+            ps.append(p)
+        p = torch.cat(ps, dim=0)
+        print(p.shape)
+        return p

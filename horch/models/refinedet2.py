@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.attention import CBAM
-from horch.models.modules import Conv2d, get_activation, SelfAttention2
+from horch.models.modules import Conv2d, get_activation
 
 class TransferConnection(nn.Module):
     def __init__(self, in_channels, f_channels, last=False):
