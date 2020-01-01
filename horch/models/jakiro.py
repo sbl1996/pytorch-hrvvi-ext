@@ -119,5 +119,4 @@ class JakiroNet(nn.Module):
                 p = self.head2(*i_dcs)
             ps.append(p)
         p = torch.cat(ps, dim=0)
-        print(p.shape)
         return p
