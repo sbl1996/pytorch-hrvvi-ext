@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.models.detection.enhance import BiFPN
-from horch.models.modules import Conv2d
+from horch.models.modules import Conv2d, get_activation, Sequential
 
 
 class WeightedFusion(nn.Module):
@@ -34,7 +34,7 @@ class SideHead(nn.Module):
             )
             for c in side_in_channels
         ])
-        self.weight = nn.Parameter(torch.zeros((len(side_in_channels),)), requires_grad=True)
+        self.weight = nn.Parameter(torch.full((n,), 1.0 / n), requires_grad=True)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -49,24 +49,24 @@ class SideHead(nn.Module):
 
 
 class EED(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2, drop_rate=0.0):
+    def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2, deep_supervision=False, drop_rate=0.0):
         super().__init__()
+        self.deep_supervison = deep_supervision
         self.backbone = backbone
         self.num_fpn_layers = num_fpn_layers
         n = len(in_channels_list)
-        self.num_levels = n
-        self.lats = nn.ModuleList([
-            Conv2d(c, f_channels, kernel_size=1, norm_layer='default')
-            for c in in_channels_list
-        ])
         self.fpns = nn.ModuleList([
-            BiFPN([f_channels] * n, f_channels)
+            BiFPN(in_channels_list, f_channels),
+            *[BiFPN([f_channels] * n, f_channels)
+              for _ in range(num_fpn_layers - 1)]
+        ])
+        self.heads = nn.ModuleList([
+            SideHead([f_channels] * n)
             for _ in range(num_fpn_layers)
         ])
-        self.head = SideHead([f_channels] * n)
-
-        self.weights = nn.Parameter(
-            torch.zeros((self.num_fpn_layers + 1, self.num_levels)), requires_grad=True)
+        self.weight = nn.Parameter(
+            torch.full((self.num_fpn_layers,), 1.0 / self.num_fpn_layers), requires_grad=True)
+        self.eps = 1e-4
         self.dropout = nn.Dropout2d(drop_rate)
 
     def get_param_groups(self):
@@ -90,14 +90,17 @@ class EED(nn.Module):
             for p in ps
         ]
 
-        ps = [lat(p) for p, lat in zip(ps, self.lats)]
+        w = torch.softmax(self.weight, dim=0)
 
-        ws = torch.softmax(self.weights, dim=1)
-
-        fuses = [ws[0, i] * ps[i] for i in range(self.num_levels)]
-        for i, fpn in enumerate(self.fpns):
+        outs = []
+        fuse = 0
+        for i, (fpn, head) in enumerate(zip(self.fpns, self.heads)):
             ps = fpn(*ps)
-            for j in range(self.num_levels):
-                fuses[j] += ws[i + 1, j] * ps[j]
-        p = self.head(*fuses)
-        return p
+            p = head(*ps)
+            outs.append(p)
+            fuse += w[i] * p
+
+        if self.training and self.deep_supervison:
+            return outs, fuse
+        else:
+            return fuse

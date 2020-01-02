@@ -456,6 +456,7 @@ class BiFPN(nn.Module):
         n = len(in_channels_list)
         self.lats = nn.ModuleList([
             Conv2d(c, f_channels, kernel_size=1, norm_layer='default')
+            if c != f_channels else nn.Identity()
             for c in in_channels_list
         ])
         self.tds = nn.ModuleList([
