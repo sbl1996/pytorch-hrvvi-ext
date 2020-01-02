@@ -469,10 +469,7 @@ class BiFPN(nn.Module):
         self.bu = BottomUpFusion2(f_channels)
 
     def forward(self, *ps):
-        ps = [
-            lat(p)
-            for p, lat in zip(ps, self.lats)
-        ]
+        ps = [lat(p) for p, lat in zip(ps, self.lats)]
 
         ps2 = [ps[-1]]
         for p, td in zip(reversed(ps[:-1]), self.tds):
