@@ -35,12 +35,10 @@ class SideHead(nn.Module):
             for c in side_in_channels
         ])
         self.weight = nn.Parameter(torch.full((n,), 1.0 / n), requires_grad=True)
-        self.eps = 1e-4
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
+        w = torch.softmax(self.weight, dim=0)
 
         p = w[0] * self.sides[0](cs[0])
         for i in range(1, len(cs)):
@@ -92,8 +90,7 @@ class EED(nn.Module):
             for p in ps
         ]
 
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
+        w = torch.softmax(self.weight, dim=0)
 
         outs = []
         fuse = 0
