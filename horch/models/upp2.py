@@ -26,8 +26,6 @@ class WeightedFusion(nn.Module):
 class Tri2Node(nn.Module):
     def __init__(self, f_channels):
         super().__init__()
-        self.deconv = Conv2d(f_channels, f_channels, 2, 2, transposed=True,
-                           norm_layer='default', activation='relu')
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
                            norm_layer='default', activation='default')
         self.weight = nn.Parameter(torch.ones(2), requires_grad=True)
@@ -35,8 +33,7 @@ class Tri2Node(nn.Module):
     def forward(self, pl, plt):
         w = torch.relu(self.weight)
         w = w / (torch.sum(w, dim=0) + 1e-4)
-
-        p = w[0] * pl + w[1] * self.deconv(plt)
+        p = w[0] * pl + w[1] * plt
         p = self.conv(p)
         return p
 
@@ -44,12 +41,6 @@ class Tri2Node(nn.Module):
 class Tri3Node(nn.Module):
     def __init__(self, f_channels):
         super().__init__()
-        self.deconv_lt = Conv2d(f_channels, f_channels, 2, 2, transposed=True,
-                           norm_layer='default', activation='relu')
-
-        self.deconv_t = Conv2d(f_channels, f_channels, 2, 2, transposed=True,
-                           norm_layer='default', activation='relu')
-
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
                            norm_layer='default', activation='default')
         self.weight = nn.Parameter(torch.ones(3), requires_grad=True)
@@ -57,7 +48,7 @@ class Tri3Node(nn.Module):
     def forward(self, pl, plt, pt):
         w = torch.relu(self.weight)
         w = w / (torch.sum(w, dim=0) + 1e-4)
-        p = w[0] * pl + w[1] * self.deconv_lt(plt) + w[2] * self.deconv_t(pt)
+        p = w[0] * pl + w[1] * plt + w[2] * pt
         p = self.conv(p)
         return p
 
@@ -79,11 +70,12 @@ class UBlock(nn.Module):
     def forward(self, *ps):
         s = [ps[-1]]
         for l in range(1, self.num_levels):
+            u = [F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False) for x in s]
             nodes = self.nodes[l-1]
-            ns = [nodes[0](ps[-l-1], s[0])]
+            ns = [nodes[0](ps[-l-1], u[0])]
             for j in range(1, l):
-                ns.append(nodes[j](ns[-1], s[j-1], s[j]))
-            ns.append(nodes[-1](ns[-1], s[-1]))
+                ns.append(nodes[j](ns[-1], u[j-1], u[j]))
+            ns.append(nodes[-1](ns[-1], u[-1]))
             s = ns
         return s[-1]
 
