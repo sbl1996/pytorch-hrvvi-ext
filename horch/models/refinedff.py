@@ -4,9 +4,7 @@ import torch.nn.functional as F
 
 from horch.models.modules import Conv2d, get_activation
 
-
 class TransferConnection(nn.Module):
-
     def __init__(self, in_channels, f_channels, last=False):
         super().__init__()
         kernel_size = 3
@@ -43,9 +41,12 @@ class SideHead(nn.Module):
             Conv2d(c, 1, 1, norm_layer='default')
             for c in side_in_channels
         ])
-        self.fuse = nn.Conv2d(len(side_in_channels), 1, 1)
-        nn.init.constant_(self.fuse.weight, 1 / (len(side_in_channels)))
-        nn.init.constant_(self.fuse.bias, 0)
+        self.side_w = Conv2d(side_in_channels[-1], len(side_in_channels), 1,
+                             norm_layer='default')
+        self.ada_learner = LocationAdaptiveLearner(len(side_in_channels), len(side_in_channels))
+        # self.fuse = nn.Conv2d(len(side_in_channels), 1, 1)
+        # nn.init.constant_(self.fuse.weight, 1 / (len(side_in_channels)))
+        # nn.init.constant_(self.fuse.bias, 0)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -56,8 +57,34 @@ class SideHead(nn.Module):
             ps.append(p)
 
         p = torch.cat(ps, dim=1)
-        p = self.fuse(p)
+
+        sw = self.side_w(cs[-1])
+        sw = F.interpolate(sw, size, mode='bilinear', align_corners=False)
+        sw = self.ada_learner(sw)
+        p = p * sw
+        p = torch.sum(p, dim=1, keepdim=True)
+
+        # p = self.fuse(p)
         return ps, p
+
+
+class LocationAdaptiveLearner(nn.Module):
+    """docstring for LocationAdaptiveLearner"""
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+
+        self.conv1 = Conv2d(in_channels, out_channels, 1,
+                            norm_layer='default', activation='default')
+        self.conv2 = Conv2d(out_channels, out_channels, 1,
+                            norm_layer='default', activation='default')
+        self.conv3 = Conv2d(out_channels, out_channels, 1,
+                            norm_layer='default')
+
+    def forward(self, x):
+        x = self.conv1(x) # (N, 4, H, W)
+        x = self.conv2(x) # (N, 4, H, W)
+        x = self.conv3(x) # (N, 4, H, W)
+        return x
 
 
 class RefinEDet(nn.Module):

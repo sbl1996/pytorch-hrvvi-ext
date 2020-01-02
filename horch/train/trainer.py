@@ -77,6 +77,8 @@ def create_supervised_trainer(
             from apex import amp
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
+        else:
+            loss.backward()
         if engine.state.iteration % accumulation_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
