@@ -71,9 +71,9 @@ class ConvSideHead(nn.Module):
 
 
 class EED(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2, deep_supervison=False, drop_rate=0.0):
+    def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2, deep_supervision=False, drop_rate=0.0):
         super().__init__()
-        self.deep_supervison = deep_supervison
+        self.deep_supervison = deep_supervision
         self.backbone = backbone
         n = len(in_channels_list)
         self.fpn = Sequential(
