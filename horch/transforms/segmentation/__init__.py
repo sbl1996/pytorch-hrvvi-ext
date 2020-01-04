@@ -6,6 +6,8 @@ import math
 
 import torch
 import numpy as np
+from scipy.ndimage.interpolation import map_coordinates
+from scipy.ndimage.filters import gaussian_filter
 
 import torchvision.transforms.functional as TF
 from PIL import Image
@@ -542,3 +544,60 @@ class RandomErasing(JointTransform):
                 label = TF.erase(label, x, y, h, w, v, self.inplace)
                 label = label.squeeze(0)
         return image, label
+
+
+def elastic_transform(image, label, alpha=100, sigma=10):
+    """Elastic deformation of images as described in [Simard2003]_.
+    .. [Simard2003] Simard, Steinkraus and Platt, "Best Practices for
+       Convolutional Neural Networks applied to Visual Document Analysis", in
+       Proc. of the International Conference on Document Analysis and
+       Recognition, 2003.
+    """
+
+    image = np.asarray(image)
+    label = np.asarray(label)
+
+    shape = image.shape
+
+    dx = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+    dy = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+
+    x, y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]), indexing='ij')
+
+    indices = np.reshape(x + dx, (-1, 1)), np.reshape(y + dy, (-1, 1))
+
+    image = map_coordinates(image, indices, order=1, mode='reflect').reshape(shape)
+    label = map_coordinates(label, indices, order=1, mode='reflect').reshape(shape)
+    return Image.fromarray(image), Image.fromarray(label)
+
+
+class ElasticTransform(JointTransform):
+    """Vertically flip the given PIL Image randomly with a given probability.
+
+    Args:
+        p (float): probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, alpha=100, sigma=10):
+        super().__init__()
+        self.alpha = alpha
+        self.sigma = sigma
+
+    def __call__(self, image, label):
+        """
+        Args:
+            img (PIL Image): Image to be flipped.
+
+        Returns:
+            PIL Image: Randomly flipped image.
+        """
+        assert len(image.size) == 2
+        image, label = elastic_transform(image, label, self.alpha, self.sigma)
+
+        return image, label
+
+    def __repr__(self):
+        format_string = self.__class__.__name__ + '(alpha={0}'.format(self.alpha)
+        format_string += ', sigma={0}'.format(self.sigma)
+
+        return format_string
