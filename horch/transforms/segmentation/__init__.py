@@ -592,7 +592,10 @@ class ElasticTransform(JointTransform):
             PIL Image: Randomly flipped image.
         """
         assert len(image.size) == 2
-        image, label = elastic_transform(image, label, self.alpha, self.sigma)
+        alpha = self.alpha
+        if isinstance(alpha, tuple):
+            alpha = random.randint(*alpha)
+        image, label = elastic_transform(image, label, alpha, self.sigma)
 
         return image, label
 
