@@ -2,25 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.detection.enhance import BiFPN
+from horch.models.bifpn2 import BiFPN
 from horch.models.modules import Conv2d, get_activation, Sequential
-
-
-class WeightedFusion(nn.Module):
-    def __init__(self, n):
-        super().__init__()
-        self.weight = nn.Parameter(torch.full((n,), 1.0 / n), requires_grad=True)
-        self.eps = 1e-4
-
-    def forward(self, *xs):
-        n = len(xs)
-        assert n == self.weight.size(0)
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
-        x = 0
-        for i in range(n):
-            x += w[i] * xs[i]
-        return x
 
 
 class SideHead(nn.Module):
@@ -66,7 +49,6 @@ class EED(nn.Module):
         ])
         self.weight = nn.Parameter(
             torch.full((self.num_fpn_layers,), 1.0 / self.num_fpn_layers), requires_grad=True)
-        self.eps = 1e-4
         self.dropout = nn.Dropout2d(drop_rate)
 
     def get_param_groups(self):

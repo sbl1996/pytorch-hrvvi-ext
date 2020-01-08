@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.detection.enhance import BiFPN
+from horch.models.bifpn import BiFPN
 from horch.models.modules import Conv2d
 
 
