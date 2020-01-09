@@ -2,25 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.bifpn import BiFPN
+from horch.models.bifpn import BiFPN, fast_normalize
 from horch.models.modules import Conv2d
-
-
-class WeightedFusion(nn.Module):
-    def __init__(self, n):
-        super().__init__()
-        self.weight = nn.Parameter(torch.full((n,), 1.0 / n), requires_grad=True)
-        self.eps = 1e-4
-
-    def forward(self, *xs):
-        n = len(xs)
-        assert n == self.weight.size(0)
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
-        x = 0
-        for i in range(n):
-            x += w[i] * xs[i]
-        return x
 
 
 class SideHead(nn.Module):
@@ -38,7 +21,8 @@ class SideHead(nn.Module):
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
-        w = torch.softmax(self.weight, dim=0)
+
+        w = fast_normalize(self.weight)
 
         p = w[0] * self.sides[0](cs[0])
         for i in range(1, len(cs)):
@@ -92,7 +76,7 @@ class EED(nn.Module):
 
         ps = [lat(p) for p, lat in zip(ps, self.lats)]
 
-        ws = torch.softmax(self.weights, dim=1)
+        ws = fast_normalize(self.weights, dim=1)
 
         fuses = [ws[0, i] * ps[i] for i in range(self.num_levels)]
         for i, fpn in enumerate(self.fpns):

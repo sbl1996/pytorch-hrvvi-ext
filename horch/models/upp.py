@@ -2,25 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.bifpn import BiFPN
 from horch.models.modules import Conv2d
-
-
-class WeightedFusion(nn.Module):
-    def __init__(self, n):
-        super().__init__()
-        self.weight = nn.Parameter(torch.full((n,), 1.0 / n), requires_grad=True)
-        self.eps = 1e-4
-
-    def forward(self, *xs):
-        n = len(xs)
-        assert n == self.weight.size(0)
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
-        x = 0
-        for i in range(n):
-            x += w[i] * xs[i]
-        return x
 
 
 class Tri2Node(nn.Module):

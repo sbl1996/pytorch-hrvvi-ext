@@ -5,18 +5,22 @@ from torch.nn import functional as F
 from horch.models.modules import Conv2d
 
 
+def fast_normalize(w, eps=1e-4, dim=0):
+    w = torch.relu(w)
+    w = w / (torch.sum(w, dim=dim, keepdim=True) + eps)
+    return w
+
+
 class BottomUpFusion2(nn.Module):
     def __init__(self, f_channels):
         super().__init__()
         self.weight = nn.Parameter(torch.ones((2,)), requires_grad=True)
-        self.eps = 1e-4
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
                            norm_layer='default', activation='default')
 
     def forward(self, p, pp):
         pp = F.max_pool2d(pp, kernel_size=2)
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
+        w = fast_normalize(self.weight)
         p = w[0] * p + w[1] * pp
         p = self.conv(p)
         return p
@@ -26,14 +30,12 @@ class TopDownFusion2(nn.Module):
     def __init__(self, f_channels):
         super().__init__()
         self.weight = nn.Parameter(torch.ones((2,)), requires_grad=True)
-        self.eps = 1e-4
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
                            norm_layer='default', activation='default')
 
     def forward(self, p, pp):
         pp = F.interpolate(pp, scale_factor=2, mode='bilinear', align_corners=False)
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
+        w = fast_normalize(self.weight)
         p = w[0] * p + w[1] * pp
         p = self.conv(p)
         return p
@@ -43,14 +45,12 @@ class BottomUpFusion3(nn.Module):
     def __init__(self, f_channels):
         super().__init__()
         self.weight = nn.Parameter(torch.ones((3,)), requires_grad=True)
-        self.eps = 1e-4
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
                            norm_layer='default', activation='default')
 
     def forward(self, p1, p2, pp):
         pp = F.max_pool2d(pp, kernel_size=2)
-        w = torch.relu(self.weight)
-        w = w / (torch.sum(w, dim=0) + self.eps)
+        w = fast_normalize(self.weight)
         p = w[0] * p1 + w[1] * p2 + w[2] * pp
         p = self.conv(p)
         return p
