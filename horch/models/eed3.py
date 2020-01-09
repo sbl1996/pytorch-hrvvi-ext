@@ -17,7 +17,7 @@ class SideHead(nn.Module):
             )
             for c in side_in_channels
         ])
-        self.weight = nn.Parameter(torch.zeros((len(side_in_channels),)), requires_grad=True)
+        self.weight = nn.Parameter(torch.ones((len(side_in_channels),)), requires_grad=True)
 
     def forward(self, *cs):
         size = cs[0].size()[2:4]
@@ -50,7 +50,7 @@ class EED(nn.Module):
         self.head = SideHead([f_channels] * n)
 
         self.weights = nn.Parameter(
-            torch.zeros((self.num_fpn_layers + 1, self.num_levels)), requires_grad=True)
+            torch.ones((self.num_fpn_layers + 1, self.num_levels)), requires_grad=True)
         self.dropout = nn.Dropout2d(drop_rate)
 
     def get_param_groups(self):
