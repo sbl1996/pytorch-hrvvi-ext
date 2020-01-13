@@ -151,8 +151,6 @@ def f_beta_loss(pred, target, eps=1e-8, beta=1, average='micro'):
 
 
 def dice_loss(pred, target):
-    assert pred.shape == target.shape
-    assert pred.dtype == target.dtype
     dim = dims(pred)
     numerator = 2 * torch.sum(pred * target, dim=dim)
     denominator = torch.sum(pred + target, dim=dim)
