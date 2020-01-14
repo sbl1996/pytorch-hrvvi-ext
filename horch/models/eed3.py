@@ -40,7 +40,7 @@ class EED(nn.Module):
         n = len(in_channels_list)
         self.num_levels = n
         self.lats = nn.ModuleList([
-            Conv2d(c, f_channels, kernel_size=1, norm_layer='default')
+            Conv2d(c, f_channels, kernel_size=1, norm_layer='bn')
             for c in in_channels_list
         ])
         self.fpns = nn.ModuleList([

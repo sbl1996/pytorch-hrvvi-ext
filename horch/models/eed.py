@@ -13,7 +13,7 @@ class SideHead(nn.Module):
         n = len(side_in_channels)
         self.sides = nn.ModuleList([
             nn.Sequential(
-                Conv2d(c, 1, 1, norm_layer='default')
+                Conv2d(c, 1, 1, norm_layer='bn')
             )
             for c in side_in_channels
         ])
