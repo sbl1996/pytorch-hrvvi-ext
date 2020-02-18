@@ -82,7 +82,13 @@ def create_supervised_trainer(
             loss.backward()
         if engine.state.iteration % accumulation_steps == 0:
             if isinstance(optimizer, LBFGS):
-                optimizer.step(lambda: criterion(*tuplify(model(*inputs)), *targets))
+                def closure():
+                    optimizer.zero_grad()
+                    preds = tuplify(model(*inputs))
+                    loss = criterion(*preds, *targets)
+                    loss.backward()
+                    return loss
+                optimizer.step(closure)
             else:
                 optimizer.step()
             optimizer.zero_grad()
@@ -96,7 +102,32 @@ def create_supervised_trainer(
         }
         return outs
 
-    engine = Engine(_update)
+    def _lbfgs_update(engine, batch):
+        set_training(model)
+        inputs, targets = prepare_batch(batch, device=device)
+        preds = tuplify(model(*inputs))
+        loss = criterion(*preds, *targets)
+        def closure():
+            optimizer.zero_grad()
+            preds = tuplify(model(*inputs))
+            loss = criterion(*preds, *targets)
+            loss.backward()
+            return loss
+        optimizer.step(closure)
+        if grad_clip_value:
+            clip_grad_value_(model.parameters(), grad_clip_value)
+        outs = {
+            "target": detach(targets),
+            "loss": loss.item(),
+            "batch_size": inputs[0].size(0),
+            "preds": preds,
+        }
+        return outs
+
+    if isinstance(optimizer, LBFGS):
+        engine = Engine(_lbfgs_update)
+    else:
+        engine = Engine(_update)
     for name, metric in metrics.items():
         metric.attach(engine, name)
 
