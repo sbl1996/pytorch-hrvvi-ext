@@ -7,6 +7,7 @@ from pathlib import Path
 from toolz.curried import get, keyfilter
 
 import torch
+from torch.optim import LBFGS
 
 from ignite.engine import Engine, Events
 from ignite.handlers import Timer
@@ -80,7 +81,10 @@ def create_supervised_trainer(
         else:
             loss.backward()
         if engine.state.iteration % accumulation_steps == 0:
-            optimizer.step()
+            if isinstance(optimizer, LBFGS):
+                optimizer.step(lambda: criterion(*tuplify(model(*inputs)), *targets))
+            else:
+                optimizer.step()
             optimizer.zero_grad()
         if grad_clip_value:
             clip_grad_value_(model.parameters(), grad_clip_value)

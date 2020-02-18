@@ -1,4 +1,7 @@
 import os
+import pickle
+import sys
+import stat
 import json
 from pathlib import Path
 from typing import Callable, Any
@@ -19,6 +22,17 @@ def read_json(fp):
     return data
 
 
+def read_pickle(fp):
+    with open(fp, 'rb') as f:
+        data = pickle.load(f)
+    return data
+
+
+def save_pickle(obj, fp):
+    with open(fp, 'wb') as f:
+        pickle.dump(obj, f)
+
+
 def save_json(fp, obj):
     with open(fp, 'w') as f:
         json.dump(obj, f)
@@ -26,6 +40,23 @@ def save_json(fp, obj):
 
 def fmt_path(fp):
     return Path(fp).expanduser().absolute()
+
+
+def is_hidden(fp):
+    fp = fmt_path(fp)
+    if sys.platform == 'darwin':
+        import Foundation
+        url = Foundation.NSURL.fileURLWithPath_(str(fp))
+        return url.getResourceValue_forKey_error_(None, Foundation.NSURLIsHiddenKey, None)[1]
+    else:
+        return bool(fp.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
+
+
+def eglob(fp, pattern):
+    fp = fmt_path(fp)
+    for f in fp.glob(pattern):
+        if not is_hidden(f):
+            yield f
 
 
 def apply_dir(dir: Path, f: Callable[[Path], Any], suffix=None, recursive=True) -> None:
