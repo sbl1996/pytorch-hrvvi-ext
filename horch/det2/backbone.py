@@ -1,4 +1,5 @@
 import torch.nn as nn
+from detectron2.layers import FrozenBatchNorm2d
 
 from detectron2.modeling import Backbone, ShapeSpec, BACKBONE_REGISTRY
 
@@ -17,7 +18,9 @@ class EfficientDet(Backbone):
         f_channels = cfg.MODEL.BIFPN.F_CHANNELS
         num_fpn_layers = cfg.MODEL.BIFPN.NUM_LAYERS
 
-        self.backbone = EfficientNet(version, feature_levels=(3, 4, 5), pretrained=pretrained)
+        backbone = EfficientNet(version, feature_levels=(3, 4, 5), pretrained=pretrained)
+        self.backbone = FrozenBatchNorm2d.convert_frozen_batchnorm(backbone)
+        self.backbone=  backbone
         out_channels = self.backbone.out_channels
 
         self.fpn1 = FPNExtraLayers(out_channels[-1], extra_layers=(6, 7), f_channels=f_channels)
