@@ -16,7 +16,8 @@ class BottomUpFusion2(nn.Module):
         super().__init__()
         self.weight = nn.Parameter(torch.ones((2,)), requires_grad=True)
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
-                           norm_layer='default', activation='default')
+                           norm_layer='default', activation='default',
+                           depthwise_separable=True)
 
     def forward(self, p, pp):
         pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=True)
@@ -31,7 +32,8 @@ class TopDownFusion2(nn.Module):
         super().__init__()
         self.weight = nn.Parameter(torch.ones((2,)), requires_grad=True)
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
-                           norm_layer='default', activation='default')
+                           norm_layer='default', activation='default',
+                           depthwise_separable=True)
 
     def forward(self, p, pp):
         h, w = p.size()[2:4]
@@ -47,7 +49,7 @@ class BottomUpFusion3(nn.Module):
         super().__init__()
         self.weight = nn.Parameter(torch.ones((3,)), requires_grad=True)
         self.conv = Conv2d(f_channels, f_channels, kernel_size=3,
-                           norm_layer='default', activation='default')
+                           norm_layer='default', activation='default', depthwise_separable=True)
 
     def forward(self, p1, p2, pp):
         pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=True)
