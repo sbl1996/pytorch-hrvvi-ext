@@ -58,12 +58,8 @@ class BottomUpFusion3(nn.Module):
                            norm_layer='default', activation='default', depthwise_separable=True)
 
     def forward(self, p1, p2, pp):
-        print(pp.shape)
         pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=use_ceil_mode(p1, pp))
         w = fast_normalize(self.weight)
-        print(p1.shape)
-        print(p2.shape)
-        print(pp.shape)
         p = w[0] * p1 + w[1] * p2 + w[2] * pp
         p = self.conv(p)
         return p

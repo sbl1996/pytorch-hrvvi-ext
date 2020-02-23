@@ -38,7 +38,6 @@ class EfficientDet(Backbone):
         self._out_strides = [2 ** s for s in range(3, 9)]
 
     def forward(self, x):
-        print(x.shape)
         cs = self.backbone(x)
         ps = cs + self.fpn1(cs[-1])
         for l in self.fpns:
