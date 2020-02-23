@@ -95,7 +95,7 @@ class SVHNDetection(Dataset):
         ann_ids = coco.getAnnIds(imgIds=img_id)
         target = coco.loadAnns(ann_ids)
 
-        path = coco.loadImgs(img_id)[0]['file_name']
+        path = coco.loadImgs([img_id])[0]['file_name']
 
         img = Image.open(self.img_dir / path).convert('RGB')
         if self.transform is not None:

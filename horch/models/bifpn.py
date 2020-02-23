@@ -19,7 +19,7 @@ class BottomUpFusion2(nn.Module):
                            norm_layer='default', activation='default')
 
     def forward(self, p, pp):
-        pp = F.max_pool2d(pp, kernel_size=2)
+        pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=True)
         w = fast_normalize(self.weight)
         p = w[0] * p + w[1] * pp
         p = self.conv(p)
@@ -34,7 +34,8 @@ class TopDownFusion2(nn.Module):
                            norm_layer='default', activation='default')
 
     def forward(self, p, pp):
-        pp = F.interpolate(pp, scale_factor=2, mode='bilinear', align_corners=False)
+        h, w = p.size()[2:4]
+        pp = F.interpolate(pp, (h, w), mode='bilinear', align_corners=False)
         w = fast_normalize(self.weight)
         p = w[0] * p + w[1] * pp
         p = self.conv(p)
@@ -49,7 +50,7 @@ class BottomUpFusion3(nn.Module):
                            norm_layer='default', activation='default')
 
     def forward(self, p1, p2, pp):
-        pp = F.max_pool2d(pp, kernel_size=2)
+        pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=True)
         w = fast_normalize(self.weight)
         p = w[0] * p1 + w[1] * p2 + w[2] * pp
         p = self.conv(p)

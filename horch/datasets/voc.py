@@ -174,7 +174,7 @@ class VOCDetection(Dataset):
         ann_ids = coco.getAnnIds(imgIds=img_id)
         anns = coco.loadAnns(ann_ids)
 
-        path = coco.loadImgs(img_id)[0]['file_name']
+        path = coco.loadImgs([img_id])[0]['file_name']
 
         if get_backend() == 0:
             img = Image.open(self.image_dir / path).convert('RGB')

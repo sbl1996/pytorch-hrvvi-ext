@@ -78,7 +78,7 @@ def find_priors_coco(ds, k=3, max_iter=100, verbose=True):
     coco = COCO(ds.to_coco(), verbose=False)
     bboxes = []
     for img_id, anns in coco.imgToAnns.items():
-        img = coco.loadImgs(img_id)[0]
+        img = coco.loadImgs([img_id])[0]
         height = img['height']
         width = img['width']
         for ann in anns:

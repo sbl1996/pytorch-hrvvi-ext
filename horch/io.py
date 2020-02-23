@@ -3,6 +3,7 @@ import pickle
 import sys
 import stat
 import json
+import shutil
 from pathlib import Path
 from typing import Callable, Any
 
@@ -81,3 +82,8 @@ def rename(fp: Path, new_name: str, stem=True):
         fp.rename(fp.parent / (new_name + fp.suffix))
     else:
         fp.rename(fp.parent / new_name)
+
+def copy(src: Path, dst: Path):
+    src = fmt_path(src)
+    dst = fmt_path(dst)
+    shutil.copy(str(src), str(dst))

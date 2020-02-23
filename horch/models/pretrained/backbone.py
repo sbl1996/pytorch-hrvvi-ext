@@ -312,7 +312,7 @@ class EfficientNet(nn.Module):
             x = self.layer5(x)
             if 5 in self.feature_levels:
                 outs.append(x)
-        return outs
+        return tuple(outs)
 
 
 class ProxylessNAS(nn.Module):

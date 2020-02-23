@@ -36,14 +36,14 @@ class CocoDetection(Dataset):
     def get_image(self, index):
         coco = self.coco
         img_id = self.ids[index]
-        path = coco.loadImgs(img_id)[0]['file_name']
+        path = coco.loadImgs([img_id])[0]['file_name']
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         return img
 
     def get_target(self, index):
         coco = self.coco
         img_id = self.ids[index]
-        ann_ids = coco.getAnnIds(imgIds=img_id)
+        ann_ids = coco.getAnnIds(imgIds=[img_id])
         target = coco.loadAnns(ann_ids)
         return target
 
@@ -56,10 +56,10 @@ class CocoDetection(Dataset):
         """
         coco = self.coco
         img_id = self.ids[index]
-        ann_ids = coco.getAnnIds(imgIds=img_id)
+        ann_ids = coco.getAnnIds(imgIds=[img_id])
         target = coco.loadAnns(ann_ids)
 
-        path = coco.loadImgs(img_id)[0]['file_name']
+        path = coco.loadImgs([img_id])[0]['file_name']
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         if self.transform is not None:
