@@ -44,6 +44,12 @@ class TopDownFusion2(nn.Module):
         return p
 
 
+def use_ceil_mode(xs, xl):
+    ws, hs = xs.size()[2:4]
+    wl, hl = xl.size()[2:4]
+    return (wl / ws < 2) or (hl / hs < 2)
+
+
 class BottomUpFusion3(nn.Module):
     def __init__(self, f_channels):
         super().__init__()
@@ -52,8 +58,12 @@ class BottomUpFusion3(nn.Module):
                            norm_layer='default', activation='default', depthwise_separable=True)
 
     def forward(self, p1, p2, pp):
-        pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=True)
+        print(pp.shape)
+        pp = F.max_pool2d(pp, kernel_size=2, ceil_mode=use_ceil_mode(p1, pp))
         w = fast_normalize(self.weight)
+        print(p1.shape)
+        print(p2.shape)
+        print(pp.shape)
         p = w[0] * p1 + w[1] * p2 + w[2] * pp
         p = self.conv(p)
         return p
