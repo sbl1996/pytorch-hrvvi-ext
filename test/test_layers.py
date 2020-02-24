@@ -1,8 +1,6 @@
 import torch
 
 from horch import cuda
-from horch.nn.psroi_align import PSRoIAlign
-from horch.detection import BBox
 #
 #
 # def test_psroi_align():
