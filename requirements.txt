@@ -13,4 +13,3 @@ pybind11
 sklearn
 opencv-python
 pytorchcv
-detectron2

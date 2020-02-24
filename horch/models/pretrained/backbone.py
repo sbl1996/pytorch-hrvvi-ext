@@ -232,7 +232,7 @@ class EfficientNet(nn.Module):
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
         self.feature_levels = feature_levels
-        name = 'efficientnet_%sb' % version
+        name = 'efficientnet_%sc' % version
         backbone = ptcv_get_model(name, pretrained=pretrained)
         del backbone.output
         features = backbone.features
