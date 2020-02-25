@@ -1,9 +1,11 @@
+import random
 import os
 import json
 from PIL import Image
 from torch.utils.data import Dataset
 
 # https://github.com/pytorch/vision/blob/master/torchvision/datasets/coco.py
+from horch.io import save_json, fmt_path, read_json
 
 
 class CocoDetection(Dataset):
@@ -78,3 +80,50 @@ class CocoDetection(Dataset):
         fmt_str += '{0}{1}\n'.format(
             tmp, self.transform.__repr__().replace('\n', '\n' + ' ' * len(tmp)))
         return fmt_str
+
+
+def extract(ann_file, d, indices, suffix, img_dir=None):
+    sub_d = {
+        k: v
+        for k, v in d.items()
+        if k not in ['images', 'annotations']
+    }
+    images = d['images']
+    sub_images = [images[i] for i in indices]
+    sub_images_ids = set(img['id'] for img in sub_images)
+    sub_annotations = [ann for ann in d['annotations'] if ann['image_id'] in sub_images_ids]
+    sub_d['images'] = sub_images
+    sub_d['annotations'] = sub_annotations
+    save_json(ann_file.parent / (ann_file.stem + "_" + suffix + ".json"), sub_d)
+
+def sample(ann_file, k):
+    ann_file = fmt_path(ann_file)
+
+    d = read_json(ann_file)
+    images = d['images']
+
+    n = len(images)
+    indices = list(range(n))
+    random.shuffle(indices)
+    sub_indices = indices[:k]
+
+    extract(ann_file, d, sub_indices, suffix="sub")
+
+
+def train_test_split(ann_file, test_ratio, seed=0):
+    ann_file = fmt_path(ann_file)
+
+    d = read_json(ann_file)
+
+    n = len(d['images'])
+    n_test = int(n * test_ratio)
+    n_train = n - n_test
+    indices = list(range(n))
+    random.seed(seed)
+    random.shuffle(indices)
+
+    train_indices = indices[:n_train]
+    test_indices = indices[n_train:]
+
+    extract(ann_file, d, train_indices, "train")
+    extract(ann_file, d, test_indices, "test")
