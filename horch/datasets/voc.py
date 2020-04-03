@@ -5,7 +5,6 @@ import os
 import re
 from pathlib import Path
 
-import cv2
 import xmltodict
 from PIL import Image
 from horch.datasets import get_backend
@@ -176,11 +175,7 @@ class VOCDetection(Dataset):
 
         path = coco.loadImgs([img_id])[0]['file_name']
 
-        if get_backend() == 0:
-            img = Image.open(self.image_dir / path).convert('RGB')
-        else:
-            img = cv2.imread(str(self.image_dir / path))
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = Image.open(self.image_dir / path).convert('RGB')
 
         if self.transform is not None:
             img, anns = self.transform(img, anns)

@@ -17,11 +17,6 @@ def write_lines(fp, lines):
     return fp
 
 
-def read_json(fp):
-    with open(fp) as f:
-        data = json.load(f)
-    return data
-
 
 def read_pickle(fp):
     with open(fp, 'rb') as f:
@@ -32,6 +27,11 @@ def read_pickle(fp):
 def save_pickle(obj, fp):
     with open(fp, 'wb') as f:
         pickle.dump(obj, f)
+
+def read_json(fp):
+    with open(fp) as f:
+        data = json.load(f)
+    return data
 
 
 def save_json(fp, obj):

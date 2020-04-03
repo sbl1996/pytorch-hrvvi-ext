@@ -1,5 +1,4 @@
 import os
-import logging
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
@@ -7,15 +6,14 @@ from pathlib import Path
 from toolz.curried import get, keyfilter
 
 import torch
-from torch.optim import LBFGS
 
-from ignite.engine import Engine, Events
+from ignite.engine import Engine, Events, _prepare_batch
 from ignite.handlers import Timer
 from tensorboardX import SummaryWriter
 
-from horch.common import CUDA, detach, tuplify
+from horch.common import CUDA
 from horch.train.metrics import TrainLoss, Loss
-from horch.train._utils import _prepare_batch, set_lr
+from horch.train._utils import set_lr
 from torch.nn.utils import clip_grad_value_
 from torch.utils.data import DataLoader
 from typing import Sequence, Dict
@@ -38,16 +36,12 @@ def create_supervised_evaluator(model, metrics=None,
     def _inference(engine, batch):
         model.eval()
         with torch.no_grad():
-            input, target = prepare_batch(batch, device=device)
-            if hasattr(model, 'inference'):
-                preds = model.inference(*input)
-            else:
-                preds = model(*input)
-            preds = tuplify(preds)
+            x, y_true = prepare_batch(batch, device=device)
+            y_pred = model(x)
             output = {
-                "preds": preds,
-                "target": target,
-                'batch_size': input[0].size(0),
+                "y_pred": y_pred,
+                "y_true": y_true,
+                'batch_size': x[0].size(0),
             }
             return output
 
@@ -71,9 +65,9 @@ def create_supervised_trainer(
 
     def _update(engine, batch):
         set_training(model)
-        inputs, targets = prepare_batch(batch, device=device)
-        preds = tuplify(model(*inputs))
-        loss = criterion(*preds, *targets)
+        x, y_true = prepare_batch(batch, device=device)
+        y_pred = model(x)
+        loss = criterion(y_pred, y_true)
         if fp16:
             from apex import amp
             with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -81,53 +75,19 @@ def create_supervised_trainer(
         else:
             loss.backward()
         if engine.state.iteration % accumulation_steps == 0:
-            if isinstance(optimizer, LBFGS):
-                def closure():
-                    optimizer.zero_grad()
-                    preds = tuplify(model(*inputs))
-                    loss = criterion(*preds, *targets)
-                    loss.backward()
-                    return loss
-                optimizer.step(closure)
-            else:
-                optimizer.step()
+            optimizer.step()
             optimizer.zero_grad()
         if grad_clip_value:
             clip_grad_value_(model.parameters(), grad_clip_value)
         outs = {
-            "target": detach(targets),
+            "y_true": y_true,
             "loss": loss.item(),
-            "batch_size": inputs[0].size(0),
-            "preds": preds,
+            "batch_size": x.size(0),
+            "y_pred": y_pred.detach(),
         }
         return outs
 
-    def _lbfgs_update(engine, batch):
-        set_training(model)
-        inputs, targets = prepare_batch(batch, device=device)
-        preds = tuplify(model(*inputs))
-        loss = criterion(*preds, *targets)
-        def closure():
-            optimizer.zero_grad()
-            preds = tuplify(model(*inputs))
-            loss = criterion(*preds, *targets)
-            loss.backward()
-            return loss
-        optimizer.step(closure)
-        if grad_clip_value:
-            clip_grad_value_(model.parameters(), grad_clip_value)
-        outs = {
-            "target": detach(targets),
-            "loss": loss.item(),
-            "batch_size": inputs[0].size(0),
-            "preds": preds,
-        }
-        return outs
-
-    if isinstance(optimizer, LBFGS):
-        engine = Engine(_lbfgs_update)
-    else:
-        engine = Engine(_update)
+    engine = Engine(_update)
     for name, metric in metrics.items():
         metric.attach(engine, name)
 
@@ -244,7 +204,7 @@ class Trainer:
         self._attach_timer(engine)
 
         engine.add_event_handler(
-            Events.ITERATION_STARTED, self._lr_scheduler_step, lr_step_on_iter)
+            Events.ITERATION_COMPLETED, self._lr_scheduler_step, lr_step_on_iter)
 
         engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
 
@@ -485,6 +445,7 @@ class ValSets:
     def log_results(self):
         for v in self.vals:
             v.log_results()
+
 
 def print_lr(trainer):
     trainer._print(trainer.optimizer.param_groups[0]['lr'])

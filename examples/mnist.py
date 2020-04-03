@@ -1,9 +1,7 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from torch.utils.data import DataLoader
-from torch.optim import Adam, SGD
+from torch.optim import SGD
 
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad
@@ -12,7 +10,8 @@ from horch.datasets import train_test_split
 from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.models.utils import summary
 from horch.train import Trainer, Save
-from horch.train.metrics import Accuracy, TrainLoss
+from horch.train.metrics import TrainLoss
+from horch.train.metrics.classification import Accuracy
 
 
 class LeNet5(nn.Module):
@@ -88,7 +87,7 @@ summary(net, (1, 32, 32))
 
 # Define batch size
 
-train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2, pin_memory=True)
+train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=0, pin_memory=True)
 test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
