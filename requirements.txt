@@ -2,7 +2,6 @@ torch
 torchvision
 numpy
 bidict
-nltk
 toolz
 pytorch-ignite
 Pillow>5.0.0
@@ -11,5 +10,4 @@ googledrivedownloader
 tensorboardX
 pybind11
 sklearn
-opencv-python
 pytorchcv

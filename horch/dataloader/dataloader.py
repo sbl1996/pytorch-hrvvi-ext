@@ -988,7 +988,6 @@ class _MultiProcessingDataLoaderIter(_BaseDataLoaderIter):
                 for q in self._index_queues:
                     q.cancel_join_thread()
                     q.close()
-                print("consumer close")
                 self._zmq_consumer_socket.close()
             finally:
                 # Even though all this function does is putting into queues that

@@ -174,5 +174,4 @@ def _worker_loop(dataset_kind, dataset, index_queue, data_queue, consumer_port, 
     if done_event.is_set():
         data_queue.cancel_join_thread()
         data_queue.close()
-        print("Producer close")
         socket.close()

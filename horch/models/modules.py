@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import tuplify
-from horch.models.defaults import get_default_activation, get_default_norm_layer
+from horch.models.defaults import get_default, get_default_activation, get_default_norm_layer
 
 
 def hardsigmoid(x, inplace=False):
@@ -85,15 +85,16 @@ def get_groups(channels, ref=32):
     return channels // c
 
 
-def get_norm_layer(name, channels):
+def get_norm_layer(channels, name='default'):
+    assert channels is not None and isinstance(channels, int)
     if isinstance(name, nn.Module):
         return name
     elif hasattr(name, '__call__'):
         return name(channels)
     elif name == 'default':
-        return get_norm_layer(get_default_norm_layer(), channels)
+        return get_norm_layer(channels, get_default_norm_layer())
     elif name == 'bn':
-        return nn.BatchNorm2d(channels)
+        return nn.BatchNorm2d(channels, **get_default('bn'))
     elif name == 'gn':
         num_groups = get_groups(channels, 32)
         return nn.GroupNorm(num_groups, channels)
@@ -101,25 +102,25 @@ def get_norm_layer(name, channels):
         raise NotImplementedError("No normalization named %s" % name)
 
 
-def get_activation(name):
+def get_activation(name='default'):
     if isinstance(name, nn.Module):
         return name
     if name == 'default':
         return get_activation(get_default_activation())
     elif name == 'relu':
-        return nn.ReLU(inplace=True)
+        return nn.ReLU(**get_default('relu'))
     elif name == 'relu6':
-        return nn.ReLU6(inplace=True)
+        return nn.ReLU6(**get_default('relu6'))
     elif name == 'leaky_relu':
-        return nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        return nn.LeakyReLU(**get_default('leaky_relu'))
     elif name == 'sigmoid':
         return nn.Sigmoid()
     elif name == 'hswish':
-        return HardSwish(inplace=True)
+        return HardSwish(**get_default('hswish'))
     elif name == 'swish':
         return Swish()
     else:
-        raise NotImplementedError("No activation named %s" % name)
+        raise NotImplementedError("Activation not implemented: %s" % name)
 
 
 def PreConv2d(in_channels, out_channels,
@@ -162,7 +163,7 @@ def Conv2d(in_channels, out_channels,
             pw = (kw - 1) // 2
             padding = (ph, pw)
         else:
-            padding = (kernel_size - 1) // 2
+            padding = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
     layers = []
     if bias is None:
         bias = norm_layer is None
@@ -192,7 +193,7 @@ def Conv2d(in_channels, out_channels,
     if norm_layer is not None:
         if norm_layer == 'default':
             norm_layer = get_default_norm_layer()
-        layers.append(get_norm_layer(norm_layer, out_channels))
+        layers.append(get_norm_layer(out_channels, norm_layer))
     if activation is not None:
         layers.append(get_activation(activation))
     layers = [conv] + layers

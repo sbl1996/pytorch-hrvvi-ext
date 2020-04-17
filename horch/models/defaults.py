@@ -1,22 +1,63 @@
-__ACTIVATION__ = 'relu'
-__NORM_LAYER__ = 'bn'
+DEFAULTS = {
+    'bn': {
+        'momentum': 0.9,
+        'eps': 1e-5,
+        'affine': True,
+    },
+    'norm_layer': 'bn',
+    'activation': 'relu',
+    'relu': {
+        'inplace': True,
+    },
+    'relu6': {
+        'inplace': True,
+    },
+    'leaky_relu': {
+        'negative_slope': 0.1,
+        'inplace': True,
+    },
+    'hswish': {
+        'inplace': True,
+    }
+}
+
+
+def set_default(keys, value):
+    if isinstance(keys, str):
+        keys = [keys]
+    global DEFAULTS
+    d = DEFAULTS
+    for k in keys[:-1]:
+        assert k in d
+        d = d[k]
+    k = keys[-1]
+    assert k in d
+    d[k] = value
+
+
+def get_default(keys):
+    if isinstance(keys, str):
+        keys = [keys]
+    global DEFAULTS
+    d = DEFAULTS
+    for k in keys:
+        d = d.get(k)
+        if d is None:
+            return d
+    return d
 
 
 def get_default_activation():
-    global __ACTIVATION__
-    return __ACTIVATION__
+    return get_default('activation')
 
 
 def set_default_activation(name):
-    global __ACTIVATION__
-    __ACTIVATION__ = name
+    set_default('activation', name)
 
 
 def get_default_norm_layer():
-    global __NORM_LAYER__
-    return __NORM_LAYER__
+    return get_default('norm_layer')
 
 
 def set_default_norm_layer(name):
-    global __NORM_LAYER__
-    __NORM_LAYER__ = name
+    set_default('norm_layer', name)

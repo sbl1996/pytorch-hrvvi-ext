@@ -143,3 +143,15 @@ def batchify(ds, batch_size):
         batch = [ds[j] for j in range(start, end)]
         yield batch
 
+
+class CombineDataset(Dataset):
+
+    def __init__(self, *datasets):
+        self.datasets = datasets
+        assert len(set(len(ds) for ds in datasets)) == 1, "All datasets must be of the same length"
+
+    def __len__(self):
+        return len(self.datasets[0])
+
+    def __getitem__(self, idx):
+        return tuple(ds[idx] for ds in self.datasets)
