@@ -129,7 +129,6 @@ class DARTSTrainer:
             "acc": Accuracy(self._output_transform),
         }
         self.save_path = save_path
-        self._trainer_path = os.path.join(self.save_path, "trainer")
         self._log_path = os.path.join(self.save_path, "runs")
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
@@ -147,7 +146,7 @@ class DARTSTrainer:
                 'lr_scheduler': self.lr_scheduler}
 
     def resume(self):
-        d = Path(self._trainer_path)
+        d = Path(self.save_path)
         pattern = "%checkpoint_*.pth"
         saves = list(d.glob(pattern))
         if len(saves) == 0:
