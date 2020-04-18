@@ -147,7 +147,7 @@ class DARTSTrainer:
 
     def resume(self):
         d = Path(self.save_path)
-        pattern = "%checkpoint_*.pth"
+        pattern = "checkpoint_*.pth"
         saves = list(d.glob(pattern))
         if len(saves) == 0:
             raise FileNotFoundError("No checkpoint to load in %s" % (self.save_path))
