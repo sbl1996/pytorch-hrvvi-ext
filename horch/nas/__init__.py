@@ -123,12 +123,10 @@ class DARTSTrainer:
         self.metrics = metrics or {
             "loss": TrainLoss(),
             "acc": Accuracy(self._output_transform),
-            "acc5": TopKCategoricalAccuracy(5, self._output_transform),
         }
         self.test_metrics = test_metrics or {
             "loss": Loss(self.criterion, self._output_transform),
             "acc": Accuracy(self._output_transform),
-            "acc5": TopKCategoricalAccuracy(5, self._output_transform),
         }
         self.save_path = save_path
         self._trainer_path = os.path.join(self.save_path, "trainer")
@@ -188,7 +186,7 @@ class DARTSTrainer:
             self.train_engine.run(train_loader, epochs)
             for e in fit_events:
                 e.remove()
-        except InterruptedError as e:
+        except KeyboardInterrupt as e:
             for e in fit_events:
                 e.remove()
             raise e
