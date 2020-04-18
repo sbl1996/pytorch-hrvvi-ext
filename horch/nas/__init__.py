@@ -127,10 +127,12 @@ class DARTSTrainer:
             "acc": Accuracy(self._output_transform),
             "acc5": TopKCategoricalAccuracy(5, self._output_transform),
         }
-        self.save_path = os.path.join(save_path, 'trainer')
+        self.save_path = save_path
+        self._trainer_path = os.path.join(self.save_path, "trainer")
+        self._log_path = os.path.join(self.save_path, "runs")
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        log_dir = os.path.join(save_path, 'runs', current_time)
+        log_dir = os.path.join(self._log_path, current_time)
         self.writer = SummaryWriter(log_dir)
 
         self.train_engine = self._create_train_engine()
@@ -142,7 +144,7 @@ class DARTSTrainer:
                 'lr_scheduler': self.lr_scheduler}
 
     def resume(self):
-        d = Path(self.save_path)
+        d = Path(self._trainer_path)
         pattern = "%checkpoint_*.pth"
         saves = list(d.glob(pattern))
         if len(saves) == 0:
