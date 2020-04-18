@@ -7,16 +7,8 @@ I will call it `horch` below because of `import horch`.
 # Install
 
 ```bash
-pip install pybind11
-
 # Install with no extras
 pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git
-
-# Install with extras if you want to use these provided datasets
-pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git#egg=pytorch-hrvvi-ext[coco]
-
-# Install unstable version with latest features
-pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git@gluon#egg=pytorch-hrvvi-ext[coco]
 ```
 
 
@@ -29,35 +21,6 @@ pip install -U git+https://github.com/sbl1996/pytorch-hrvvi-ext.git@gluon#egg=py
 - Automatic gpu support like Keras
 - Metric for both CV and NLP (Loss, Accuracy, Top-K Accuracy, mAP, BLEU)
 - Checkpoints of the whole trainer by epochs or metrics
-
-### Models
-
-#### Backbone
-- MobileNetV2
-- ShuffleNetV2
-- SqueezeNet
-- SNet
-- Darknet53
-- ResNet
-
-#### FPN
-- FPN (standard)
-- FPN2 (bottom up)
-- stacked_fpn (alternant top down and bottom up)
-- ContextEnhance (N->1)
-
-#### Head
-- SSDHead
-- RetinaHead
-- SharedDWConvHead
-
-#### Model
-- SSD (SSDHead + extra layers)
-
-### Others
-- train_test_split: Split a dataset to a train set and a test set with different (or same) transforms
-- init_weights: Initialize weights of your model in the right and easy way
-- Fullset: Transform your dataset to `horch` style dataset
 
 # Examples
 
@@ -81,7 +44,7 @@ from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.models.utils import summary
 from horch.models.cifar.efficientnet import efficientnet_b0
 from horch.train import Trainer, Save
-from horch.train.metrics.__init__ import  TrainLoss
+from horch.train.metrics import  TrainLoss
 from horch.train.metrics.classification import Accuracy
 from horch.transforms.ext import Cutout, CIFAR10Policy
 
