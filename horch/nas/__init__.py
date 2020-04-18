@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -9,12 +9,11 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-
 from horch.common import CUDA
 
 from horch.train.metrics import TrainLoss
 from ignite.engine import Engine, Events
-from ignite.handlers import Timer, Checkpoint, DiskSaver
+from ignite.handlers import Checkpoint, DiskSaver
 from ignite.metrics import Accuracy, TopKCategoricalAccuracy, Loss
 from ignite.utils import convert_tensor
 
@@ -32,7 +31,6 @@ def _prepare_batch(batch, device=None):
         x = convert_tensor(x, device=device)
         y = convert_tensor(y, device=device)
         return x, y
-
 
 
 def create_darts_trainer(
@@ -103,7 +101,8 @@ def create_darts_evaluator(model, metrics, device):
 
 @curry
 def log_metrics(engine, stage):
-    log_str = "%s: %s %d - " % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), stage, engine.state.iteration)
+    log_str = "%s: %s %d - " % (
+    datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"), stage, engine.state.epoch)
     log_str += ", ".join(["%s: %.4f" % (k, v) for k, v in engine.state.metrics.items()])
     print(log_str)
 
@@ -112,6 +111,8 @@ class DARTSTrainer:
 
     def __init__(self, model, criterion, optimizer_model, optimizer_arch, lr_scheduler,
                  metrics=None, test_metrics=None, save_path="checkpoints", device=None):
+        self.checkpoint_handler = Checkpoint(self.to_save(),
+                                             DiskSaver(self.save_path, create_dir=True, require_empty=False))
         self.device = device or ('cuda' if CUDA else 'cpu')
         model.to(self.device)
 
@@ -174,14 +175,20 @@ class DARTSTrainer:
 
     def fit(self, train_loader, epochs, val_loader, save_every=5000):
 
-        self.checkpoint_handler = Checkpoint(self.to_save(), DiskSaver(self.save_path, create_dir=True, require_empty=False))
-        self.train_engine.add_event_handler(Events.ITERATION_COMPLETED(every=save_every), self.checkpoint_handler)
+        fit_events = [
+            self.train_engine.add_event_handler(
+                Events.ITERATION_COMPLETED(every=save_every), self.checkpoint_handler),
+            self.train_engine.add_event_handler(
+                Events.EPOCH_COMPLETED, lambda _: self.eval_engine.run(val_loader)),
+            self.train_engine.add_event_handler(
+                Events.EPOCH_STARTED,
+                lambda engine: print("Epoch %d, lr %f" % (engine.state.epoch, self.lr_scheduler.get_last_lr()[0])))]
 
-        self.train_engine.add_event_handler(
-            Events.EPOCH_COMPLETED, lambda _: self.eval_engine.run(val_loader))
-
-        self.train_engine.add_event_handler(
-            Events.EPOCH_STARTED, lambda engine: print("Epoch %d, lr %f" % (engine.state.epoch, self.lr_scheduler.get_last_lr()[0]))
-        )
-
-        self.train_engine.run(train_loader, epochs)
+        try:
+            self.train_engine.run(train_loader, epochs)
+            for e in fit_events:
+                e.remove()
+        except InterruptedError as e:
+            for e in fit_events:
+                e.remove()
+            raise e
