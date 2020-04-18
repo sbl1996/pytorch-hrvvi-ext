@@ -111,8 +111,6 @@ class DARTSTrainer:
 
     def __init__(self, model, criterion, optimizer_model, optimizer_arch, lr_scheduler,
                  metrics=None, test_metrics=None, save_path="checkpoints", device=None):
-        self.checkpoint_handler = Checkpoint(self.to_save(),
-                                             DiskSaver(self.save_path, create_dir=True, require_empty=False))
         self.device = device or ('cuda' if CUDA else 'cpu')
         model.to(self.device)
 
@@ -142,6 +140,8 @@ class DARTSTrainer:
 
         self.train_engine = self._create_train_engine()
         self.eval_engine = self._create_eval_engine()
+        self.checkpoint_handler = Checkpoint(self.to_save(),
+                                             DiskSaver(self.save_path, create_dir=True, require_empty=False))
 
     def to_save(self):
         return {'train_engine': self.train_engine, 'eval_engine': self.eval_engine,
