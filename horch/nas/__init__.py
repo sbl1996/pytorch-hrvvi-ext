@@ -101,8 +101,8 @@ def create_darts_evaluator(model, metrics, device):
 
 @curry
 def log_metrics(engine, stage):
-    log_str = "%s: %s %d - " % (
-    datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"), stage, engine.state.epoch)
+    log_str = "%s: %s - " % (
+        datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"), stage)
     log_str += ", ".join(["%s: %.4f" % (k, v) for k, v in engine.state.metrics.items()])
     print(log_str)
 
@@ -173,7 +173,7 @@ class DARTSTrainer:
             Events.EPOCH_COMPLETED, log_metrics(stage='valid'))
         return engine
 
-    def fit(self, train_loader, epochs, val_loader, save_every=5000):
+    def fit(self, train_loader, epochs=None, val_loader=None, save_every=5000):
 
         fit_events = [
             self.train_engine.add_event_handler(
