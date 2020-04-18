@@ -87,7 +87,11 @@ def create_darts_evaluator(model, metrics, device):
         with torch.no_grad():
             output = model(input)
 
-        return output, target
+        return {
+            "batch_size": input.size(0),
+            "y": target,
+            "y_pred": output,
+        }
 
     engine = Engine(step)
 
