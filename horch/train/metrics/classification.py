@@ -87,6 +87,8 @@ class ROCAUC(Metric):
 
 class EpochSummary(Metric):
 
+    _required_output_keys = ["y_pred", "y_true"]
+
     def __init__(self, metric_func):
         super().__init__()
         self.metric_func = metric_func
@@ -96,7 +98,7 @@ class EpochSummary(Metric):
         self.y_trues = []
 
     def update(self, output):
-        y_pred, y_true = get(["y_pred", "y_true"], output)
+        y_pred, y_true = output
         self.y_preds.append(y_pred)
         self.y_trues.append(y_true)
 
