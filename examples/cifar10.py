@@ -1,22 +1,20 @@
-from multiprocessing.context import SpawnContext
-
+import torch
 import torch.nn as nn
-
-from torch.utils.data import DataLoader
 from torch.optim import SGD
 
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
 
+from horch.dataloader.dataloader import DataLoader
 from horch.datasets import train_test_split
 from horch.train.lr_scheduler import CosineAnnealingLR
-from horch.models.utils import summary
 from horch.models.cifar.efficientnet import efficientnet_b0
 from horch.train import Trainer, Save
 from horch.train.metrics import TrainLoss
 from horch.train.metrics.classification import Accuracy
-from horch.train.trainer import print_lr
 from horch.transforms.ext import Cutout, CIFAR10Policy
+
+torch.backends.cudnn.benchmark = True
 
 train_transform = Compose([
     RandomCrop(32, padding=4, fill=128),
@@ -59,13 +57,11 @@ trainer = Trainer(net, criterion, optimizer, lr_scheduler,
 
 # summary(net, (3, 32, 32))
 
-train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2,
-                          pin_memory=True, multiprocessing_context=SpawnContext())
+train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2)
 test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
 trainer.fit(train_loader, 630, val_loader=val_loader,
-            save=Save.ByMetric("-val_loss", patience=600),
-            callbacks=[print_lr])
+            save=Save.ByMetric("-val_loss", patience=600))
 
 trainer.evaluate(test_loader)
