@@ -83,3 +83,24 @@ class ROCAUC(Metric):
         y_score = F.softmax(y_pred, dim=1)[:, 1].cpu().numpy()
         y_true = y_true.cpu().numpy()
         return roc_auc_score(y_true, y_score)
+
+
+class EpochSummary(Metric):
+
+    def __init__(self, metric_func):
+        super().__init__()
+        self.metric_func = metric_func
+
+    def reset(self):
+        self.y_preds = []
+        self.y_trues = []
+
+    def update(self, output):
+        y_pred, y_true = get(["y_pred", "y_true"], output)
+        self.y_preds.append(y_pred)
+        self.y_trues.append(y_true)
+
+    def compute(self):
+        y_pred = torch.cat(self.y_preds, dim=0)
+        y_true = torch.cat(self.y_trues, dim=0)
+        return self.metric_func(y_pred, y_true)

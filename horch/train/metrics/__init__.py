@@ -56,24 +56,3 @@ class Loss(Average):
         y_pred, y_true, batch_size = get(["y_pred", "y_true", "batch_size"], output)
         loss = self.criterion(y_pred, y_true).item()
         return loss, batch_size
-
-
-class EpochSummary(Metric):
-
-    def __init__(self, metric_func):
-        super().__init__()
-        self.metric_func = metric_func
-
-    def reset(self):
-        self.preds = []
-        self.targets = []
-
-    def update(self, output):
-        preds, target = get(["preds", "target"], output)
-        self.preds.append(preds[0])
-        self.targets.append(target[0])
-
-    def compute(self):
-        preds = torch.cat(self.preds, dim=0)
-        targets = torch.cat(self.targets, dim=0)
-        return self.metric_func(preds, targets)
