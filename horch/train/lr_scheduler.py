@@ -695,7 +695,7 @@ class CosineAnnealingLR(_LRScheduler):
         else:
             return [ self.eta_min for _ in self.base_lrs ]
 
-    def _get_closed_form_lr(self):
-        return [self.eta_min + (base_lr - self.eta_min) *
-                (1 + math.cos(math.pi * self.last_epoch / self.T_max)) / 2
-                for base_lr in self.base_lrs]
+    # def _get_closed_form_lr(self):
+    #     return [self.eta_min + (base_lr - self.eta_min) *
+    #             (1 + math.cos(math.pi * self.last_epoch / self.T_max)) / 2
+    #             for base_lr in self.base_lrs]

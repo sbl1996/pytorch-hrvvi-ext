@@ -1,5 +1,6 @@
 import torch.nn as nn
 from torch.optim import SGD
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad
@@ -11,6 +12,7 @@ from horch.train import Trainer, manual_seed
 from horch.train.lr_scheduler import CosineAnnealingLR
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
+from horch.train.trainer import print_lr
 
 manual_seed(0)
 
@@ -56,8 +58,8 @@ ds_test = train_test_split(ds_test, test_ratio=0.1, random=True)[1]
 net = LeNet5()
 criterion = nn.CrossEntropyLoss()
 optimizer = SGD(net.parameters(), lr=0.05, momentum=0.9, weight_decay=1e-4, nesterov=True)
-lr_scheduler = CosineAnnealingLR(optimizer, T_max=10, eta_min=0.001)
-
+# lr_scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=0.001, warmup=5, warmup_eta_min=0.01)
+lr_scheduler = MultiStepLR(optimizer, milestones=[20, 30], gamma=0.1)
 metrics = {
     'loss': TrainLoss(),
     'acc': Accuracy(),
@@ -77,6 +79,6 @@ train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2,
 test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
-trainer.fit(train_loader, 10, val_loader=val_loader)
+trainer.fit(train_loader, 35, val_loader=val_loader, callbacks=[print_lr])
 
 trainer.evaluate(test_loader)

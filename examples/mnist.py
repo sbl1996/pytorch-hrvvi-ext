@@ -11,6 +11,7 @@ from horch.models.utils import summary
 from horch.train import Trainer, Save
 from horch.train.metrics import TrainLoss
 from horch.train.metrics.classification import Accuracy
+from horch.train.trainer import print_lr
 
 
 class LeNet5(nn.Module):
@@ -92,7 +93,7 @@ val_loader = DataLoader(ds_val, batch_size=128)
 
 # Train
 
-trainer.fit(train_loader, 70, val_loader=val_loader, save=Save.ByMetric('-val_loss', patience=50))
+trainer.fit(train_loader, 70, val_loader=val_loader, callbacks=[print_lr])
 
 # Evaluate
 
