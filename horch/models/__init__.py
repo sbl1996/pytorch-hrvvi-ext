@@ -1,1 +1,10 @@
-from horch.models.defaults import get_default, set_default, get_default_activation, get_default_norm_layer
+from horch.config import cfg
+
+
+def get_default_activation():
+    return cfg.activation
+
+
+def get_default_norm_layer():
+    return cfg.norm_layer
+

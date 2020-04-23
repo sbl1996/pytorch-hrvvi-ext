@@ -11,3 +11,4 @@ tensorboardX
 pybind11
 sklearn
 pytorchcv
+yacs

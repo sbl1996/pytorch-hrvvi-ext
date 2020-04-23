@@ -1,14 +1,13 @@
-from typing import Sequence
-
-import torch
-from horch import ProtectedSeq
-from horch.train.trainer import Trainer, ValSet
-from horch.train.gan import GANTrainer
-from horch.transforms.detection import BoxList
+import random
+import numpy as np
 
 from toolz import curry
+
+import torch
 import torch.nn as nn
-from torch.utils.data.dataloader import default_collate
+
+from horch.train.gan import GANTrainer
+from horch.train.trainer import Trainer, ValSet
 
 
 @curry
@@ -20,27 +19,7 @@ def init_weights(m, a=0, nonlinearity='leaky_relu', mode='fan_in'):
                 m.weight, a=a, mode=mode, nonlinearity=nonlinearity)
 
 
-def misc_collate(batch):
-    input, target = zip(*batch)
-    if torch.is_tensor(input[0]):
-        input = default_collate(input)
-    else:
-        if any([torch.is_tensor(t) for t in input[0]]):
-            input = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*input)]
-        else:
-            input = ProtectedSeq(input)
-    if torch.is_tensor(target[0]):
-        target = default_collate(target)
-    elif isinstance(target[0], BoxList):
-        target = ProtectedSeq(target)
-    elif isinstance(target[0], Sequence):
-        if len(target[0]) == 0:
-            target = []
-        else:
-            if any([torch.is_tensor(t) for t in target[0]]):
-                target = [default_collate(t) if torch.is_tensor(t[0]) else t for t in zip(*target)]
-            else:
-                target = ProtectedSeq(target)
-    else:
-        target = ProtectedSeq(target)
-    return input, target
+def manual_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.random.manual_seed(seed)

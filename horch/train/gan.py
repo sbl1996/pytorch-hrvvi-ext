@@ -1,27 +1,22 @@
-import os
 import datetime
 import re
 from collections import defaultdict
 from pathlib import Path
 
-from toolz.curried import get, identity, curry, keyfilter
-
 import numpy as np
-
 import torch
-import torch.nn as nn
-
+from toolz.curried import get, curry
 from torchvision.utils import make_grid
 
 from ignite.engine import Events
-from ignite.handlers import Timer, ModelCheckpoint
+from ignite.handlers import Timer
 
 from horch.common import CUDA
-from horch.ops import one_hot
 from horch.models.utils import unfreeze, freeze
+from horch.ops import one_hot
+from horch.train._utils import _prepare_batch, to_device
 from horch.train.engine import Engine
-from horch.train.trainer import _trainer_callback_wrap, _terminate_on_iterations
-from horch.train._utils import _prepare_batch, set_lr, send_weixin, cancel_event, to_device
+from horch.train.trainer import _trainer_callback_wrap
 
 
 def create_gan_trainer(

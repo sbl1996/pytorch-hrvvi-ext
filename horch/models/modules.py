@@ -5,7 +5,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.common import tuplify
-from horch.models.defaults import get_default, get_default_activation, get_default_norm_layer
+from horch.models import get_default_activation, get_default_norm_layer
+from horch.config import cfg
 
 
 def hardsigmoid(x, inplace=False):
@@ -94,7 +95,7 @@ def get_norm_layer(channels, name='default'):
     elif name == 'default':
         return get_norm_layer(channels, get_default_norm_layer())
     elif name == 'bn':
-        return nn.BatchNorm2d(channels, **get_default('bn'))
+        return nn.BatchNorm2d(channels, **cfg.bn)
     elif name == 'gn':
         num_groups = get_groups(channels, 32)
         return nn.GroupNorm(num_groups, channels)
@@ -108,15 +109,15 @@ def get_activation(name='default'):
     if name == 'default':
         return get_activation(get_default_activation())
     elif name == 'relu':
-        return nn.ReLU(**get_default('relu'))
+        return nn.ReLU(**cfg.relu)
     elif name == 'relu6':
-        return nn.ReLU6(**get_default('relu6'))
+        return nn.ReLU6(**cfg.relu6)
     elif name == 'leaky_relu':
-        return nn.LeakyReLU(**get_default('leaky_relu'))
+        return nn.LeakyReLU(**cfg.leaky_relu)
     elif name == 'sigmoid':
         return nn.Sigmoid()
     elif name == 'hswish':
-        return HardSwish(**get_default('hswish'))
+        return HardSwish(**cfg.hswish)
     elif name == 'swish':
         return Swish()
     else:
@@ -265,7 +266,7 @@ def DWConv2d(in_channels, out_channels,
 
 
 class Sequential(nn.Sequential):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **_kwargs):
         super().__init__(*args)
 
     def forward(self, *xs):
@@ -275,7 +276,7 @@ class Sequential(nn.Sequential):
 
 
 class Identity(nn.Module):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *_args, **_kwargs):
         super().__init__()
 
     def forward(self, x):
@@ -304,7 +305,7 @@ class L2Norm(nn.Module):
         self.n_channels = n_channels
         self.gamma = scale
         self.eps = 1e-10
-        self.weight = nn.Parameter(torch.zeros(self.n_channels, dtype=torch.float32))
+        self.weight = nn.Parameter(torch.zeros(self.n_channels, dtype=torch.float32), requires_grad=True)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -330,7 +331,7 @@ class SelfAttention(nn.Module):
 
         self.conv_attn = Conv2d(in_channels // 2, in_channels, kernel_size=1)
 
-        self.sigma = nn.Parameter(torch.zeros(1))
+        self.sigma = nn.Parameter(torch.zeros(1), requires_grad=True)
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -364,7 +365,7 @@ class SelfAttention2(nn.Module):
         self.conv_phi = Conv2d(in_channels, channels, kernel_size=1)
         self.conv_g = Conv2d(in_channels, channels, kernel_size=1)
         self.conv_attn = Conv2d(channels, in_channels, kernel_size=1)
-        self.sigma = nn.Parameter(torch.zeros(1))
+        self.sigma = nn.Parameter(torch.zeros(1), requires_grad=True)
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -403,6 +404,7 @@ class ConditionalBatchNorm2d(nn.Module):
         gamma, beta = self.embed(y).chunk(2, 1)
         out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
         return out
+
 
 class SharedConditionalBatchNorm2d(nn.Module):
 

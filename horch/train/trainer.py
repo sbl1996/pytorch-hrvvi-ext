@@ -6,16 +6,15 @@ from pathlib import Path
 from toolz.curried import get, keyfilter
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
+from torch.nn.utils import clip_grad_value_
+from torch.utils.data import DataLoader
 
 from ignite.engine import Engine, Events, _prepare_batch
 from ignite.handlers import Timer
-from tensorboardX import SummaryWriter
 
 from horch.common import CUDA
 from horch.train.metrics import TrainLoss, Loss
-from horch.train._utils import set_lr
-from torch.nn.utils import clip_grad_value_
-from torch.utils.data import DataLoader
 from typing import Sequence, Dict
 
 
@@ -94,11 +93,6 @@ def create_supervised_trainer(
     return engine
 
 
-def _terminate_on_iterations(engine, iterations):
-    if engine.state.iteration == iterations:
-        engine.terminate()
-
-
 def _evaluate(engine, evaluator, val_loader, per_epochs):
     if engine.state.epoch % per_epochs == 0:
         evaluator.run(val_loader)
@@ -145,7 +139,7 @@ class Trainer:
 
     def _log_epochs(self, engine, epochs):
         self._print("Epoch %d/%d" %
-              (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
+                    (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine, on_iter=False):
         data_loader = engine.state.dataloader
@@ -195,7 +189,8 @@ class Trainer:
             self.metric_history["val_" + name].append(val)
         self._print(msg)
 
-    def fit(self, train_loader, epochs=1, val_loader=None, save=None, iterations=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False, accumulation_steps=1):
+    def fit(self, train_loader, epochs=1, val_loader=None, eval_freq=1, save=None, callbacks=(), grad_clip_value=None,
+            accumulation_steps=1, lr_step_on_iter=False):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
@@ -209,20 +204,16 @@ class Trainer:
         engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
 
         if val_loader is not None:
-            if isinstance(val_loader, tuple):
-                val_loader, eval_per_epochs = val_loader
-            else:
-                eval_per_epochs = 1
             evaluator = create_supervised_evaluator(
                 self.model, self.test_metrics, self.device)
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, _evaluate, evaluator, val_loader, eval_per_epochs)
+                Events.EPOCH_COMPLETED, _evaluate, evaluator, val_loader, eval_freq)
 
         engine.add_event_handler(Events.EPOCH_COMPLETED, self._increment_epoch)
         engine.add_event_handler(Events.EPOCH_COMPLETED, self._log_results)
         if val_loader is not None:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, self._log_val_results, evaluator, eval_per_epochs)
+                Events.EPOCH_COMPLETED, self._log_val_results, evaluator, eval_freq)
 
         # Set checkpoint
         if save:
@@ -233,11 +224,6 @@ class Trainer:
         for callback in callbacks:
             engine.add_event_handler(
                 Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
-
-        if iterations:
-            engine.add_event_handler(
-                Events.ITERATION_COMPLETED, _terminate_on_iterations, iterations)
-            epochs = 1000
 
         # Run
         engine.run(train_loader, epochs)
@@ -247,46 +233,6 @@ class Trainer:
                 for metric, hist in self.metric_history.items()}
         if val_loader is None:
             hist = keyfilter(lambda k: not k.startswith("val_"), hist)
-        return hist
-
-    def fit1(self, train_loader, epochs, validate=None, save=None, callbacks=(), grad_clip_value=None, lr_step_on_iter=False):
-        validate = ValSet.parse(validate, self)
-
-        engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, grad_clip_value=grad_clip_value)
-        self._attach_timer(engine)
-
-        engine.add_event_handler(
-            Events.EPOCH_STARTED, self._log_epochs, epochs)
-        engine.add_event_handler(
-            Events.ITERATION_STARTED, self._lr_scheduler_step, lr_step_on_iter)
-
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, self._increment_epoch)
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, self._log_results)
-
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, _trainer_callback_wrap(validate.evaluate))
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, _trainer_callback_wrap(validate.log_results))
-
-        # Set checkpoint
-        if save:
-            checkpoint_handler = save.parse(self)
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
-
-        for callback in callbacks:
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
-
-        engine.run(train_loader, epochs)
-
-        # Return history
-        hist = {metric: hist[-epochs:]
-                for metric, hist in self.metric_history.items()}
         return hist
 
     def state_dict(self):
@@ -345,9 +291,6 @@ class Trainer:
         evaluator = create_supervised_evaluator(
             self.model, evaluate_metrics, self.device)
         return evaluator.run(test_loader).metrics
-
-    def set_lr(self, lr):
-        set_lr(lr, self.optimizer, self.lr_scheduler)
 
 
 def _trainer_callback_wrap(f):
