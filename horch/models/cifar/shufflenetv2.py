@@ -94,9 +94,12 @@ class ReduceUnit(nn.Module):
         return x
 
 
-def _make_layer(block, num_units, in_channels, out_channels, use_se):
+def _make_layer(block, num_units, in_channels, out_channels, stride, use_se):
     units = nn.Sequential()
-    units.add_module("unit1", ReduceUnit(in_channels, out_channels))
+    units.add_module("unit1",
+                     ReduceUnit(in_channels, out_channels) if stride == 2 \
+                         else Conv2d(in_channels, out_channels, kernel_size=3,
+                                     norm_layer='default', activation='default'))
     for i in range(1, num_units):
         units.add_module(f"unit{i + 1}", block(out_channels, use_se))
     return units
@@ -109,9 +112,10 @@ class ShuffleNetV2(nn.Module):
         self.stem = Conv2d(3, stem_channels, kernel_size=3,
                            activation='default', norm_layer='default')
         block = ResUnit if residual else BasicUnit
-        self.stage1 = _make_layer(block, units_per_stage[0], stem_channels, channels_per_stage[0], use_se)
-        self.stage2 = _make_layer(block, units_per_stage[1], channels_per_stage[0], channels_per_stage[1], use_se)
-        self.final_block = Conv2d(channels_per_stage[1], final_channels, kernel_size=1,
+        self.stage1 = _make_layer(block, units_per_stage[0], stem_channels, channels_per_stage[0], 1, use_se)
+        self.stage2 = _make_layer(block, units_per_stage[1], channels_per_stage[0], channels_per_stage[1], 2, use_se)
+        self.stage3 = _make_layer(block, units_per_stage[2], channels_per_stage[1], channels_per_stage[2], 2, use_se)
+        self.final_block = Conv2d(channels_per_stage[2], final_channels, kernel_size=1,
                                   activation='default', norm_layer='default')
         self.final_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(final_channels, num_classes)
@@ -120,6 +124,7 @@ class ShuffleNetV2(nn.Module):
         x = self.stem(x)
         x = self.stage1(x)
         x = self.stage2(x)
+        x = self.stage3(x)
         x = self.final_block(x)
         x = self.final_pool(x)
         x = x.view(x.size(0), -1)
@@ -128,7 +133,7 @@ class ShuffleNetV2(nn.Module):
 
 
 def test_net():
-    net = ShuffleNetV2(32, [128, 256], [4, 8], 512, num_classes=10, use_se=True, residual=True)
+    net = ShuffleNetV2(32, [64, 128, 256], [4, 8, 4], 512, num_classes=10, use_se=True, residual=True)
 
     x = torch.randn(2, 3, 32, 32)
     y = net(x)
