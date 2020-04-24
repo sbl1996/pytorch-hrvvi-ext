@@ -34,7 +34,7 @@ class ResUnit(nn.Module):
 
     def forward(self, x):
         c = x.size(1) // 2
-        x2 = x[:, :c, :, :]
+        x2 = x[:, c:, :, :]
         x2 = x2 + self.branch(x2)
         x2 = self.relu(x2)
         x = torch.cat([x[:, :c, :, :], x2], dim=1)
