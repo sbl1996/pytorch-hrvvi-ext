@@ -59,7 +59,7 @@ class BasicUnit(nn.Module):
 
     def forward(self, x):
         c = x.size(1) // 2
-        x = torch.cat([x[:, :c, :, :], self.branch(x[:, c:, :, :])])
+        x = torch.cat([x[:, :c, :, :], self.branch(x[:, c:, :, :])], dim=1)
         x = channel_shuffle(x)
         return x
 
@@ -133,7 +133,7 @@ class ShuffleNetV2(nn.Module):
 
 
 def test_net():
-    net = ShuffleNetV2(32, [64, 128, 256], [4, 8, 4], 512, num_classes=10, use_se=True, residual=True)
+    net = ShuffleNetV2(32, [128, 256, 512], [4, 8, 4], 512, num_classes=10, use_se=True, residual=True)
 
     x = torch.randn(2, 3, 32, 32)
     y = net(x)
