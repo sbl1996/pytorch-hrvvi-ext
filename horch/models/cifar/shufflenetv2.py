@@ -1,8 +1,22 @@
 import torch
 import torch.nn as nn
 
-from horch.models.attention import SEModule
-from horch.models.modules import Conv2d, get_activation
+from horch.models.modules import Conv2d, get_activation, DWConv2d, HardSigmoid
+
+
+class SELayer(nn.Module):
+    def __init__(self, in_channels, reduction=4):
+        super().__init__()
+        channels = in_channels // reduction
+        self.layers = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            Conv2d(in_channels, channels, kernel_size=1, norm_layer='bn', activation='relu'),
+            Conv2d(channels, in_channels, kernel_size=1, bias=False),
+            HardSigmoid(True),
+        )
+
+    def forward(self, x):
+        return x * self.layers(x)
 
 
 def channel_shuffle(x, groups=2):
@@ -21,15 +35,17 @@ class ResUnit(nn.Module):
         super().__init__()
         assert in_channels % 2 == 0
         channels = in_channels // 2
-        self.branch = nn.Sequential(
+        branch = [
             Conv2d(channels, channels, kernel_size=1,
                    activation='default', norm_layer='default'),
             Conv2d(channels, channels, kernel_size=3, groups=channels,
                    activation=None, norm_layer='default'),
             Conv2d(channels, channels, kernel_size=1,
                    activation=None, norm_layer='default'),
-            SEModule(channels, reduction=2) if use_se else nn.Identity()
-        )
+        ]
+        if use_se:
+            branch.append(SELayer(channels, reduction=2))
+        self.branch = nn.Sequential(*branch)
         self.relu = get_activation()
 
     def forward(self, x):
@@ -47,15 +63,15 @@ class BasicUnit(nn.Module):
         super().__init__()
         assert in_channels % 2 == 0
         channels = in_channels // 2
-        self.branch = nn.Sequential(
+        branch = [
             Conv2d(channels, channels, kernel_size=1,
-                   activation='default', norm_layer='default'),
-            Conv2d(channels, channels, kernel_size=3, groups=channels,
-                   activation=None, norm_layer='default'),
-            Conv2d(channels, channels, kernel_size=1,
-                   activation='default', norm_layer='default'),
-            SEModule(channels, reduction=2) if use_se else nn.Identity()
-        )
+                   norm_layer='default', activation='default'),
+            DWConv2d(channels, channels, kernel_size=3,
+                     norm_layer='default', activation='default'),
+        ]
+        if use_se:
+            branch.append(SELayer(channels, reduction=2))
+        self.branch = nn.Sequential(*branch)
 
     def forward(self, x):
         c = x.size(1) // 2
@@ -65,26 +81,23 @@ class BasicUnit(nn.Module):
 
 
 class ReduceUnit(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, use_se=False):
         super().__init__()
         assert out_channels % 2 == 0
         channels = out_channels // 2
 
-        self.branch1 = nn.Sequential(
-            Conv2d(in_channels, in_channels, kernel_size=3, stride=2, groups=in_channels,
-                   activation=None, norm_layer='default'),
-            Conv2d(in_channels, channels, kernel_size=1,
-                   activation='default', norm_layer='default'),
-        )
+        self.branch1 = DWConv2d(in_channels, channels, kernel_size=3, stride=2,
+                                norm_layer='default', activation='default')
 
-        self.branch2 = nn.Sequential(
+        branch2 = [
             Conv2d(in_channels, channels, kernel_size=1,
                    activation='default', norm_layer='default'),
-            Conv2d(channels, channels, kernel_size=3, stride=2, groups=channels,
-                   activation=None, norm_layer='default'),
-            Conv2d(channels, channels, kernel_size=1,
-                   activation='default', norm_layer='default'),
-        )
+            DWConv2d(channels, channels, kernel_size=3, stride=2,
+                     norm_layer='default', activation='default'),
+        ]
+        if use_se:
+            branch2.append(SELayer(channels, reduction=2))
+        self.branch2 = nn.Sequential(*branch2)
 
     def forward(self, x):
         x1 = self.branch1(x)
@@ -96,17 +109,19 @@ class ReduceUnit(nn.Module):
 
 def _make_layer(block, num_units, in_channels, out_channels, stride, use_se):
     units = nn.Sequential()
-    units.add_module("unit1",
-                     ReduceUnit(in_channels, out_channels) if stride == 2 \
-                         else Conv2d(in_channels, out_channels, kernel_size=3,
-                                     norm_layer='default', activation='default'))
+    if stride == 2:
+        unit = ReduceUnit(in_channels, out_channels, use_se)
+    else:
+        unit = Conv2d(in_channels, out_channels, kernel_size=3,
+                      norm_layer='default', activation='default')
+    units.add_module("unit1", unit)
     for i in range(1, num_units):
         units.add_module(f"unit{i + 1}", block(out_channels, use_se))
     return units
 
 
 class ShuffleNetV2(nn.Module):
-    def __init__(self, stem_channels, channels_per_stage, units_per_stage, final_channels, num_classes=10, use_se=False,
+    def __init__(self, stem_channels, channels_per_stage, units_per_stage, final_channels, num_classes=10, use_se=True,
                  residual=False):
         super().__init__()
         self.stem = Conv2d(3, stem_channels, kernel_size=3,
@@ -133,7 +148,7 @@ class ShuffleNetV2(nn.Module):
 
 
 def test_net():
-    net = ShuffleNetV2(32, [128, 256, 512], [4, 8, 4], 512, num_classes=10, use_se=True, residual=True)
+    net = ShuffleNetV2(32, [128, 256, 512], [4, 8, 4], 512, num_classes=10, use_se=True)
 
     x = torch.randn(2, 3, 32, 32)
     y = net(x)

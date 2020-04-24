@@ -72,19 +72,15 @@ class SELayerM(nn.Module):
     def __init__(self, in_channels, reduction=4):
         super().__init__()
         channels = in_channels // reduction
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.layers = nn.Sequential(
-            nn.Linear(in_channels, channels),
-            nn.ReLU6(True),
-            nn.Linear(channels, in_channels),
+            nn.AdaptiveAvgPool2d(1),
+            Conv2d(in_channels, channels, kernel_size=1, norm_layer='bn', activation='relu6'),
+            Conv2d(channels, in_channels, kernel_size=1, bias=False),
             HardSigmoid(True),
         )
 
     def forward(self, x):
-        b, c = x.size()[:2]
-        s = self.avgpool(x).view(b, c)
-        s = self.layers(s).view(b, c, 1, 1)
-        return x * s
+        return x * self.layers(x)
 
 
 def get_attention(name, **kwargs):

@@ -12,3 +12,4 @@ pybind11
 sklearn
 pytorchcv
 yacs
+thop

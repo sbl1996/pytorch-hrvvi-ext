@@ -1,8 +1,79 @@
 import torch
 import torch.nn as nn
-from horch.ops import _concat
 from toolz import curry
+
+from thop import profile as thop_profile, clever_format
+from thop.vision.basic_hooks import count_relu
+
 from horch.ext.summary import summary
+from horch.models.modules import Swish, HardSwish, HardSigmoid
+
+
+def count_sigmoid(m, x, y):
+    """
+    Using this approximation for exponetial operation:  exp(x) = 1 + x + x^2/2! + .. + x^9/9!
+    For sigmoid f(x) = 1/(1+exp(x)): there are totally 10 add ops, 9 division ops(2! are considered as constant).
+    Since it is element-wise operation. The final ops is about(10+9)*num_elements.
+    """
+    x = x[0]
+
+    nelements = x.numel()
+
+    total_ops = 19 * nelements
+    m.total_ops += torch.DoubleTensor([int(total_ops)])
+
+
+def count_swish(m, x, y):
+    """
+    swish = x*sigmoid(x). So the total ops is 20*num_elements. See definition of count_sigmoid.
+    """
+    x = x[0]
+
+    nelements = x.numel()
+
+    total_ops = 20 * nelements
+    m.total_ops += torch.DoubleTensor([int(total_ops)])
+
+
+def count_hsigmoid(m, x, y):
+    """
+    hsigmoid = relu6(x + 3) / 6. So the total ops is 20*num_elements. See definition of count_sigmoid.
+    """
+    x = x[0]
+
+    nelements = x.numel()
+
+    total_ops = 3 * nelements
+    m.total_ops += torch.DoubleTensor([int(total_ops)])
+
+
+def count_hswish(m, x, y):
+    """
+    hswish = x*hsigmoid(x). So the total ops is 20*num_elements. See definition of count_sigmoid.
+    """
+    x = x[0]
+
+    nelements = x.numel()
+
+    total_ops = 4 * nelements
+    m.total_ops += torch.DoubleTensor([int(total_ops)])
+
+
+THOP_CUSTOM_OPS = {
+    nn.Sigmoid: count_sigmoid,
+    Swish: count_swish,
+    HardSwish: count_hswish,
+    HardSigmoid: count_hsigmoid,
+    nn.ReLU: count_relu,
+    nn.PReLU: count_relu,
+    nn.ELU: count_relu,
+    nn.LeakyReLU: count_relu,
+    nn.ReLU6: count_relu,
+}
+
+
+def profile(model: nn.Module, inputs, verbose=True):
+    return thop_profile(model, inputs, custom_ops=THOP_CUSTOM_OPS, verbose=verbose)
 
 
 def get_last_conv(m):
@@ -58,6 +129,7 @@ def conv_to_atrous(mod, rate):
     r"""
     Convert a 3x3 Conv2d to Atrous Convolution.
     """
+
     def f(m):
         if 'Conv2d' in type(m).__name__ and m.kernel_size != (1, 1):
             kh, kw = m.kernel_size
@@ -66,6 +138,7 @@ def conv_to_atrous(mod, rate):
             m.padding = (ph, pw)
             m.stride = (1, 1)
             m.dilation = (rate, rate)
+
     mod.apply(f)
     return mod
 
@@ -74,10 +147,12 @@ def remove_stride_padding(mod):
     r"""
     Convert a 3x3 Conv2d to Atrous Convolution.
     """
+
     def f(m):
         if 'Conv2d' in type(m).__name__ and m.kernel_size != (1, 1):
             m.padding = (0, 0)
             m.stride = (1, 1)
+
     mod.apply(f)
     return mod
 
@@ -106,6 +181,7 @@ def weight_init_normal(module, mean, std):
         name = type(m).__name__
         if "Linear" in name or "Conv" in name:
             nn.init.normal_(m.weight, mean, std)
+
     module.apply(f)
 
 
@@ -115,6 +191,7 @@ def bias_init_constant(module, val):
         if "Linear" in name or "Conv" in name:
             if m.bias is not None:
                 nn.init.constant_(m.bias, val)
+
     module.apply(f)
 
 
@@ -123,6 +200,7 @@ def set_bn_momentum(module, val):
         name = type(m).__name__
         if "BatchNorm" in name:
             m.momentum = val
+
     module.apply(f)
 
 
@@ -152,4 +230,5 @@ def freeze_bn(module, eval=True, requires_grad=True):
                 m.eval()
             m.weight.requires_grad = requires_grad
             m.bias.requires_grad = requires_grad
+
     module.apply(f)

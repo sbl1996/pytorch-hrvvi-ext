@@ -14,7 +14,7 @@ def hardsigmoid(x, inplace=False):
 
 
 def hardswish(x, inplace=False):
-    return x * (F.relu6(x + 3, inplace=inplace) / 6)
+    return x * hardsigmoid(x, inplace)
 
 
 def swish(x):
@@ -255,13 +255,14 @@ def Pool(name, kernel_size, stride=1, padding='same', ceil_mode=False):
 
 def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
-             padding='same', bias=True, mid_norm_layer='default',
-             norm_layer=None, activation=None, transposed=False):
+             padding='same', bias=True,
+             norm_layer=None, activation=None):
+    mid_norm_layer = norm_layer
     return nn.Sequential(
         Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,
-               norm_layer=mid_norm_layer, transposed=transposed, activation=activation),
+               norm_layer=mid_norm_layer),
         Conv2d(in_channels, out_channels, kernel_size=1,
-               norm_layer=norm_layer, bias=bias),
+               norm_layer=norm_layer, bias=bias, activation=activation),
     )
 
 
