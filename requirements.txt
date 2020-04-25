@@ -1,7 +1,6 @@
 torch
 torchvision
 numpy
-bidict
 toolz
 pytorch-ignite
 Pillow>5.0.0

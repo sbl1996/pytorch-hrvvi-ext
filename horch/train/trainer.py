@@ -6,6 +6,7 @@ from pathlib import Path
 from toolz.curried import get, keyfilter
 
 import torch
+from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_value_
 from torch.utils.data import DataLoader
@@ -93,15 +94,14 @@ def create_supervised_trainer(
     return engine
 
 
-def _evaluate(engine, evaluator, val_loader, per_epochs):
-    if engine.state.epoch % per_epochs == 0:
-        evaluator.run(val_loader)
+def _evaluate(engine, evaluator, val_loader):
+    evaluator.run(val_loader)
 
 
 class Trainer:
 
     def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics=None, test_metrics=None, save_path=".", name="Net", fp16=False):
+                 metrics=None, test_metrics=None, save_path=".", name="Net", fp16=False, lr_step_on_iter=None):
 
         self.fp16 = fp16
         self.device = 'cuda' if CUDA else 'cpu'
@@ -132,6 +132,10 @@ class Trainer:
         self._epochs = 0
 
         self._verbose = True
+
+        if lr_scheduler and lr_step_on_iter is None:
+            lr_step_on_iter = isinstance(lr_scheduler, (OneCycleLR,))
+        self.lr_step_on_iter = lr_step_on_iter
 
     def _print(self, msg):
         if self._verbose:
@@ -173,9 +177,7 @@ class Trainer:
             self.metric_history[name].append(val)
         self._print(msg)
 
-    def _log_val_results(self, engine, evaluator, per_epochs=1):
-        if engine.state.epoch % per_epochs != 0:
-            return
+    def _log_val_results(self, engine, evaluator):
         msg = "validate ------\t"
         for name, val in evaluator.state.metrics.items():
             if isinstance(val, float):
@@ -190,7 +192,7 @@ class Trainer:
         self._print(msg)
 
     def fit(self, train_loader, epochs=1, val_loader=None, eval_freq=1, save=None, callbacks=(), grad_clip_value=None,
-            accumulation_steps=1, lr_step_on_iter=False):
+            accumulation_steps=1):
 
         engine = create_supervised_trainer(
             self.model, self.criterion, self.optimizer,
@@ -199,7 +201,7 @@ class Trainer:
         self._attach_timer(engine)
 
         engine.add_event_handler(
-            Events.ITERATION_COMPLETED, self._lr_scheduler_step, lr_step_on_iter)
+            Events.ITERATION_COMPLETED, self._lr_scheduler_step, self.lr_step_on_iter)
 
         engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
 
@@ -207,13 +209,13 @@ class Trainer:
             evaluator = create_supervised_evaluator(
                 self.model, self.test_metrics, self.device)
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, _evaluate, evaluator, val_loader, eval_freq)
+                Events.EPOCH_COMPLETED(every=eval_freq), lambda _: evaluator.run(val_loader))
 
         engine.add_event_handler(Events.EPOCH_COMPLETED, self._increment_epoch)
         engine.add_event_handler(Events.EPOCH_COMPLETED, self._log_results)
         if val_loader is not None:
             engine.add_event_handler(
-                Events.EPOCH_COMPLETED, self._log_val_results, evaluator, eval_freq)
+                Events.EPOCH_COMPLETED(every=eval_freq), self._log_val_results, evaluator)
 
         # Set checkpoint
         if save:
@@ -298,96 +300,6 @@ def _trainer_callback_wrap(f):
         return f(*args, **kwargs)
 
     return func
-
-
-class ValSet:
-    default_name = "validate"
-
-    def __init__(self, val_loader, per_epochs=1, metrics=None, name=None):
-        super().__init__()
-        self.enabled = val_loader is not None
-        self.val_loader = val_loader
-        self.per_epochs = per_epochs
-        self.metrics = metrics
-        self.name = name or self.default_name
-        self.evaluator = None
-        self.trainer = None
-
-    @staticmethod
-    def parse(settings, trainer):
-        if settings is None:
-            val = ValSet(None)
-        elif isinstance(settings, DataLoader):
-            val = ValSet(settings)
-        elif isinstance(settings, ValSet):
-            val = settings
-        elif isinstance(settings, Sequence) and all(map(lambda x: isinstance(x, ValSet), settings)):
-            val = ValSets(settings)
-            names = [v.name for v in val.vals]
-            assert len(names) == len(set(names)), "Names of validate settings must be unique, got %s" % names
-        else:
-            raise ValueError("Validate parse error, got %s" % settings)
-        val.attach(trainer)
-        return val
-
-    def attach(self, trainer):
-        if not self.enabled:
-            return
-        if self.metrics is None:
-            metrics = trainer.test_metrics
-        elif isinstance(self.metrics, Sequence):
-            assert not isinstance(self.metrics, str), "Metrics can't be str, maybe wrap it in a list."
-            for m in self.metrics:
-                assert m in trainer.test_metrics, "%s is not in test_metrics" % m
-            metrics = keyfilter(lambda k: k in self.metrics, trainer.test_metrics)
-        elif isinstance(self.metrics, Dict):
-            metrics = self.metrics
-        else:
-            raise ValueError("Invalid metrics, got %s" % self.metrics)
-        self.evaluator = create_supervised_evaluator(
-            trainer.model, metrics, trainer.device)
-        self.trainer = trainer
-
-    def evaluate(self):
-        if not self.enabled:
-            return
-        if self.trainer.epochs() % self.per_epochs == 0:
-            self.evaluator.run(self.val_loader)
-
-    def log_results(self):
-        trainer = self.trainer
-        if not self.enabled or trainer.epochs() % self.per_epochs != 0:
-            return
-        msg = "%s%s ------\t" % (self.name, " " * max(0, 8 - len(self.name)))
-        for name, val in self.evaluator.state.metrics.items():
-            fname = self.name + "_" + name
-            if isinstance(val, float):
-                msg += "%s: %.4f\t" % (name, val)
-                trainer.writer.add_scalar(fname, val, trainer.epochs())
-            else:
-                msg += "%s: %s\t" % (name, val)
-                for i, v in enumerate(val):
-                    trainer.writer.add_scalar("%s-%d" % (name, i + 1), v, trainer.epochs())
-            trainer.metric_history[fname].append(val)
-        trainer._print(msg)
-
-
-class ValSets:
-    def __init__(self, vals):
-        super().__init__()
-        self.vals = vals
-
-    def attach(self, trainer):
-        for v in self.vals:
-            v.attach(trainer)
-
-    def evaluate(self):
-        for v in self.vals:
-            v.evaluate()
-
-    def log_results(self):
-        for v in self.vals:
-            v.log_results()
 
 
 def print_lr(trainer):

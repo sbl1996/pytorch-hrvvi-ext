@@ -1,5 +1,3 @@
-from multiprocessing.context import SpawnContext
-
 import torch.nn as nn
 
 from torch.utils.data import DataLoader
@@ -85,8 +83,7 @@ trainer = Trainer(net, criterion, optimizer, lr_scheduler,
 
 # summary(net, (3, 32, 32))
 
-train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2,
-                          pin_memory=True, multiprocessing_context=SpawnContext())
+train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2, pin_memory=True)
 test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
