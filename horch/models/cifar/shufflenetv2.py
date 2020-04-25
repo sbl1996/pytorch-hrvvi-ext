@@ -149,6 +149,5 @@ class ShuffleNetV2(nn.Module):
 
 def test_net():
     net = ShuffleNetV2(32, [128, 256, 512], [4, 8, 4], 512, num_classes=10, use_se=True)
-
     x = torch.randn(2, 3, 32, 32)
     y = net(x)

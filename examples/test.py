@@ -95,5 +95,3 @@ trainer.fit(train_loader, 630, val_loader=val_loader,
             callbacks=[print_lr])
 
 trainer.evaluate(test_loader)
-
-import fastai
