@@ -6,6 +6,7 @@ from toolz import curry
 import torch
 import torch.nn as nn
 
+from horch.common import CUDA
 from horch.train.gan import GANTrainer
 from horch.train.trainer import Trainer
 
@@ -23,3 +24,5 @@ def manual_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.random.manual_seed(seed)
+    if CUDA:
+        torch.cuda.manual_seed(seed)

@@ -5,7 +5,7 @@ import stat
 import json
 import shutil
 from pathlib import Path
-from typing import Callable, Any
+from typing import Callable, Any, Union
 
 
 def read_lines(fp):
@@ -39,7 +39,7 @@ def save_json(fp, obj):
         json.dump(obj, f)
 
 
-def fmt_path(fp):
+def fmt_path(fp: Union[str, Path]) -> Path:
     return Path(fp).expanduser().absolute()
 
 

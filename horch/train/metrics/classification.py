@@ -30,6 +30,7 @@ def topk_accuracy(y_true, y_pred, k=5):
 
 
 class TopKAccuracy(Average):
+    _required_output_keys = ["y_pred", "y_true"]
     r"""
     Args:
         k: default to 5
@@ -43,24 +44,15 @@ class TopKAccuracy(Average):
         super().__init__(output_transform=self.output_transform)
 
     def output_transform(self, output):
-        y_true, y_pred = get(["y_true", "y_pred"], output)
+        y_pred, y_true = output
         return topk_accuracy(y_true, y_pred, k=self.k)
 
 
 class Accuracy(IgniteAccuracy):
-    r"""
-    Inputs:
-        preds: (batch_size, C, ...) or (batch_size, ...)
-        y:      (batch_size, ...)
-    """
+    _required_output_keys = ["y_pred", "y_true"]
 
     def __init__(self):
-        super().__init__(output_transform=self.output_transform)
-
-    @staticmethod
-    def output_transform(output):
-        y_pred, y_true = get(["y_pred", "y_true"], output)
-        return y_pred, y_true
+        super().__init__()
 
 
 class ROCAUC(Metric):

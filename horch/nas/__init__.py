@@ -1,21 +1,12 @@
-import os
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
-
-import numpy as np
-from toolz.curried import get, curry
 
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
+from toolz.curried import curry
 
-from horch.common import CUDA
-
-from horch.train.metrics import TrainLoss
 from ignite.engine import Engine, Events
-from ignite.handlers import Checkpoint, DiskSaver
-from ignite.metrics import Accuracy, TopKCategoricalAccuracy, Loss
 from ignite.utils import convert_tensor
+from horch.train.trainer_base import TrainerBase
 
 
 def _prepare_batch(batch, device=None):
@@ -34,7 +25,7 @@ def _prepare_batch(batch, device=None):
 
 
 def create_darts_trainer(
-        model, criterion, optimizer_model, optimizer_arch, lr_scheduler, metrics, device, clip_grad_norm=5):
+        model, criterion, optimizer_arch, optimizer_model, lr_scheduler, metrics, device, clip_grad_norm=5):
     def step(engine, batch):
         model.train()
 
@@ -66,7 +57,7 @@ def create_darts_trainer(
         return {
             "loss": loss.item(),
             "batch_size": input.size(0),
-            "y": target_search,
+            "y_true": target_search,
             "y_pred": logits_search.detach(),
         }
 
@@ -79,6 +70,7 @@ def create_darts_trainer(
 
 
 def create_darts_evaluator(model, metrics, device):
+
     def step(engine, batch):
         model.eval()
         input, target = _prepare_batch(batch, device)
@@ -87,7 +79,7 @@ def create_darts_evaluator(model, metrics, device):
 
         return {
             "batch_size": input.size(0),
-            "y": target,
+            "y_true": target,
             "y_pred": output,
         }
 
@@ -107,59 +99,12 @@ def log_metrics(engine, stage):
     print(log_str)
 
 
-class DARTSTrainer:
-
-    def __init__(self, model, criterion, optimizer_model, optimizer_arch, lr_scheduler,
-                 metrics=None, test_metrics=None, save_path="checkpoints", device=None):
-        self.device = device or ('cuda' if CUDA else 'cpu')
-        model.to(self.device)
-
-        self.model = model
-        self.criterion = criterion
-        self.optimizer_model = optimizer_model
-        self.optimizer_arch = optimizer_arch
-        self.lr_scheduler = lr_scheduler
-        self._output_transform = get(["y_pred", "y"])
-        self.metrics = metrics or {
-            "loss": TrainLoss(),
-            "acc": Accuracy(self._output_transform),
-        }
-        self.test_metrics = test_metrics or {
-            "loss": Loss(self.criterion, self._output_transform),
-            "acc": Accuracy(self._output_transform),
-        }
-        self.save_path = save_path
-        self._log_path = os.path.join(self.save_path, "runs")
-
-        current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        log_dir = os.path.join(self._log_path, current_time)
-        self.writer = SummaryWriter(log_dir)
-
-        self.train_engine = self._create_train_engine()
-        self.eval_engine = self._create_eval_engine()
-        self.checkpoint_handler = Checkpoint(self.to_save(),
-                                             DiskSaver(self.save_path, create_dir=True, require_empty=False))
-
-    def to_save(self):
-        return {'train_engine': self.train_engine, 'eval_engine': self.eval_engine,
-                'model': self.model, 'optimizer_model': self.optimizer_model, 'optimizer_arch': self.optimizer_arch,
-                'lr_scheduler': self.lr_scheduler}
-
-    def resume(self):
-        d = Path(self.save_path)
-        pattern = "checkpoint_*.pth"
-        saves = list(d.glob(pattern))
-        if len(saves) == 0:
-            raise FileNotFoundError("No checkpoint to load in %s" % (self.save_path))
-        fp = max(saves, key=lambda f: f.stat().st_mtime)
-        checkpoint = torch.load(fp)
-        Checkpoint.load_objects(self.to_save(), checkpoint)
-        print("Load trainer from %s" % fp)
+class DARTSTrainer(TrainerBase):
 
     def _create_train_engine(self):
         engine = create_darts_trainer(
-            self.model, self.criterion, self.optimizer_model, self.optimizer_arch,
-            self.lr_scheduler, self.metrics, self.device)
+            self.model, self.criterion, self.optimizers[0], self.optimizers[1],
+            self.lr_schedulers[0], self.metrics, self.device)
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, log_metrics(stage='train'))
         return engine
@@ -169,23 +114,3 @@ class DARTSTrainer:
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, log_metrics(stage='valid'))
         return engine
-
-    def fit(self, train_loader, epochs=None, val_loader=None, save_every=5000):
-
-        fit_events = [
-            self.train_engine.add_event_handler(
-                Events.ITERATION_COMPLETED(every=save_every), self.checkpoint_handler),
-            self.train_engine.add_event_handler(
-                Events.EPOCH_COMPLETED, lambda _: self.eval_engine.run(val_loader)),
-            self.train_engine.add_event_handler(
-                Events.EPOCH_STARTED,
-                lambda engine: print("Epoch %d, lr %f" % (engine.state.epoch, self.lr_scheduler.get_last_lr()[0])))]
-
-        try:
-            self.train_engine.run(train_loader, epochs)
-            for e in fit_events:
-                e.remove()
-        except KeyboardInterrupt as e:
-            for e in fit_events:
-                e.remove()
-            raise e
