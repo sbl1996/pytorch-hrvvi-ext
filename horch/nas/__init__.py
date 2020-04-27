@@ -6,7 +6,7 @@ from toolz.curried import curry
 
 from ignite.engine import Engine, Events
 from ignite.utils import convert_tensor
-from horch.train.trainer_base import TrainerBase
+from horch.train.trainer_base import TrainerBase, backward
 
 
 def _prepare_batch(batch, device=None):
@@ -25,7 +25,7 @@ def _prepare_batch(batch, device=None):
 
 
 def create_darts_trainer(
-        model, criterion, optimizer_arch, optimizer_model, lr_scheduler, metrics, device, clip_grad_norm=5):
+        model, criterion, optimizer_arch, optimizer_model, lr_scheduler, metrics, device, clip_grad_norm=5, fp16=False):
     def step(engine, batch):
         model.train()
 
@@ -38,7 +38,7 @@ def create_darts_trainer(
             p.requires_grad_(True)
         logits = model(input)
         loss = criterion(logits, target)
-        loss.backward()
+        backward(loss, optimizer_arch, fp16)
         optimizer_arch.step()
 
         optimizer_model.zero_grad()
@@ -48,7 +48,7 @@ def create_darts_trainer(
             p.requires_grad_(True)
         logits_search = model(input_search)
         loss_search = criterion(logits_search, target_search)
-        loss_search.backward()
+        backward(loss_search, optimizer_model, fp16)
         if clip_grad_norm:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         optimizer_model.step()
@@ -104,7 +104,7 @@ class DARTSTrainer(TrainerBase):
     def _create_train_engine(self):
         engine = create_darts_trainer(
             self.model, self.criterion, self.optimizers[0], self.optimizers[1],
-            self.lr_schedulers[0], self.metrics, self.device)
+            self.lr_schedulers[0], self.metrics, self.device, fp16=self.fp16)
         engine.add_event_handler(
             Events.EPOCH_COMPLETED, log_metrics(stage='train'))
         return engine

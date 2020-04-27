@@ -17,6 +17,16 @@ from ignite.handlers import Checkpoint, DiskSaver
 from ignite.metrics import Metric
 
 
+def backward(loss, optimizer, fp16):
+    if fp16:
+        from apex import amp
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        loss.backward()
+    return
+
+
 class StatefulList:
 
     def __init__(self, xs):
@@ -99,9 +109,13 @@ class TrainerBase:
         self.checkpoint_handler = Checkpoint(self.to_save(), saver)
 
     def to_save(self):
-        return {'train_engine': self.train_engine, 'eval_engine': self.eval_engine,
-                'model': self.model, 'optimizers': StatefulList(self.optimizers),
-                'lr_schedulers': StatefulList(self.lr_schedulers)}
+        d = {'train_engine': self.train_engine, 'eval_engine': self.eval_engine,
+             'model': self.model, 'optimizers': StatefulList(self.optimizers),
+             'lr_schedulers': StatefulList(self.lr_schedulers)}
+        if self.fp16:
+            from apex import amp
+            d['amp'] = amp
+        return d
 
     def resume(self):
         d = Path(self.save_path)
@@ -111,6 +125,8 @@ class TrainerBase:
             raise FileNotFoundError("No checkpoint to load in %s" % self.save_path)
         fp = max(saves, key=lambda f: f.stat().st_mtime)
         checkpoint = torch.load(fp)
+        if not self.fp16:
+            del checkpoint['amp']
         Checkpoint.load_objects(self.to_save(), checkpoint)
         print("Load trainer from %s" % fp)
 
@@ -127,7 +143,7 @@ class TrainerBase:
 
     def fit(self,
             train_loader: DataLoader,
-            epochs: int,
+            epochs: Optional[int],
             val_loader: Optional[DataLoader] = None,
             save_freq: Optional[Union[Epochs, Iters]] = None,
             eval_freq: Union[Epochs, Iters] = Epochs(1)):
