@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Sequence, Dict, Callable, Union, Optional
 
@@ -58,6 +59,12 @@ class Iters:
         self.n = n
 
 
+class TrainerState(Enum):
+    INITIALIZED = 1
+    FIRST_FITTING = 2
+    CONTINUED_FITTING = 3
+
+
 class TrainerBase:
 
     def __init__(self,
@@ -108,6 +115,8 @@ class TrainerBase:
         saver = DiskSaver(str(self.save_path), create_dir=True, require_empty=False)
         self.checkpoint_handler = Checkpoint(self.to_save(), saver)
 
+        self._traier_state = TrainerState.INITIALIZED
+
     def to_save(self):
         d = {'train_engine': self.train_engine, 'eval_engine': self.eval_engine,
              'model': self.model, 'optimizers': StatefulList(self.optimizers),
@@ -119,13 +128,13 @@ class TrainerBase:
 
     def resume(self):
         d = Path(self.save_path)
-        pattern = "checkpoint_*.pth"
+        pattern = "checkpoint_*.pt"
         saves = list(d.glob(pattern))
         if len(saves) == 0:
             raise FileNotFoundError("No checkpoint to load in %s" % self.save_path)
         fp = max(saves, key=lambda f: f.stat().st_mtime)
         checkpoint = torch.load(fp)
-        if not self.fp16:
+        if not self.fp16 and 'amp' in checkpoint:
             del checkpoint['amp']
         Checkpoint.load_objects(self.to_save(), checkpoint)
         print("Load trainer from %s" % fp)
@@ -141,16 +150,26 @@ class TrainerBase:
         lrs = "".join(", lr %f" % lr_scheduler.get_last_lr()[0] for lr_scheduler in self.lr_schedulers)
         print("Epoch %d%s" % (engine.state.epoch, lrs))
 
+    @curry
+    def _lr_scheduler_step(self, engine):
+        iteration = engine.state.iteration
+        iters_per_epoch = engine.state.epoch_length
+        for lr_scheduler in self.lr_schedulers:
+            steps = iteration if self.lr_step_on_iter else iteration / iters_per_epoch
+            lr_scheduler.step(steps)
+
     def fit(self,
             train_loader: DataLoader,
             epochs: Optional[int],
             val_loader: Optional[DataLoader] = None,
-            save_freq: Optional[Union[Epochs, Iters]] = None,
-            eval_freq: Union[Epochs, Iters] = Epochs(1)):
+            save_freq: Optional[Union[int, Epochs, Iters]] = None,
+            eval_freq: Union[int, Epochs, Iters] = 1):
 
         fit_events = [
             self.train_engine.add_event_handler(
-                Events.EPOCH_STARTED, self._log_epoch_start)
+                Events.EPOCH_STARTED, self._log_epoch_start),
+            self.train_engine.add_event_handler(
+                Events.ITERATION_COMPLETED, self._lr_scheduler_step)
         ]
 
         if save_freq:
@@ -173,7 +192,9 @@ class TrainerBase:
             raise e
 
 
-def get_event_by_freq(freq: Union[Epochs, Iters]):
+def get_event_by_freq(freq: Union[int, Epochs, Iters]):
+    if isinstance(freq, int):
+        freq = Epochs(freq)
     if isinstance(freq, Epochs):
         return Events.EPOCH_COMPLETED(every=freq.n)
     elif isinstance(freq, Iters):

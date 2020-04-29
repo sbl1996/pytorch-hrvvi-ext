@@ -6,7 +6,6 @@ from pathlib import Path
 from toolz.curried import get, keyfilter
 
 import torch
-from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_value_
 from torch.utils.data import DataLoader
@@ -133,10 +132,6 @@ class Trainer:
 
         self._verbose = True
 
-        if lr_scheduler and lr_step_on_iter is None:
-            lr_step_on_iter = isinstance(lr_scheduler, (OneCycleLR,))
-        self.lr_step_on_iter = lr_step_on_iter
-
     def _print(self, msg):
         if self._verbose:
             print(msg)
@@ -146,9 +141,8 @@ class Trainer:
                     (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
     def _lr_scheduler_step(self, engine, on_iter=False):
-        data_loader = engine.state.dataloader
         iteration = engine.state.iteration - 1
-        iters_per_epoch = len(data_loader)
+        iters_per_epoch = engine.state.epoch_length
         cur_iter = iteration % iters_per_epoch
         if self.lr_scheduler:
             if on_iter:

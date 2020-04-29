@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 from horch.common import CUDA
-from horch.train.gan import GANTrainer
+# from horch.train.gan import GANTrainer
 from horch.train.trainer import Trainer
 
 
