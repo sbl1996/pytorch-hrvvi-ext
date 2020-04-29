@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, Identity
+from horch.models.modules import Conv2d, Identity, seq
 from horch.models.drop import DropConnect
 
 
@@ -52,38 +52,37 @@ class MBConv(nn.Module):
         super().__init__()
 
         channels = in_channels * expand_ratio
-
-        if expand_ratio != 1:
-            self.expand = Conv2d(in_channels, channels, kernel_size=1,
-                                 norm_layer='default', activation='swish')
-        else:
-            self.expand = Identity()
-
-        self.dwconv = Conv2d(channels, channels, kernel_size, stride, groups=channels,
-                             norm_layer='default',
-                             activation='swish')
-
-        self.has_se = se_ratio is not None and 0 < se_ratio < 1
-        if self.has_se:
-            self.se = SEModule(channels, int(in_channels * se_ratio))
-
-        self.project = Conv2d(channels, out_channels, kernel_size=1,
-                              norm_layer='default')
+        use_se = se_ratio is not None and 0 < se_ratio < 1
         self.use_res_connect = stride == 1 and in_channels == out_channels
+
+        layers = nn.Sequential()
+        if expand_ratio != 1:
+            layers.add_module(
+                "expand", Conv2d(in_channels, channels, kernel_size=1,
+                                 norm_layer='default', activation='swish'))
+
+        layers.add_module(
+            "dwconv", Conv2d(channels, channels, kernel_size, stride, groups=channels,
+                             norm_layer='default', activation='swish'))
+
+        if use_se:
+            layers.add_module(
+                "se", SEModule(channels, int(in_channels * se_ratio)))
+
+        layers.add_module(
+            "project", Conv2d(channels, out_channels, kernel_size=1,
+                              norm_layer='default'))
+
+        self.layers = layers
         if self.use_res_connect:
             self.drop_connect = DropConnect(drop_connect)
 
     def forward(self, x):
-        identity = x
-        x = self.expand(x)
-        x = self.dwconv(x)
-        if self.has_se:
-            x = self.se(x)
-        x = self.project(x)
+        out = self.layers(x)
         if self.use_res_connect:
-            x = self.drop_connect(x)
-            x += identity
-        return x
+            out = self.drop_connect(out)
+            out += x
+        return out
 
 
 class EfficientNet(nn.Module):
