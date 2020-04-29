@@ -9,11 +9,11 @@ from horch.models import get_default_activation, get_default_norm_layer
 from horch.config import cfg
 
 
-def hardsigmoid(x, inplace=False):
+def hardsigmoid(x, inplace=True):
     return F.relu6(x + 3, inplace=inplace) / 6
 
 
-def hardswish(x, inplace=False):
+def hardswish(x, inplace=True):
     return x * hardsigmoid(x, inplace)
 
 
@@ -30,7 +30,7 @@ class Swish(nn.Module):
 
 
 class HardSigmoid(nn.Module):
-    def __init__(self, inplace=False):
+    def __init__(self, inplace=True):
         super().__init__()
         self.inplace = inplace
 
@@ -43,7 +43,7 @@ class HardSigmoid(nn.Module):
 
 
 class HardSwish(nn.Module):
-    def __init__(self, inplace=False):
+    def __init__(self, inplace=True):
         super().__init__()
         self.inplace = inplace
 

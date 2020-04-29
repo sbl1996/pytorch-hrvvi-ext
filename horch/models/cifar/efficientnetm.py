@@ -36,7 +36,7 @@ class SEModule(nn.Module):
             nn.Linear(in_channels, channels),
             nn.ReLU6(True),
             nn.Linear(channels, in_channels),
-            HardSigmoid(),
+            HardSigmoid(inplace=True),
         )
 
     def forward(self, x):
