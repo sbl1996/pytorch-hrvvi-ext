@@ -47,14 +47,14 @@ test_transform = Compose([
 ])
 
 data_home = "datasets"
-ds = MNIST(data_home, train=True, download=True)
+ds = MNIST(data_home, train=True, download=False)
 ds = train_test_split(ds, test_ratio=0.1, random=True)[1]
 ds_train, ds_val = train_test_split(
     ds, test_ratio=0.05, random=True,
     transform=train_transform,
     test_transform=test_transform,
 )
-ds_test = MNIST(data_home, train=False, download=True, transform=test_transform)
+ds_test = MNIST(data_home, train=False, download=False, transform=test_transform)
 ds_test = train_test_split(ds_test, test_ratio=0.1, random=True)[1]
 
 mul = 1
@@ -68,8 +68,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = SGD(net.parameters(), lr=min_lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
 lr_scheduler = MultiStepLR(optimizer, [10, 20], gamma=0.1)
 # lr_scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=0.001, warmup=5, warmup_eta_min=0.01)
-lr_scheduler = OneCycleLR(optimizer, max_lr, div_factor=max_lr / min_lr,
-                          epochs=30, steps_per_epoch=steps_per_epoch)
+
 metrics = {
     'loss': TrainLoss(),
     'acc': Accuracy(),

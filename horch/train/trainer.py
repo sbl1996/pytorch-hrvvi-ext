@@ -121,6 +121,7 @@ class Trainer:
                 self.test_metrics['loss'] = Loss(criterion=criterion)
         self.save_path = os.path.join(save_path, 'trainer')
         self.name = name
+        self.lr_step_on_iter = lr_step_on_iter
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
         log_dir = os.path.join(save_path, 'runs', self.name, current_time)
@@ -140,12 +141,12 @@ class Trainer:
         self._print("Epoch %d/%d" %
                     (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
 
-    def _lr_scheduler_step(self, engine, on_iter=False):
+    def _lr_scheduler_step(self, engine):
         iteration = engine.state.iteration - 1
         iters_per_epoch = engine.state.epoch_length
         cur_iter = iteration % iters_per_epoch
         if self.lr_scheduler:
-            if on_iter:
+            if self.lr_step_on_iter:
                 self.lr_scheduler.step(self.epochs() * iters_per_epoch + cur_iter)
             else:
                 self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
@@ -195,7 +196,7 @@ class Trainer:
         self._attach_timer(engine)
 
         engine.add_event_handler(
-            Events.ITERATION_COMPLETED, self._lr_scheduler_step, self.lr_step_on_iter)
+            Events.ITERATION_COMPLETED, self._lr_scheduler_step)
 
         engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
 
