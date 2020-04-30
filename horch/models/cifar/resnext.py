@@ -35,7 +35,7 @@ class Bottleneck(nn.Module):
 
 class ResNeXt(nn.Module):
 
-    def __init__(self, stages, depth=29, groups=8, base_width=64, num_classes=10):
+    def __init__(self, stages=(64, 256, 512, 1024), depth=29, groups=8, base_width=64, num_classes=10):
         super().__init__()
         layers = [(depth - 2) // 9] * 3
 
