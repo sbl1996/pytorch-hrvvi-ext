@@ -1,11 +1,13 @@
 import math
+
+import torch
 import torch.nn as nn
 
 from horch.models.modules import get_activation, Conv2d
+from horch.models.utils import profile
 
 
 class Bottleneck(nn.Module):
-
     expansion = 4
 
     def __init__(self, in_channels, out_channels, stride, groups, base_width):
@@ -73,3 +75,14 @@ class ResNeXt(nn.Module):
         return x
 
 
+def test_resnext():
+
+    x = torch.randn(1, 3, 32, 32)
+
+    # ResNeXt-29, 8×64d
+    net = ResNeXt(stages=(64, 256, 512, 1024), depth=29, groups=8, base_width=64)
+    assert profile(net, (x,))[1] == 34426634
+
+    # ResNeXt-29, 16×64d
+    net = ResNeXt(stages=(64, 256, 512, 1024), depth=29, groups=16, base_width=64)
+    assert profile(net, (x,))[1] == 68155146
