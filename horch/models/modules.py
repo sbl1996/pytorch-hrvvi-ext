@@ -38,7 +38,7 @@ class HardSigmoid(nn.Module):
         return hardsigmoid(x, self.inplace)
 
     def extra_repr(self):
-        inplace_str = 'inplace' if self.inplace else ''
+        inplace_str = 'inplace=True' if self.inplace else ''
         return inplace_str
 
 
@@ -51,7 +51,7 @@ class HardSwish(nn.Module):
         return hardswish(x, self.inplace)
 
     def extra_repr(self):
-        inplace_str = 'inplace' if self.inplace else ''
+        inplace_str = 'inplace=True' if self.inplace else ''
         return inplace_str
 
 

@@ -1,83 +1,84 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from horch.models.modules import get_activation, Conv2d, Identity
-from horch.models.attention import SEModule
+
+from horch.models.modules import get_activation, Conv2d
 
 
-class PreActDownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, se=False):
+class BasicBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride):
         super().__init__()
-        self.bn1 = nn.BatchNorm2d(in_channels)
-        self.nl1 = get_activation("default")
-        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3, stride=stride)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.nl2 = get_activation("default")
-        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3)
-        self.se = SEModule(out_channels, reduction=8) if se else Identity()
-
-        self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)
+        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3, stride=stride,
+                            norm_layer='default', activation='default')
+        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3,
+                            norm_layer='default')
+        self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride,
+                               norm_layer='default') if stride != 1 else nn.Identity()
+        self.relu = get_activation('default')
 
     def forward(self, x):
-        x = self.bn1(x)
-        x = self.nl1(x)
-        identity = x
+        identity = self.shortcut(x)
         x = self.conv1(x)
-        x = self.bn2(x)
-        x = self.nl2(x)
         x = self.conv2(x)
-        x = self.se(x)
-        return x + self.shortcut(identity)
+        x = x + identity
+        x = self.relu(x)
+        return x
 
 
-class PreActResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, se=False):
+class Bottleneck(nn.Module):
+
+    expansion = 4
+
+    def __init__(self, in_channels, out_channels, stride):
         super().__init__()
-        self.bn1 = nn.BatchNorm2d(in_channels)
-        self.nl1 = get_activation("default")
-        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.nl2 = get_activation("default")
-        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3)
-        self.se = SEModule(out_channels, reduction=8) if se else Identity()
+        channels = out_channels // self.expansion
+        self.conv1 = Conv2d(in_channels, channels, kernel_size=1,
+                            norm_layer='default', activation='default')
+        self.conv2 = Conv2d(channels, channels, kernel_size=3, stride=stride,
+                            norm_layer='default', activation='default')
+        self.conv3 = Conv2d(channels, out_channels, kernel_size=1,
+                            norm_layer='default')
+        self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride,
+                               norm_layer='default') if stride != 1 else nn.Identity()
+        self.relu = get_activation('default')
 
     def forward(self, x):
-        identity = x
-        x = self.bn1(x)
-        x = self.nl1(x)
+        identity = self.shortcut(x)
         x = self.conv1(x)
-        x = self.bn2(x)
-        x = self.nl2(x)
         x = self.conv2(x)
-        x = self.se(x)
-        return x + identity
+        x = self.conv3(x)
+        x = x + identity
+        x = self.relu(x)
+        return x
 
 
-class PreActResNet(nn.Module):
+class ResNet(nn.Module):
     stages = [16, 16, 32, 64]
 
-    def __init__(self, layers, k=4, num_classes=10, **kwargs):
+    def __init__(self, depth, num_classes=10, block='basic'):
         super().__init__()
-        self.block_kwargs = kwargs
+        if block == 'basic':
+            block = BasicBlock
+            layers = [(depth - 2) // 6] * 3
+        else:
+            block = Bottleneck
+            layers = [(depth - 2) // 9] * 3
+
         self.conv = Conv2d(3, self.stages[0], kernel_size=3)
 
         self.layer1 = self._make_layer(
-            self.stages[0] * 1, self.stages[1] * k, layers[0], stride=1, **kwargs)
+            block, self.stages[0], self.stages[1], layers[0], stride=1)
         self.layer2 = self._make_layer(
-            self.stages[1] * k, self.stages[2] * k, layers[1], stride=2, **kwargs)
+            block, self.stages[1], self.stages[2], layers[1], stride=2)
         self.layer3 = self._make_layer(
-            self.stages[2] * k, self.stages[3] * k, layers[2], stride=2, **kwargs)
+            block, self.stages[2], self.stages[3], layers[2], stride=2)
 
-        self.bn = nn.BatchNorm2d(self.stages[3] * k)
-        self.nl = get_activation('default')
         self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Linear(self.stages[3] * k, num_classes)
+        self.fc = nn.Linear(self.stages[3], num_classes)
 
-    def _make_layer(self, in_channels, out_channels, blocks, stride=1, **kwargs):
-        layers = [PreActDownBlock(in_channels, out_channels, stride=stride, **kwargs)]
+    def _make_layer(self, block, in_channels, out_channels, blocks, stride=1):
+        layers = [block(in_channels, out_channels, stride=stride)]
         for i in range(1, blocks):
             layers.append(
-                PreActResBlock(out_channels, out_channels, **kwargs))
+                block(out_channels, out_channels, stride=1))
         return nn.Sequential(*layers)
 
     def forward(self, x):
@@ -87,8 +88,6 @@ class PreActResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
 
-        x = self.bn(x)
-        x = self.nl(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
