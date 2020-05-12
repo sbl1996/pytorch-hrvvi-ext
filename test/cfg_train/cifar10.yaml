@@ -1,0 +1,57 @@
+Dataset:
+  type: CIFAR10
+  data_home: "/Users/hrvvi/Code/study/pytorch/datasets/CIFAR10"
+  Train:
+    transforms:
+    - !RandomCrop
+      size: 32
+      padding: 4
+      fill: 128
+    - !RandomHorizontalFlip {}
+    - !CIFAR10Policy {}
+    - !ToTensor {}
+    - !Normalize
+      mean: [0.4914, 0.4822, 0.4465]
+      std: [0.247, 0.243, 0.261]
+    - !Cutout
+      n_holes: 1
+      length: 16
+    batch_size: 2
+    shuffle: True
+    num_workers: 2
+  Test:
+    transforms:
+    - !ToTensor {}
+    - !Normalize
+      mean: [0.4914, 0.4822, 0.4465]
+      std: [0.247, 0.243, 0.261]
+    batch_size: 2
+
+
+Model: ShuffleNetV2
+
+ShuffleNetV2:
+  stem_channels: 8
+  channels_per_stage: [16, 16, 16]
+  units_per_stage: [1, 2, 1]
+  final_channels: 16
+  use_se: True
+
+Optimizer:
+  type: SGD
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0001
+  nesterov: True
+
+LRScheduler:
+  type: CosineAnnealingLR
+  T_max: 10
+  eta_min: 0.001
+  warmup: 1
+  warmup_eta_min: 0.001
+
+seed: 0
+save_path: "./checkpoints/CIFAR10-ShuffleNetV2"
+epochs: 10
+eval_freq: 2

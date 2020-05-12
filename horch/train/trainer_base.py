@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Sequence, Dict, Callable, Union, Optional
+from typing import Sequence, Dict, Callable, Union, Optional, Any
 
 import torch
 import torch.nn as nn
@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from horch.common import CUDA
 from horch.io import fmt_path
-from ignite.engine import Events
+from ignite.engine import Events, Engine
 from ignite.handlers import Checkpoint, DiskSaver
 from ignite.metrics import Metric
 
@@ -60,9 +60,8 @@ class Iters:
 
 
 class TrainerState(Enum):
-    INITIALIZED = 1
-    FIRST_FITTING = 2
-    CONTINUED_FITTING = 3
+    INIT = 1
+    FITTING = 2
 
 
 class TrainerBase:
@@ -77,7 +76,8 @@ class TrainerBase:
                  save_path: Union[Path, str] = ".",
                  fp16: bool = False,
                  lr_step_on_iter: bool = False,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 **kwargs):
 
         # Check Arguments
         if not isinstance(optimizers, Sequence):
@@ -108,18 +108,18 @@ class TrainerBase:
 
         self.log_path = self.save_path / "runs"
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        self.writer = SummaryWriter(str(self.log_path / current_time))
+        self.writer = SummaryWriter(str(self.log_path / current_time), flush_secs=10)
 
-        self.train_engine = self._create_train_engine()
-        self.eval_engine = self._create_eval_engine()
-        saver = DiskSaver(str(self.save_path), create_dir=True, require_empty=False)
-        self.checkpoint_handler = Checkpoint(self.to_save(), saver)
+        self._train_engine_state = None
+        self._eval_engine_state = None
 
-        self._traier_state = TrainerState.INITIALIZED
+        self._traier_state = TrainerState.INIT
+        self._epochs = 0
+
+        self._kwargs = kwargs
 
     def to_save(self):
-        d = {'train_engine': self.train_engine, 'eval_engine': self.eval_engine,
-             'model': self.model, 'optimizers': StatefulList(self.optimizers),
+        d = {'model': self.model, 'optimizers': StatefulList(self.optimizers),
              'lr_schedulers': StatefulList(self.lr_schedulers)}
         if self.fp16:
             from apex import amp
@@ -127,6 +127,8 @@ class TrainerBase:
         return d
 
     def resume(self):
+        assert self._traier_state == TrainerState.INIT
+
         d = Path(self.save_path)
         pattern = "checkpoint_*.pt"
         saves = list(d.glob(pattern))
@@ -136,13 +138,19 @@ class TrainerBase:
         checkpoint = torch.load(fp)
         if not self.fp16 and 'amp' in checkpoint:
             del checkpoint['amp']
+
         Checkpoint.load_objects(self.to_save(), checkpoint)
+
+        self._train_engine_state = checkpoint['train_engine']
+        self._eval_engine_state = checkpoint['eval_engine']
+        self._traier_state = TrainerState.FITTING
+
         print("Load trainer from %s" % fp)
 
-    def _create_train_engine(self):
+    def _create_train_engine(self) -> Engine:
         raise NotImplementedError
 
-    def _create_eval_engine(self):
+    def _create_eval_engine(self) -> Engine:
         raise NotImplementedError
 
     @curry
@@ -158,38 +166,78 @@ class TrainerBase:
             steps = iteration if self.lr_step_on_iter else iteration / iters_per_epoch
             lr_scheduler.step(steps)
 
+    def _set_epochs(self, engine):
+        self._epochs = engine.state.epoch
+
+    @curry
+    def log_metrics(self, engine: Engine, writer: Optional[SummaryWriter], stage: str):
+        log_str = "%s %s - " % (
+            datetime.now(timezone(timedelta(hours=8))).strftime("%H:%M:%S"), stage)
+        metric_logs = []
+        for k, v in engine.state.metrics.items():
+            metric_logs.append("%s: %.4f" % (k, v))
+            if writer:
+                writer.add_scalar("%s/%s" % (k, stage), v, self._epochs)
+        log_str += ", ".join(metric_logs)
+        print(log_str)
+
     def fit(self,
             train_loader: DataLoader,
             epochs: Optional[int],
             val_loader: Optional[DataLoader] = None,
+            eval_freq: Union[int, Epochs, Iters] = 1,
             save_freq: Optional[Union[int, Epochs, Iters]] = None,
-            eval_freq: Union[int, Epochs, Iters] = 1):
+            n_saved: int = 1):
 
-        fit_events = [
-            self.train_engine.add_event_handler(
-                Events.EPOCH_STARTED, self._log_epoch_start),
-            self.train_engine.add_event_handler(
-                Events.ITERATION_COMPLETED, self._lr_scheduler_step)
-        ]
+        train_engine = self._create_train_engine()
+        eval_engine = self._create_eval_engine()
+
+        if self._traier_state == TrainerState.FITTING:
+            train_engine.load_state_dict(self._train_engine_state)
+            eval_engine.load_state_dict(self._eval_engine_state)
+
+        train_engine.add_event_handler(
+            Events.EPOCH_STARTED, self._log_epoch_start),
+        train_engine.add_event_handler(
+            Events.ITERATION_COMPLETED, self._lr_scheduler_step),
+        train_engine.add_event_handler(
+            Events.EPOCH_COMPLETED, self._set_epochs),
+        train_engine.add_event_handler(
+            Events.EPOCH_COMPLETED, self.log_metrics(writer=self.writer, stage='train'))
 
         if save_freq:
-            fit_events.append(
-                self.train_engine.add_event_handler(
-                    get_event_by_freq(save_freq), self.checkpoint_handler))
+            def global_step_transform(engine, event_name):
+                return engine.state.iteration if isinstance(save_freq, Iters) else engine.state.epoch
+
+            saver = DiskSaver(str(self.save_path), create_dir=True, require_empty=False)
+            to_save = {**self.to_save(), "train_engine": train_engine, "eval_engine": eval_engine}
+
+            checkpoint_handler = Checkpoint(to_save, saver, n_saved=n_saved,
+                                            global_step_transform=global_step_transform)
+
+            train_engine.add_event_handler(get_event_by_freq(save_freq), checkpoint_handler)
 
         if val_loader is not None:
-            fit_events.append(
-                self.train_engine.add_event_handler(
-                    get_event_by_freq(eval_freq), lambda _: self.eval_engine.run(val_loader)))
+            train_engine.add_event_handler(
+                get_event_by_freq(eval_freq), lambda _: eval_engine.run(val_loader))
+            eval_engine.add_event_handler(
+                Events.EPOCH_COMPLETED, self.log_metrics(writer=self.writer, stage='valid'))
 
         try:
-            self.train_engine.run(train_loader, epochs)
-            for e in fit_events:
-                e.remove()
+            max_epochs = epochs if self._traier_state == TrainerState.INIT else None
+            self._traier_state = TrainerState.FITTING
+            train_engine.run(train_loader, max_epochs)
         except KeyboardInterrupt as e:
-            for e in fit_events:
-                e.remove()
+            self._train_engine_state = train_engine.state_dict()
+            self._eval_engine_state = eval_engine.state_dict()
+            self._traier_state = TrainerState.FITTING
             raise e
+
+    def evaluate(self, val_loader):
+        eval_engine = self._create_eval_engine()
+        eval_engine.add_event_handler(
+            Events.EPOCH_COMPLETED, self.log_metrics(writer=None, stage='test'))
+        eval_engine.run(val_loader)
 
 
 def get_event_by_freq(freq: Union[int, Epochs, Iters]):

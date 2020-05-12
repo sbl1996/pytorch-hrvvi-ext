@@ -180,7 +180,7 @@ def Conv2d(in_channels, out_channels,
         if activation == 'sigmoid':
             nn.init.xavier_normal_(conv.weight)
         elif activation == 'leaky_relu':
-            nn.init.kaiming_normal_(conv.weight, a=0.1, nonlinearity='leaky_relu')
+            nn.init.kaiming_normal_(conv.weight, a=cfg.leaky_relu.negative_slope, nonlinearity='leaky_relu')
         else:
             try:
                 nn.init.kaiming_normal_(conv.weight, nonlinearity=activation)

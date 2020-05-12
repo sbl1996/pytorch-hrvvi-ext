@@ -1,15 +1,18 @@
-import time
+import uuid
 import random
-import torchvision.transforms.functional as VF
 
 
-class Transform:
-
-    def __init__(self):
-        pass
+class Transform(object):
+    def __init__(self, name=None):
+        if name is None:
+            name = self.__class__.__name__
+        self._id = name + '_' + str(uuid.uuid4())[-6:]
 
     def __call__(self, input, target):
         raise NotImplementedError
+
+    def __str__(self):
+        return str(self._id)
 
     def __repr__(self):
         return pprint(self)
@@ -37,14 +40,6 @@ class InputTransform(Transform):
     def __call__(self, input, target):
         return self.transform(input), target
 
-    # def __repr__(self):
-    #     return pprint(self)
-        # format_string = self.__class__.__name__ + '('
-        # format_string += '\n'
-        # format_string += '    {0}'.format(self.transform)
-        # format_string += '\n)'
-        # return format_string
-
 
 class TargetTransform(Transform):
 
@@ -55,22 +50,8 @@ class TargetTransform(Transform):
     def __call__(self, input, target):
         return input, self.transform(target)
 
-    # def __repr__(self):
-    #     return pprint(self)
-
 
 class Compose(Transform):
-    """Composes several transforms together.
-
-    Args:
-        transforms (list of ``Transform`` objects): list of transforms to compose.
-
-    Example:
-        >>> transforms.Compose([
-        >>>     transforms.CenterCrop(10),
-        >>>     transforms.ToTensor(),
-        >>> ])
-    """
 
     def __init__(self, transforms):
         super().__init__()
@@ -83,15 +64,6 @@ class Compose(Transform):
             else:
                 img = t(img)
         return img, target
-
-    # def __repr__(self):
-    #     return pprint(self)
-        # format_string = self.__class__.__name__ + '('
-        # for t in self.transforms:
-        #     format_string += '\n'
-        #     format_string += '    {0}'.format(t)
-        # format_string += '\n)'
-        # return format_string
 
 
 class UseOriginal(Transform):
@@ -118,28 +90,8 @@ class RandomApply(Transform):
                 img, target = t(img, target)
         return img, target
 
-    # def __repr__(self):
-    #     return pprint(self)
-        # format_string = self.__class__.__name__ + '('
-        # for t in self.transforms:
-        #     format_string += '\n'
-        #     format_string += '    {0}'.format(t)
-        # format_string += '\n)'
-        # return format_string
-
 
 class RandomChoice(Transform):
-    """Apply single transformation randomly picked from a list.
-
-    Args:
-        transforms (list of ``Transform`` objects): list of transforms to compose.
-
-    Example:
-        >>> transforms.RandomChoice([
-        >>>     transforms.CenterCrop(10),
-        >>>     transforms.ToTensor(),
-        >>> ])
-    """
 
     def __init__(self, transforms):
         super().__init__()
@@ -149,24 +101,6 @@ class RandomChoice(Transform):
         t = random.choice(self.transforms)
         img, target = t(img, target)
         return img, target
-
-    # def __repr__(self):
-    #     return pprint(self)
-        # format_string = self.__class__.__name__ + '('
-        # for t in self.transforms:
-        #     format_string += '\n'
-        #     format_string += '    {0}'.format(t)
-        # format_string += '\n)'
-        # return format_string
-
-
-class ToTensor(JointTransform):
-
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, img, anns):
-        return VF.to_tensor(img), anns
 
 
 def pprint(t, level=0, sep='    '):
@@ -188,4 +122,3 @@ def pprint(t, level=0, sep='    '):
     else:
         format_string += ')'
     return format_string
-

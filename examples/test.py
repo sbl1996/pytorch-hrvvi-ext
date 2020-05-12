@@ -14,7 +14,7 @@ from horch.train import Trainer, Save
 from horch.train.metrics import TrainLoss
 from horch.train.metrics.classification import Accuracy
 from horch.train.trainer import print_lr
-from horch.transforms.ext import Cutout, CIFAR10Policy
+from horch.transforms.classification.autoaugment import Cutout, CIFAR10Policy
 
 
 class LeNet5(nn.Module):

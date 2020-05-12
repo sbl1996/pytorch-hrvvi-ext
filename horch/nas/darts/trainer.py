@@ -1,12 +1,9 @@
-from datetime import datetime, timezone, timedelta
-
 import torch
-from toolz import curry
+from ignite.engine import Engine
+from ignite.utils import convert_tensor
 from torch import nn as nn
 
 from horch.train.trainer_base import backward, TrainerBase
-from ignite.engine import Engine, Events
-from ignite.utils import convert_tensor
 
 
 def requires_grad(network: nn.Module, arch: bool, model: bool):
@@ -77,26 +74,14 @@ def create_darts_evaluator(network, metrics, device):
     return engine
 
 
-@curry
-def log_metrics(engine, stage):
-    log_str = "%s %s - " % (
-        datetime.now(timezone(timedelta(hours=8))).strftime("%H:%M:%S"), stage)
-    log_str += ", ".join(["%s: %.4f" % (k, v) for k, v in engine.state.metrics.items()])
-    print(log_str)
-
-
 class DARTSTrainer(TrainerBase):
 
     def _create_train_engine(self):
         engine = create_darts_trainer(
             self.model, self.criterion, self.optimizers[0], self.optimizers[1],
             self.metrics, self.device, fp16=self.fp16)
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, log_metrics(stage='train'))
         return engine
 
     def _create_eval_engine(self):
         engine = create_darts_evaluator(self.model, self.test_metrics, self.device)
-        engine.add_event_handler(
-            Events.EPOCH_COMPLETED, log_metrics(stage='valid'))
         return engine

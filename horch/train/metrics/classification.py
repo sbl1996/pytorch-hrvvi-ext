@@ -12,16 +12,7 @@ from horch.train.metrics import Average
 
 
 def topk_accuracy(y_true, y_pred, k=5):
-    r"""
-    Parameters
-    ----------
-    input : torch.Tensor
-        Tensor of shape (batch_size, num_classes, ...)
-    target : torch.Tensor
-        Tensor of shape (batch_size, ...)
-    k : int
-        Default: 5
-    """
+
     num_examples = np.prod(y_true.size())
     topk_pred = torch.topk(y_pred, k=k, dim=1)[1]
     num_corrects = torch.sum(topk_pred == y_true.unsqueeze(1)).item()
@@ -31,13 +22,6 @@ def topk_accuracy(y_true, y_pred, k=5):
 
 class TopKAccuracy(Average):
     _required_output_keys = ["y_pred", "y_true"]
-    r"""
-    Args:
-        k: default to 5
-    Inputs:
-        preds: (batch_size, C, ...) or (batch_size, ...)
-        y:      (batch_size, ...)
-    """
 
     def __init__(self, k=5):
         self.k = k
@@ -48,11 +32,32 @@ class TopKAccuracy(Average):
         return topk_accuracy(y_true, y_pred, k=self.k)
 
 
-class Accuracy(IgniteAccuracy):
-    _required_output_keys = ["y_pred", "y_true"]
+def accuracy(y_true, y_pred):
+    num_examples = np.prod(y_true.size())
+    pred = torch.argmax(y_pred, dim=1)
+    num_corrects = torch.sum(pred == y_true).item()
+    acc = num_corrects / num_examples
+    return acc, num_examples
 
-    def __init__(self):
-        super().__init__()
+
+class Accuracy(Average):
+
+    def __init__(self, mixup=False):
+        self.mixup = mixup
+        super().__init__(output_transform=self.output_transform)
+
+    def output_transform(self, output):
+        if self.mixup:
+            y_pred, y_true, batch_size, lam = get(["y_pred", "y_true", "batch_size", "mixup_lambda"], output)
+            y_a, y_b = y_true
+            pred = torch.argmax(y_pred, dim=1)
+            num_corrects = (lam * pred.eq(y_a).cpu().sum().float()
+                        + (1 - lam) * pred.eq(y_b).cpu().sum().float())
+            acc = num_corrects / batch_size
+            return acc, batch_size
+        else:
+            y_pred, y_true = get(["y_pred", "y_true"], output)
+            return accuracy(y_true, y_pred)
 
 
 class ROCAUC(Metric):

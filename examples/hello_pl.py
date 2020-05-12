@@ -12,7 +12,7 @@ import pytorch_lightning as pl
 from horch.datasets import train_test_split
 from horch.models.cifar.shufflenetv2 import ShuffleNetV2
 from horch.train.lr_scheduler import CosineAnnealingLR
-from horch.transforms.ext import Cutout
+from horch.transforms.classification.autoaugment import Cutout
 
 train_transform = Compose([
     RandomCrop(32, padding=4, fill=128),

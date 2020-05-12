@@ -1,8 +1,5 @@
-examples/datasets
-examples/checkpoints
-
-test/datasets
-test/checkpoints
+checkpoints/
+dataset/
 
 .DS_Store
 .idea/

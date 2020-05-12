@@ -1,6 +1,6 @@
 Dataset:
   type: MNIST
-  data_home: datasets
+  data_home: "/Users/hrvvi/Code/study/pytorch/datasets"
   Split:
     test_ratio: 0.05
     random: True
@@ -34,14 +34,17 @@ Dataset:
       std: [0.3081]
     batch_size: 128
 
-Model:
-  type: LeNet5
+
+Model: LeNet5
+
+LeNet5:
+  num_classes: 10
 
 Optimizer:
   type: SGD
   lr: 0.05
   momentum: 0.9
-  weight_decay: 1e-4
+  weight_decay: 0.0001
   nesterov: True
 
 LRScheduler:
@@ -51,4 +54,8 @@ LRScheduler:
   warmup: 1
   warmup_eta_min: 0.001
 
+name: "MNIST-LeNet5"
 seed: 0
+save_path: "./checkpoints"
+epochs: 10
+eval_freq: 2

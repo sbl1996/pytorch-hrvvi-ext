@@ -2,25 +2,6 @@ from collections.abc import Sequence, Mapping
 
 import torch
 
-
-class ProtectedSeq:
-
-    def __init__(self, seq):
-        self.seq = seq
-
-    def __getitem__(self, item):
-        return self.seq
-
-    def __len__(self):
-        return 1
-
-    def __repr__(self):
-        return "Args(" + str(self.seq) + ")"
-
-    def __iter__(self):
-        return iter((self.seq,))
-
-
 CUDA = torch.cuda.is_available()
 
 
@@ -30,8 +11,6 @@ def detach(t, clone=True):
             return t.clone().detach()
         else:
             return t.detach()
-    elif isinstance(t, ProtectedSeq):
-        return t
     elif isinstance(t, Sequence):
         return t.__class__(detach(x, clone) for x in t)
     elif isinstance(t, Mapping):

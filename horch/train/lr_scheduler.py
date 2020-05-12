@@ -33,7 +33,7 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
         https://arxiv.org/abs/1608.03983
     """
 
-    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, warmup_eta_min=None, gamma=1.0, last_epoch=-1):
+    def  __init__(self, optimizer, T_0, T_mult=1, eta_min=0, warmup=0, warmup_eta_min=None, gamma=1.0, last_epoch=-1):
         if T_0 <= 0 or not isinstance(T_0, int):
             raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
         if T_mult < 1 or not isinstance(T_mult, int):
@@ -67,6 +67,9 @@ class CosineAnnealingWarmRestarts(_LRScheduler):
             lr = eta_min + (base_lr - eta_min) * mult
             lrs.append(lr)
         return lrs
+
+    def get_last_lr(self):
+        return self.get_lr()
 
     def step(self, epoch=None):
         """Step could be called after every update, i.e. if one epoch has 10 iterations

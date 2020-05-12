@@ -46,7 +46,7 @@ test_transform = Compose([
     Normalize((0.1307,), (0.3081,)),
 ])
 
-data_home = "datasets"
+data_home = "/Users/hrvvi/Code/study/pytorch/datasets"
 ds = MNIST(data_home, train=True, download=False)
 ds = train_test_split(ds, test_ratio=0.1, random=True)[1]
 ds_train, ds_val = train_test_split(

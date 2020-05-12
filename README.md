@@ -46,7 +46,7 @@ from horch.models.cifar.efficientnet import efficientnet_b0
 from horch.train import Trainer, Save
 from horch.train.metrics import  TrainLoss
 from horch.train.metrics.classification import Accuracy
-from horch.transforms.ext import Cutout, CIFAR10Policy
+from horch.transforms.classification.autoaugment import Cutout, CIFAR10Policy
 
 # Data Augmentation
 
