@@ -5,12 +5,10 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as F
 
-from horch.core import register_op
 from horch.transforms import Transform
 from horch.transforms.classification.autoaugment import CIFAR10Policy, ImageNetPolicy
 
 
-@register_op
 class Cutout(Transform):
     """Randomly mask out one or more patches from an image.
 
@@ -59,7 +57,6 @@ class Cutout(Transform):
         return img
 
 
-@register_op
 class PadToSquare(Transform):
     """Pad the given PIL Image on all sides with the given "pad" value.
 

@@ -13,6 +13,8 @@ ops = [
     Normalize,
     Pad,
     RandomResizedCrop,
+    Cutout,
+    CIFAR10Policy,
 ]
 
 

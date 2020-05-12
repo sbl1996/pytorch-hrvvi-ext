@@ -10,8 +10,7 @@ from horch.train.lr_scheduler import CosineAnnealingLR
 from horch.models.utils import summary
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
-from horch.train.trainer import print_lr
-from horch.train.trainer2 import Trainer
+from horch.train.trainer import Trainer
 
 train_transform = Compose([
     Pad(2),

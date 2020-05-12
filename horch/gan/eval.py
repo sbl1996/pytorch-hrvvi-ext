@@ -2,6 +2,7 @@ from collections import Sequence
 from math import ceil
 
 import numpy as np
+from ignite.utils import convert_tensor
 from scipy import linalg
 
 import torch
@@ -10,7 +11,6 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchvision.transforms import Compose, Resize, ToTensor
 
 from horch.common import CUDA
-from horch.train._utils import to_device
 
 
 class _ImageDataset(Dataset):
@@ -60,7 +60,7 @@ def batch_apply(inputs, model, func=lambda x: x, batch_size=32, device=None):
 
     preds = []
     for batch in it:
-        x = to_device(batch, device)
+        x = convert_tensor(batch, device=device)
         if torch.is_tensor(x):
             x = (x,)
         with torch.no_grad():

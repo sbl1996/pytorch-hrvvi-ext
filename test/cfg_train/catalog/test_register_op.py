@@ -14,9 +14,18 @@ from horch.train import manual_seed
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
 from horch.train.optimizer import SGDW
-from horch.train.trainer2 import Trainer
+from horch.train.trainer import Trainer
 
 register_op(SGDW, serialize=False)
+
+@register_op
+class Zero():
+
+    def __init__(self):
+        pass
+
+    def __call__(self, img):
+        return img
 
 cfg = load_yaml_config('/Users/hrvvi/Code/Library/pytorch-hrvvi-ext/test/cfg_train/catalog/mnist.yaml')
 manual_seed(cfg.seed)

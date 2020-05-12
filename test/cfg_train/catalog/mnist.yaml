@@ -6,6 +6,7 @@ Dataset:
     random: True
   Train:
     transforms:
+    - !Zero {}
     - !Pad
       padding: 2
     - !ToTensor {}

@@ -1,12 +1,10 @@
 import copy
 import os
 import torch
-from horch.train.trainer import set_training
+from ignite.utils import convert_tensor
 from tqdm.autonotebook import tqdm
 from torch.optim.lr_scheduler import _LRScheduler
 import matplotlib.pyplot as plt
-
-from horch.train._utils import _prepare_batch
 
 
 class LRFinder(object):
@@ -154,10 +152,10 @@ class LRFinder(object):
 
     def _train_batch(self, batch):
         # Set model to training mode
-        set_training(self.model)
+        self.model.train()
 
         # Move data to the correct device
-        inputs, targets = _prepare_batch(batch, device=self.device)
+        inputs, targets = convert_tensor(batch, device=self.device)
 
         # Forward pass
         self.optimizer.zero_grad()
@@ -179,7 +177,7 @@ class LRFinder(object):
         with torch.no_grad():
             for batch in data_loader:
                 # Move data to the correct device
-                inputs, targets = _prepare_batch(batch, device=self.device)
+                inputs, targets = convert_tensor(batch, device=self.device)
 
                 # Forward pass and loss computation
                 outputs = self.model(*inputs)

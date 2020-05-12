@@ -14,7 +14,6 @@ from horch.train import Trainer, manual_seed
 from horch.train.lr_scheduler import CosineAnnealingLR
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
-from horch.train.trainer import print_lr
 
 manual_seed(0)
 
@@ -88,6 +87,6 @@ train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2,
 test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
-trainer.fit(train_loader, 30, val_loader=val_loader, callbacks=[print_lr])
+trainer.fit(train_loader, 30, val_loader=val_loader)
 
 trainer.evaluate(test_loader)

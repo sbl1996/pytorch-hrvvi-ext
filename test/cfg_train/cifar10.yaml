@@ -16,7 +16,7 @@ Dataset:
     - !Cutout
       n_holes: 1
       length: 16
-    batch_size: 2
+    batch_size: 32
     shuffle: True
     num_workers: 2
   Test:
@@ -25,16 +25,17 @@ Dataset:
     - !Normalize
       mean: [0.4914, 0.4822, 0.4465]
       std: [0.247, 0.243, 0.261]
-    batch_size: 2
+    batch_size: 128
+    num_workers: 1
 
 
 Model: ShuffleNetV2
 
 ShuffleNetV2:
-  stem_channels: 8
-  channels_per_stage: [16, 16, 16]
+  stem_channels: 16
+  channels_per_stage: [16, 32, 64]
   units_per_stage: [1, 2, 1]
-  final_channels: 16
+  final_channels: 64
   use_se: True
 
 Optimizer:
@@ -50,6 +51,9 @@ LRScheduler:
   eta_min: 0.001
   warmup: 1
   warmup_eta_min: 0.001
+
+Mixup:
+  alpha: 1.0
 
 seed: 0
 save_path: "./checkpoints/CIFAR10-ShuffleNetV2"

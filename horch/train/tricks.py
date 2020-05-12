@@ -7,12 +7,7 @@ import torch.nn as nn
 # Zero gamma (bn of residual)
 
 # No bias decay
-def get_params(model):
-    for m in model.modules():
-        if 'Conv' in m.__class__.__name__ or isinstance(m, nn.Linear):
-            for name, p in m.named_parameters():
-                if name == 'weight':
-                    yield p
+# TODO: Not implemented
 
 # FP16
 

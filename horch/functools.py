@@ -1,4 +1,4 @@
-from toolz.curried import curry, isiterable, map, filter
+from toolz.curried import curry, isiterable, map, filter, keyfilter
 
 
 def lmap(f, *iterables):
@@ -19,3 +19,7 @@ def find(f, seq):
         return next(filter(lambda x: f(x[1]), enumerate(seq)))[0]
     except StopIteration:
         return None
+
+@curry
+def pick(whitelist, d):
+    return keyfilter(lambda k: k in whitelist, d)

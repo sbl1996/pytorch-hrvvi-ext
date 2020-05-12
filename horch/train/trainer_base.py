@@ -5,6 +5,7 @@ from typing import Sequence, Dict, Callable, Union, Optional, Any
 
 import torch
 import torch.nn as nn
+from ignite.contrib.handlers import ProgressBar
 from toolz.curried import curry
 from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
@@ -86,6 +87,7 @@ class TrainerBase:
             lr_schedulers = [lr_schedulers]
         if device is None:
             device = 'cuda' if CUDA else 'cpu'
+        device = torch.device(device)
         save_path = fmt_path(save_path)
         model.to(device)
 
@@ -153,6 +155,10 @@ class TrainerBase:
     def _create_eval_engine(self) -> Engine:
         raise NotImplementedError
 
+    def _attach_prograss_bar(self, train_engine: Engine):
+        pb = ProgressBar()
+        pb.attach(train_engine)
+
     @curry
     def _log_epoch_start(self, engine):
         lrs = "".join(", lr %f" % lr_scheduler.get_last_lr()[0] for lr_scheduler in self.lr_schedulers)
@@ -187,7 +193,8 @@ class TrainerBase:
             val_loader: Optional[DataLoader] = None,
             eval_freq: Union[int, Epochs, Iters] = 1,
             save_freq: Optional[Union[int, Epochs, Iters]] = None,
-            n_saved: int = 1):
+            n_saved: int = 1,
+            progress_bar: bool = False):
 
         train_engine = self._create_train_engine()
         eval_engine = self._create_eval_engine()
@@ -196,8 +203,9 @@ class TrainerBase:
             train_engine.load_state_dict(self._train_engine_state)
             eval_engine.load_state_dict(self._eval_engine_state)
 
-        train_engine.add_event_handler(
-            Events.EPOCH_STARTED, self._log_epoch_start),
+        if not progress_bar:
+            train_engine.add_event_handler(
+                Events.EPOCH_STARTED, self._log_epoch_start),
         train_engine.add_event_handler(
             Events.ITERATION_COMPLETED, self._lr_scheduler_step),
         train_engine.add_event_handler(
@@ -222,6 +230,9 @@ class TrainerBase:
                 get_event_by_freq(eval_freq), lambda _: eval_engine.run(val_loader))
             eval_engine.add_event_handler(
                 Events.EPOCH_COMPLETED, self.log_metrics(writer=self.writer, stage='valid'))
+
+        if progress_bar:
+            self._attach_prograss_bar(train_engine)
 
         try:
             max_epochs = epochs if self._traier_state == TrainerState.INIT else None

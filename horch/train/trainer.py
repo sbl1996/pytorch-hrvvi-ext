@@ -1,301 +1,113 @@
-import os
-from datetime import datetime
-from collections import defaultdict
-from pathlib import Path
+from typing import Callable, Sequence, Dict, Optional
 
-from toolz.curried import get, keyfilter
+from ignite.metrics import Metric
+from toolz.curried import get
+
+import numpy as np
 
 import torch
-from torch.utils.tensorboard import SummaryWriter
-from torch.nn.utils import clip_grad_value_
-from torch.utils.data import DataLoader
+import torch.nn as nn
+from ignite.contrib.handlers import ProgressBar
+from ignite.engine import Engine, Events
+from ignite.utils import convert_tensor
+from torch.nn.utils import clip_grad_norm_
+from torch.optim import Optimizer
 
-from ignite.engine import Engine, Events, _prepare_batch
-from ignite.handlers import Timer
-
-from horch.common import CUDA
-from horch.train.metrics import TrainLoss, Loss
-from typing import Sequence, Dict
-
-
-def set_training(model):
-    model.train()
-    for m in model.modules():
-        if "BatchNorm" in type(m).__name__ and hasattr(m, "frozen") and m.frozen:
-            m.eval()
+from horch.functools import pick
+from horch.train.trainer_base import backward, TrainerBase
 
 
-def create_supervised_evaluator(model, metrics=None,
-                                device=None, prepare_batch=_prepare_batch):
-    if metrics is None:
-        metrics = {}
-    if device:
-        model.to(device)
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
-    def _inference(engine, batch):
-        model.eval()
-        with torch.no_grad():
-            x, y_true = prepare_batch(batch, device=device)
-            y_pred = model(x)
-            output = {
-                "y_pred": y_pred,
-                "y_true": y_true,
-                'batch_size': x[0].size(0),
-            }
-            return output
 
-    engine = Engine(_inference)
+def mixup_data(x, y, alpha=1.0):
+    lam = np.random.beta(alpha, alpha) if alpha > 0 else 1
 
-    for name, metric in metrics.items():
-        metric.attach(engine, name)
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size, device=x.device)
 
-    return engine
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
 
 
 def create_supervised_trainer(
-        model, criterion, optimizer, metrics=None,
-        device=None, prepare_batch=_prepare_batch,
-        grad_clip_value=None, accumulation_steps=1,
-        fp16=False):
-    if metrics is None:
-        metrics = {}
-    if device:
-        model.to(device)
+        model: nn.Module,
+        criterion: Callable,
+        optimizer: Optimizer,
+        metrics: Dict[str, Metric],
+        device: torch.device, mixup_alpha=None, clip_grad_norm=None, accumulation_steps=1, fp16=False):
+    def step(engine, batch):
+        model.train()
+        x, y_true = convert_tensor(batch, device)
 
-    def _update(engine, batch):
-        set_training(model)
-        x, y_true = prepare_batch(batch, device=device)
-        y_pred = model(x)
-        loss = criterion(y_pred, y_true)
-        if fp16:
-            from apex import amp
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
+        if mixup_alpha:
+            x, y_a, y_b, lam = mixup_data(x, y_true, mixup_alpha)
+            y_true = y_a, y_b
+            logits = model(x)
+            loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
         else:
-            loss.backward()
+            logits = model(x)
+            loss = criterion(logits, y_true)
+
+        backward(loss, optimizer, fp16)
         if engine.state.iteration % accumulation_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
-        if grad_clip_value:
-            clip_grad_value_(model.parameters(), grad_clip_value)
+        if clip_grad_norm:
+            clip_grad_norm_(model.parameters(), clip_grad_norm)
         outs = {
-            "y_true": y_true,
             "loss": loss.item(),
             "batch_size": x.size(0),
-            "y_pred": y_pred.detach(),
+            "y_true": y_true,
+            "y_pred": logits.detach(),
+            "lr": optimizer.param_groups[0]['lr'],
         }
+        if mixup_alpha:
+            outs["mixup_lambda"] = lam
         return outs
 
-    engine = Engine(_update)
+    engine = Engine(step)
     for name, metric in metrics.items():
         metric.attach(engine, name)
 
     return engine
 
 
-def _evaluate(engine, evaluator, val_loader):
-    evaluator.run(val_loader)
-
-
-class Trainer:
-
-    def __init__(self, model, criterion, optimizer, lr_scheduler=None,
-                 metrics=None, test_metrics=None, save_path=".", name="Net", fp16=False, lr_step_on_iter=None):
-
-        self.fp16 = fp16
-        self.device = 'cuda' if CUDA else 'cpu'
-        model.to(self.device)
-        if self.fp16:
-            from apex import amp
-            model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
-
-        self.model = model
-        self.criterion = criterion
-        self.optimizer = optimizer
-        self.lr_scheduler = lr_scheduler
-        self.metrics = metrics or {}
-        self.test_metrics = test_metrics
-        if test_metrics is None:
-            self.test_metrics = metrics.copy()
-            if 'loss' in metrics and isinstance(metrics['loss'], TrainLoss):
-                self.test_metrics['loss'] = Loss(criterion=criterion)
-        self.save_path = os.path.join(save_path, 'trainer')
-        self.name = name
-        self.lr_step_on_iter = lr_step_on_iter
-
-        current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        log_dir = os.path.join(save_path, 'runs', self.name, current_time)
-        self.writer = SummaryWriter(log_dir)
-
-        self.metric_history = defaultdict(list)
-        self._timer = Timer()
-        self._epochs = 0
-
-        self._verbose = True
-
-    def _print(self, msg):
-        if self._verbose:
-            print(msg)
-
-    def _log_epochs(self, engine, epochs):
-        self._print("Epoch %d/%d" %
-                    (self._epochs + 1, self._epochs + 1 + epochs - engine.state.epoch))
-
-    def _lr_scheduler_step(self, engine):
-        iteration = engine.state.iteration - 1
-        iters_per_epoch = engine.state.epoch_length
-        cur_iter = iteration % iters_per_epoch
-        if self.lr_scheduler:
-            if self.lr_step_on_iter:
-                self.lr_scheduler.step(self.epochs() * iters_per_epoch + cur_iter)
-            else:
-                self.lr_scheduler.step(self.epochs() + (cur_iter / iters_per_epoch))
-
-    def _attach_timer(self, engine):
-        self._timer.attach(engine, start=Events.EPOCH_STARTED)
-
-    def _increment_epoch(self, engine):
-        self._epochs += 1
-
-    def _log_results(self, engine):
-        elapsed = int(self._timer.value())
-        msg = "elapsed: %ds\t" % elapsed
-        for name, val in engine.state.metrics.items():
-            if isinstance(val, float):
-                msg += "%s: %.4f\t" % (name, val)
-                self.writer.add_scalar(name, val, self.epochs())
-            else:
-                msg += "%s: %s\t" % (name, val)
-                for i, v in enumerate(val):
-                    pass
-                    self.writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
-            self.metric_history[name].append(val)
-        self._print(msg)
-
-    def _log_val_results(self, engine, evaluator):
-        msg = "validate ------\t"
-        for name, val in evaluator.state.metrics.items():
-            if isinstance(val, float):
-                msg += "%s: %.4f\t" % (name, val)
-                self.writer.add_scalar(name, val, self.epochs())
-            else:
-                msg += "%s: %s\t" % (name, val)
-                for i, v in enumerate(val):
-                    pass
-                    self.writer.add_scalar("%s-%d" % (name, i + 1), v, self.epochs())
-            self.metric_history["val_" + name].append(val)
-        self._print(msg)
-
-    def fit(self, train_loader, epochs=1, val_loader=None, eval_freq=1, save=None, callbacks=(), grad_clip_value=None,
-            accumulation_steps=1):
-
-        engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizer,
-            self.metrics, self.device, grad_clip_value=grad_clip_value,
-            accumulation_steps=accumulation_steps, fp16=self.fp16)
-        self._attach_timer(engine)
-
-        engine.add_event_handler(
-            Events.ITERATION_COMPLETED, self._lr_scheduler_step)
-
-        engine.add_event_handler(Events.EPOCH_STARTED, self._log_epochs, epochs)
-
-        if val_loader is not None:
-            evaluator = create_supervised_evaluator(
-                self.model, self.test_metrics, self.device)
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED(every=eval_freq), lambda _: evaluator.run(val_loader))
-
-        engine.add_event_handler(Events.EPOCH_COMPLETED, self._increment_epoch)
-        engine.add_event_handler(Events.EPOCH_COMPLETED, self._log_results)
-        if val_loader is not None:
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED(every=eval_freq), self._log_val_results, evaluator)
-
-        # Set checkpoint
-        if save:
-            checkpoint_handler = save.parse(self)
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, checkpoint_handler, {"trainer": self})
-
-        for callback in callbacks:
-            engine.add_event_handler(
-                Events.EPOCH_COMPLETED, _trainer_callback_wrap(callback), self)
-
-        # Run
-        engine.run(train_loader, epochs)
-
-        # Return history
-        hist = {metric: hist[-epochs:]
-                for metric, hist in self.metric_history.items()}
-        if val_loader is None:
-            hist = keyfilter(lambda k: not k.startswith("val_"), hist)
-        return hist
-
-    def state_dict(self):
-        s = {
-            "epochs": self.epochs(),
-            "model": self.model.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-            "lr_scheduler": None,
-            "amp": None,
-            "metric_history": self.metric_history,
+def create_supervised_evaluator(model, metrics, device):
+    def step(engine, batch):
+        model.eval()
+        x, y_true = convert_tensor(batch, device)
+        with torch.no_grad():
+            logits = model(x)
+        output = {
+            "y_pred": logits,
+            "y_true": y_true,
+            'batch_size': x[0].size(0),
         }
-        if self.lr_scheduler:
-            s["lr_scheduler"] = self.lr_scheduler.state_dict()
-        if self.fp16:
-            from apex import amp
-            s["amp"] = amp.state_dict()
-        return s
+        return output
 
-    def load_state_dict(self, state_dict):
-        epochs, model, optimizer, lr_scheduler, amp_state, metric_history = get(
-            ["epochs", "model", "optimizer", "lr_scheduler", "amp", "metric_history"], state_dict)
-        self._epochs = epochs
-        self.model.load_state_dict(model)
-        self.optimizer.load_state_dict(optimizer)
-        if self.lr_scheduler and lr_scheduler:
-            self.lr_scheduler.load_state_dict(lr_scheduler)
-        if self.fp16 and amp_state is not None:
-            from apex import amp
-            amp.load_state_dict(amp_state)
-        self.metric_history = metric_history
+    engine = Engine(step)
+    for name, metric in metrics.items():
+        metric.attach(engine, name)
 
-    def save(self):
-        d = Path(self.save_path)
-        d.mkdir(parents=True, exist_ok=True)
-        filename = "%s_trainer_%d.pth" % (self.name, self.epochs())
-        fp = d / filename
-        torch.save(self.state_dict(), fp)
-        self._print("Save trainer as %s" % fp)
-
-    def load(self):
-        d = Path(self.save_path)
-        pattern = "%s_trainer*.pth" % self.name
-        saves = list(d.glob(pattern))
-        if len(saves) == 0:
-            raise FileNotFoundError("No checkpoint to load for %s in %s" % (self.name, self.save_path))
-        fp = max(saves, key=lambda f: f.stat().st_mtime)
-        self.load_state_dict(torch.load(fp, map_location=self.device))
-        self._print("Load trainer from %s" % fp)
-
-    def epochs(self):
-        return self._epochs
-
-    def evaluate(self, test_loader, evaluate_metrics=None):
-        if evaluate_metrics is None:
-            evaluate_metrics = self.test_metrics
-        evaluator = create_supervised_evaluator(
-            self.model, evaluate_metrics, self.device)
-        return evaluator.run(test_loader).metrics
+    return engine
 
 
-def _trainer_callback_wrap(f):
-    def func(engine, *args, **kwargs):
-        return f(*args, **kwargs)
+class Trainer(TrainerBase):
 
-    return func
+    def _attach_prograss_bar(self, train_engine: Engine):
+        pb = ProgressBar()
+        # pb.attach(train_engine, output_transform=lambda x: print(x))
+        pb.attach(train_engine, output_transform=pick(['lr', 'loss']))
 
+    def _create_train_engine(self):
+        engine = create_supervised_trainer(
+            self.model, self.criterion, self.optimizers[0], self.metrics, self.device,
+            mixup_alpha=self._kwargs.get('mixup_alpha'), fp16=self.fp16)
+        return engine
 
-def print_lr(trainer):
-    trainer._print(trainer.optimizer.param_groups[0]['lr'])
+    def _create_eval_engine(self):
+        engine = create_supervised_evaluator(self.model, self.test_metrics, self.device)
+        return engine

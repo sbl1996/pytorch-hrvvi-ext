@@ -3,11 +3,9 @@ import random
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
 
-from horch.core import register_op
 from horch.transforms import Transform
 
 
-@register_op
 class ImageNetPolicy(Transform):
     """ Randomly choose one of the best 24 Sub-policies on ImageNet.
 
@@ -63,7 +61,6 @@ class ImageNetPolicy(Transform):
         return "AutoAugment ImageNet Policy"
 
 
-@register_op
 class CIFAR10Policy(Transform):
     """ Randomly choose one of the best 25 Sub-policies on CIFAR10.
 
@@ -79,6 +76,7 @@ class CIFAR10Policy(Transform):
     """
 
     def __init__(self, fillcolor=(128, 128, 128)):
+        super().__init__()
         self.policies = [
             SubPolicy(0.1, "invert", 7, 0.2, "contrast", 6, fillcolor),
             SubPolicy(0.7, "rotate", 2, 0.3, "translateX", 9, fillcolor),
@@ -119,7 +117,6 @@ class CIFAR10Policy(Transform):
         return "AutoAugment CIFAR10 Policy"
 
 
-@register_op
 class SVHNPolicy(Transform):
     """ Randomly choose one of the best 25 Sub-policies on SVHN.
 
