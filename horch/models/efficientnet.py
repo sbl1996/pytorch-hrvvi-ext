@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from horch.models.modules import Conv2d, Identity, seq
-from horch.models.drop import DropConnect
+from horch.models.drop import DropPath
 
 
 def round_channels(channels, multiplier=None, divisor=8, min_depth=None):
@@ -75,7 +75,7 @@ class MBConv(nn.Module):
 
         self.layers = layers
         if self.use_res_connect:
-            self.drop_connect = DropConnect(drop_connect)
+            self.drop_connect = DropPath(drop_connect)
 
     def forward(self, x):
         out = self.layers(x)

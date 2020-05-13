@@ -162,7 +162,7 @@ class DropBlock3D(DropBlock2D):
         return self.drop_prob / (self.block_size ** 3)
 
 
-class DropConnect(nn.Module):
+class DropPath(nn.Module):
     def __init__(self, p=0.2):
         super().__init__()
         assert 0 <= p <= 1, "drop probability has to be between 0 and 1, but got %f" % p
