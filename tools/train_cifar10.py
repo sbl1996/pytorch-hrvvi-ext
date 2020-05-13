@@ -3,6 +3,7 @@ import argparse
 from horch.core.catalog.helper import get_optimizer, get_lr_scheduler, get_dataloader
 
 import torch
+import torch.nn as nn
 from torchvision.datasets import CIFAR10
 
 from horch.core import load_yaml_config
@@ -56,7 +57,7 @@ if __name__ == '__main__':
     }
 
     test_metrics = {
-        'loss': Loss(criterion),
+        'loss': Loss(nn.CrossEntropyLoss()),
         'acc': Accuracy(),
     }
 
