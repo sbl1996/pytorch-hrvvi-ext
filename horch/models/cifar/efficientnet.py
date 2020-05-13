@@ -47,7 +47,7 @@ class SEModule(nn.Module):
 
 
 class MBConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, se_ratio=0.25, drop_connect=0.2):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, se_ratio=0.25, drop_rate=0.2):
         super().__init__()
 
         channels = in_channels * expand_ratio
@@ -72,20 +72,21 @@ class MBConv(nn.Module):
             "project", Conv2d(channels, out_channels, kernel_size=1,
                               norm_layer='default'))
 
+        if self.use_res_connect and drop_rate:
+            layers.add_module(
+                "drop_path", DropPath(drop_rate))
+
         self.layers = layers
-        if self.use_res_connect:
-            self.drop_connect = DropPath(drop_connect)
 
     def forward(self, x):
         out = self.layers(x)
         if self.use_res_connect:
-            out = self.drop_connect(out)
             out += x
         return out
 
 
 class EfficientNet(nn.Module):
-    def __init__(self, num_classes=10, width_mult=1.0, depth_coef=1.0, dropout=0.2, drop_connect=0.3):
+    def __init__(self, num_classes=10, width_mult=1.0, depth_coef=1.0, dropout=0.2, drop_path=0.3):
         super().__init__()
         in_channels = 32
         last_channels = 1280
@@ -112,7 +113,7 @@ class EfficientNet(nn.Module):
         stage = nn.Sequential()
         # building inverted residual blocks
         for idx, (r, k, s, e, i, o, se) in enumerate(setting):
-            drop_rate = drop_connect * (float(idx) / len(setting))
+            drop_rate = drop_path * (float(idx) / len(setting))
             if s == 2:
                 self.features.add_module("stage%d" % si, stage)
                 si += 1
@@ -121,11 +122,11 @@ class EfficientNet(nn.Module):
             in_channels = round_channels(i, width_mult)
             out_channels = round_channels(o, width_mult)
             stage.add_module("unit%d" % j, MBConv(
-                in_channels, out_channels, k, s, e, se, drop_connect=drop_rate))
+                in_channels, out_channels, k, s, e, se, drop_rate=drop_rate))
             j += 1
             for _ in range(round_repeats(r, depth_coef) - 1):
                 stage.add_module("unit%d" % j, MBConv(
-                    out_channels, out_channels, k, 1, e, se, drop_connect=drop_rate))
+                    out_channels, out_channels, k, 1, e, se, drop_rate=drop_rate))
                 j += 1
         self.features.add_module("stage%d" % si, stage)
         self.features.add_module("final_block",
