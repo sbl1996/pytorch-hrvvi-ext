@@ -11,9 +11,6 @@ class Transform(object):
     def __call__(self, input, target):
         raise NotImplementedError
 
-    def __str__(self):
-        return str(self._id)
-
     def __repr__(self):
         return pprint(self)
 
