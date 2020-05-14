@@ -60,7 +60,7 @@ def channel_shuffle(x, groups=2):
 
 
 class BasicUnit(nn.Module):
-    def __init__(self, in_channels, use_se, drop_rate):
+    def __init__(self, in_channels, use_se):
         super().__init__()
         assert in_channels % 2 == 0
         channels = in_channels // 2
@@ -72,8 +72,6 @@ class BasicUnit(nn.Module):
         ]
         if use_se:
             branch.append(SELayer(channels, reduction=2))
-        if drop_rate:
-            branch.append(DropPath(drop_rate))
         self.branch = nn.Sequential(*branch)
 
     def forward(self, x):
@@ -84,7 +82,7 @@ class BasicUnit(nn.Module):
 
 
 class ReduceUnit(nn.Module):
-    def __init__(self, in_channels, out_channels, use_se, drop_rate):
+    def __init__(self, in_channels, out_channels, use_se):
         super().__init__()
         assert out_channels % 2 == 0
         channels = out_channels // 2
@@ -100,8 +98,6 @@ class ReduceUnit(nn.Module):
         ]
         if use_se:
             branch2.append(SELayer(channels, reduction=2))
-        if drop_rate:
-            branch2.append(DropPath(drop_rate))
         self.branch2 = nn.Sequential(*branch2)
 
     def forward(self, x):
@@ -112,30 +108,29 @@ class ReduceUnit(nn.Module):
         return x
 
 
-def _make_layer(block, num_units, in_channels, out_channels, stride, use_se, drop_rate):
+def _make_layer(block, num_units, in_channels, out_channels, stride, use_se):
     units = nn.Sequential()
     if stride == 2:
-        unit = ReduceUnit(in_channels, out_channels, use_se, drop_rate)
+        unit = ReduceUnit(in_channels, out_channels, use_se)
     else:
         unit = Conv2d(in_channels, out_channels, kernel_size=3,
                       norm_layer='default', activation='default')
     units.add_module("unit1", unit)
     for i in range(1, num_units):
-        units.add_module(f"unit{i + 1}", block(out_channels, use_se, drop_rate))
+        units.add_module(f"unit{i + 1}", block(out_channels, use_se))
     return units
 
 
 class ShuffleNetV2(nn.Module):
-    def __init__(self, stem_channels, channels_per_stage, units_per_stage, final_channels, num_classes=10, use_se=True,
-                 residual=False, drop_rate=0.2):
+    def __init__(self, stem_channels, channels_per_stage, units_per_stage, final_channels, num_classes=10, use_se=True):
         super().__init__()
         self.stem = Conv2d(3, stem_channels, kernel_size=3,
                            activation='default', norm_layer='default')
         # block = ResUnit if residual else BasicUnit
         block = BasicUnit
-        self.stage1 = _make_layer(block, units_per_stage[0], stem_channels, channels_per_stage[0], 1, use_se, drop_rate)
-        self.stage2 = _make_layer(block, units_per_stage[1], channels_per_stage[0], channels_per_stage[1], 2, use_se, drop_rate)
-        self.stage3 = _make_layer(block, units_per_stage[2], channels_per_stage[1], channels_per_stage[2], 2, use_se, drop_rate)
+        self.stage1 = _make_layer(block, units_per_stage[0], stem_channels, channels_per_stage[0], 1, use_se)
+        self.stage2 = _make_layer(block, units_per_stage[1], channels_per_stage[0], channels_per_stage[1], 2, use_se)
+        self.stage3 = _make_layer(block, units_per_stage[2], channels_per_stage[1], channels_per_stage[2], 2, use_se)
         self.final_block = Conv2d(channels_per_stage[2], final_channels, kernel_size=1,
                                   activation='default', norm_layer='default')
         self.final_pool = nn.AdaptiveAvgPool2d(1)

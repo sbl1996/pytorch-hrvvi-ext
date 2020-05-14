@@ -34,9 +34,9 @@ Model: ShuffleNetV2
 
 ShuffleNetV2:
   stem_channels: 32
-  channels_per_stage: [128, 256, 512]
-  units_per_stage: [4, 8, 4]
-  final_channels: 512
+  channels_per_stage: [244, 488, 976]
+  units_per_stage: [6, 6, 6]
+  final_channels: 1024
   use_se: True
 
 Optimizer:
@@ -58,6 +58,7 @@ Mixup:
 
 label_smooth: 0.1
 
+fp16: True
 benchmark: True
 seed: 0
 save_path: "/home/aistudio/work/checkpoints/CIFAR10-ShuffleNetV2"
