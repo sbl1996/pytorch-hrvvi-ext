@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 
 from torchvision.datasets import MNIST
 
-from horch.core import load_yaml_config
+from horch.core import load_yaml_config, register_op
 from horch.core.catalog.helper import get_optimizer, get_lr_scheduler
 from horch.datasets import train_test_split
 from horch.models.modules import Conv2d, Flatten
@@ -15,6 +15,8 @@ from horch.train.trainer import Trainer
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
 from horch.transforms import Compose
+
+from torch.optim.lr_scheduler import MultiStepLR
 
 class LeNet5(nn.Sequential):
 
@@ -32,6 +34,8 @@ class LeNet5(nn.Sequential):
 
 
 if __name__ == '__main__':
+
+    register_op(MultiStepLR, serialize=False)
 
     parser = argparse.ArgumentParser(description='Train MNIST.')
     parser.add_argument('-c', '--config', help='config file')

@@ -6,7 +6,6 @@ Dataset:
     random: True
   Train:
     transforms:
-    - !Zero {}
     - !Pad
       padding: 2
     - !ToTensor {}
@@ -49,14 +48,16 @@ Optimizer:
   nesterov: True
 
 LRScheduler:
-  type: CosineAnnealingLR
-  T_max: 10
-  eta_min: 0.001
-  warmup: 1
-  warmup_eta_min: 0.001
+#  type: CosineAnnealingLR
+#  T_max: 10
+#  eta_min: 0.001
+#  warmup: 1
+#  warmup_eta_min: 0.001
+  type: MultiStepLR
+  milestones: [5, 10]
 
 name: "MNIST-LeNet5"
 seed: 0
 save_path: "./checkpoints"
-epochs: 10
+epochs: 20
 eval_freq: 2

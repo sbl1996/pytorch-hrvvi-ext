@@ -35,12 +35,12 @@ class BasicBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super().__init__()
         self.conv = nn.Sequential(
-            get_norm_layer('default', in_channels),
+            get_norm_layer(in_channels),
             Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, bias=False),
-            get_norm_layer('default', out_channels),
-            get_activation('default'),
+            get_norm_layer(out_channels),
+            get_activation(),
             Conv2d(out_channels, out_channels, kernel_size=3, bias=False),
-            get_norm_layer('default', out_channels),
+            get_norm_layer(out_channels),
         )
         self.shortcut = Shortcut(in_channels, out_channels, stride)
 
@@ -55,15 +55,15 @@ class Bottleneck(nn.Module):
         super().__init__()
         out_channels = channels * self.expansion
         self.conv = nn.Sequential(
-            get_norm_layer('default', in_channels),
+            get_norm_layer(in_channels),
             Conv2d(in_channels, channels, kernel_size=1, bias=False),
-            get_norm_layer('default', channels),
-            get_activation('default'),
+            get_norm_layer(channels),
+            get_activation(),
             Conv2d(channels, channels, kernel_size=3, stride=stride, bias=False),
-            get_norm_layer('default', channels),
-            get_activation('default'),
+            get_norm_layer(channels),
+            get_activation(),
             Conv2d(channels, out_channels, kernel_size=1, bias=False),
-            get_norm_layer('default', out_channels),
+            get_norm_layer(out_channels),
         )
         self.shortcut = Shortcut(in_channels, out_channels, stride)
 
@@ -81,10 +81,20 @@ class PyramidNet(nn.Module):
                  num_classes,
                  block,
                  widening_fractor,
-                 num_layers,
-                 strides=(1, 2, 2)):
+                 depth):
         super().__init__()
-        assert len(num_layers) == len(strides)
+
+        if block == 'basic':
+            block = BasicBlock
+            num_layers = [(depth - 2) // 6] * 3
+        elif block == 'bottleneck':
+            block = Bottleneck
+            num_layers = [(depth - 2) // 9] * 3
+        else:
+            raise ValueError("invalid block type: %s" % block)
+
+        strides = [1, 2, 2]
+
         self.add_channel = widening_fractor / sum(num_layers)
         self.in_channels = start_channels
         self.channels = start_channels
@@ -97,7 +107,7 @@ class PyramidNet(nn.Module):
         self.features = nn.Sequential(*layers)
         assert (start_channels + widening_fractor) * block.expansion == self.in_channels
         self.post_activ = nn.Sequential(
-            get_norm_layer('default', self.in_channels),
+            get_norm_layer(self.in_channels),
             get_activation('default'),
         )
         self.final_pool = nn.AdaptiveAvgPool2d(1)
@@ -122,28 +132,28 @@ class PyramidNet(nn.Module):
 
 
 def pyramidnet110_a48(num_classes):
-    return PyramidNet(16, num_classes, BasicBlock, 48, [18, 18, 18])
+    return PyramidNet(16, num_classes, 'basic', 48, 110)
 
 
 def pyramidnet110_a84(num_classes):
-    return PyramidNet(16, num_classes, BasicBlock, 84, [18, 18, 18])
+    return PyramidNet(16, num_classes, 'basic', 84, 110)
 
 
 def pyramidnet110_a270(num_classes):
-    return PyramidNet(16, num_classes, BasicBlock, 270, [18, 18, 18])
+    return PyramidNet(16, num_classes, 'basic', 270, 110)
 
 
 def pyramidnet164_a270(num_classes):
-    return PyramidNet(16, num_classes, Bottleneck, 270, [18, 18, 18])
+    return PyramidNet(16, num_classes, 'bottleneck', 270, 164)
 
 
 def pyramidnet200_a240(num_classes):
-    return PyramidNet(16, num_classes, Bottleneck, 240, [22, 22, 22])
+    return PyramidNet(16, num_classes, 'bottleneck', 240, 200)
 
 
 def pyramidnet236_a220(num_classes):
-    return PyramidNet(16, num_classes, Bottleneck, 220, [26, 26, 26])
+    return PyramidNet(16, num_classes, 'bottleneck', 220, 236)
 
 
 def pyramidnet272_a200(num_classes):
-    return PyramidNet(16, num_classes, Bottleneck, 200, [30, 30, 30])
+    return PyramidNet(16, num_classes, 'bottleneck', 200, 272)
