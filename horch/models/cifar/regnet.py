@@ -81,6 +81,8 @@ class RegNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(cs[2], num_classes)
 
+        self.init_weights()
+
     def _make_layer(self, in_channels, out_channels, num_units, stride, groups, use_se):
         layers = [Bottleneck(in_channels, out_channels, stride=stride, groups=groups, use_se=use_se)]
         for i in range(1, num_units):
@@ -89,9 +91,12 @@ class RegNet(nn.Module):
         return nn.Sequential(*layers)
 
     def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, Bottleneck):
-                m.init_weights()
+        with torch.no_grad():
+            for m in self.modules():
+                if isinstance(m, Bottleneck):
+                    m.init_weights()
+            self.fc.weight.normal_(0, 0.01)
+            self.fc.bias.zero_()
 
     def forward(self, x):
         x = self.conv(x)
