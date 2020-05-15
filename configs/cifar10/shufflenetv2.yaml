@@ -13,9 +13,6 @@ Dataset:
     - !Normalize
       mean: [0.4914, 0.4822, 0.4465]
       std: [0.247, 0.243, 0.261]
-    - !Cutout
-      n_holes: 1
-      length: 16
     batch_size: 1024
     shuffle: True
     pin_memory: False
@@ -51,12 +48,14 @@ Optimizer:
 LRScheduler:
   type: CosineAnnealingLR
   T_max: 600
-  eta_min: 0.001
+  eta_min: 0.00001
   warmup: 10
   warmup_eta_min: 0.1
 
-Mixup:
-  alpha: 1.0
+Mix:
+  type: CutMix
+  beta: 1.0
+  prob: 0.5
 
 label_smooth: 0.1
 
@@ -64,6 +63,6 @@ fp16: True
 benchmark: True
 seed: 0
 save_path: "/home/aistudio/work/checkpoints/CIFAR10-ShuffleNetV2"
-epochs: 610
+epochs: 600
 eval_freq: 10
 save_freq: 100
