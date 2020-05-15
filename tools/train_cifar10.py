@@ -53,7 +53,7 @@ if __name__ == '__main__':
     train_loader = get_dataloader(cfg.Dataset.Train, ds_train)
     test_loader = get_dataloader(cfg.Dataset.Test, ds_test)
 
-    net = get_model(cfg.Model, horch.models.cifar)
+    net = get_model(cfg, horch.models.cifar)
 
     criterion = CrossEntropyLoss(label_smoothing=cfg.get("label_smooth"))
 
