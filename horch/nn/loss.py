@@ -170,6 +170,12 @@ class SegmentationLoss:
         return loss
 
 
+def calculate_gain(p, c):
+    pc = p / c
+    p1 = 1 - p + pc
+    return -(p - pc) * math.log(pc) - p1 * math.log(p1)
+
+
 class CrossEntropyLoss(nn.Module):
     def __init__(self, reduction='mean', label_smoothing=None):
         super().__init__()
@@ -178,13 +184,14 @@ class CrossEntropyLoss(nn.Module):
     def forward(self, output, target):
         if self.label_smoothing:
             c = output.size(1)
-            log_preds = F.log_softmax(output, dim=1)
+            log_probs = F.log_softmax(output, dim=1)
             if self.reduction == 'sum':
-                loss = -log_preds.sum()
+                loss = -log_probs.sum()
             else:
-                loss = -log_preds.sum(dim=1)
+                loss = -log_probs.sum(dim=1)
                 if self.reduction == 'mean':
                     loss = loss.mean()
-            return loss * self.label_smoothing / c + (1 - self.label_smoothing) * F.nll_loss(log_preds, target, reduction=self.reduction)
+            loss = loss * self.label_smoothing / c + (1 - self.label_smoothing) * F.nll_loss(log_probs, target, reduction=self.reduction)
+            return loss - calculate_gain(self.label_smoothing, c)
         else:
             return F.cross_entropy(output, target, reduction=self.reduction)

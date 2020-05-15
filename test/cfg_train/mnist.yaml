@@ -48,17 +48,26 @@ Optimizer:
   nesterov: True
 
 LRScheduler:
-#  type: CosineAnnealingLR
-#  T_max: 10
-#  eta_min: 0.001
-#  warmup: 1
-#  warmup_eta_min: 0.001
-  type: MultiStepLR
-  milestones: [5, 10]
+  type: CosineAnnealingLR
+  T_max: 100
+  eta_min: 0.00001
+  warmup: 1
+  warmup_eta_min: 0.001
+
+#label_smoothing: 0.1
+
+Mix:
+  type: CutMix
+  beta: 1.0
+  prob: 0.5
 
 name: "MNIST-LeNet5"
 seed: 0
 save_path: "./checkpoints/MNIST"
-epochs: 20
+epochs: 100
 eval_freq: 2
 save_freq: 5
+prograss_bar: True
+
+Debug:
+  subset: 0.1

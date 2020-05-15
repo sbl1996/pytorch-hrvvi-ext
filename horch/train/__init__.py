@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from horch.common import CUDA
-from horch.train.trainer import Trainer
+from horch.train.classification.trainer import Trainer
 
 
 def manual_seed(seed):

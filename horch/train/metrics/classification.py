@@ -1,3 +1,5 @@
+from typing import Optional
+
 from toolz.curried import get
 
 import numpy as np
@@ -6,13 +8,13 @@ from sklearn.metrics import roc_auc_score
 import torch
 from torch.nn import functional as F
 
-from ignite.metrics import Accuracy as IgniteAccuracy, Metric
+from ignite.metrics import Metric
 
+from horch.train.classification.mix import MixBase, Mixup, CutMix
 from horch.train.metrics import Average
 
 
 def topk_accuracy(y_true, y_pred, k=5):
-
     num_examples = np.prod(y_true.size())
     topk_pred = torch.topk(y_pred, k=k, dim=1)[1]
     num_corrects = torch.sum(topk_pred == y_true.unsqueeze(1)).item()
@@ -42,22 +44,26 @@ def accuracy(y_true, y_pred):
 
 class Accuracy(Average):
 
-    def __init__(self, mixup=False):
-        self.mixup = mixup
+    def __init__(self, mix: Optional[MixBase] = None):
+        self.mix = mix
         super().__init__(output_transform=self.output_transform)
 
     def output_transform(self, output):
-        if self.mixup:
-            y_pred, y_true, batch_size, lam = get(["y_pred", "y_true", "batch_size", "mixup_lambda"], output)
-            y_a, y_b = y_true
-            pred = torch.argmax(y_pred, dim=1)
-            num_corrects = (lam * pred.eq(y_a).cpu().sum().float()
-                        + (1 - lam) * pred.eq(y_b).cpu().sum().float())
-            acc = num_corrects / batch_size
-            return acc, batch_size
-        else:
-            y_pred, y_true = get(["y_pred", "y_true"], output)
-            return accuracy(y_true, y_pred)
+        if self.mix:
+            if isinstance(self.mix, Mixup) or (isinstance(self.mix, CutMix) and self.mix.lam):
+                y_pred, y_true, batch_size = get(["y_pred", "y_true", "batch_size"], output)
+                y_a, y_b = y_true
+                y_pred = torch.topk(y_pred, k=2, dim=1)[1]
+                y_a_p = y_pred[:, 0]
+                y_b_p = y_pred[:, 1]
+                if self.mix.lam < 0.5:
+                    y_a_p, y_b_p = y_b_p, y_a_p
+                num_corrects = (self.mix.lam * y_a_p.eq(y_a).sum().cpu().float()
+                                + (1 - self.mix.lam) * y_b_p.eq(y_b).sum().cpu().float())
+                acc = num_corrects / batch_size
+                return acc, batch_size
+        y_pred, y_true = get(["y_pred", "y_true"], output)
+        return accuracy(y_true, y_pred)
 
 
 class ROCAUC(Metric):
@@ -83,7 +89,6 @@ class ROCAUC(Metric):
 
 
 class EpochSummary(Metric):
-
     _required_output_keys = ["y_pred", "y_true"]
 
     def __init__(self, metric_func):

@@ -1,1 +1,1 @@
-python test_cifar10.py -c cifar10.yaml
+python /Users/hrvvi/Code/Library/pytorch-hrvvi-ext/tools/train_cifar10.py -c cifar10.yaml

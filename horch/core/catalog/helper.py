@@ -30,3 +30,7 @@ def get_dataloader(cfg, ds):
                           num_workers=cfg.get("num_workers", 1),
                           shuffle=cfg.get("shuffle", False),
                           pin_memory=False)
+
+
+def get_model(cfg, pkg):
+    return getattr(pkg, cfg.Model)(**cfg.get(cfg.Model))

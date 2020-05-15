@@ -7,10 +7,9 @@ from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad
 from horch.datasets import train_test_split
 from horch.train.lr_scheduler import CosineAnnealingLR
-from horch.models.utils import summary
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
-from horch.train.trainer import Trainer
+from horch.train.classification.trainer import Trainer
 
 train_transform = Compose([
     Pad(2),

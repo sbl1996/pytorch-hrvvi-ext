@@ -54,11 +54,16 @@ LRScheduler:
   warmup: 1
   warmup_eta_min: 0.001
 
-Mixup:
-  alpha: 1.0
+Mix:
+  type: CutMix
+  beta: 1.0
+  prob: 0.5
 
 seed: 0
 save_path: "./checkpoints/CIFAR10-ShuffleNetV2"
 epochs: 10
 eval_freq: 2
 save_freq: 3
+
+Debug:
+  subset: 0.01

@@ -7,11 +7,14 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 
 from horch.core import load_yaml_config, register_op
-from horch.core.catalog.helper import get_optimizer, get_lr_scheduler
-from horch.datasets import train_test_split
+from horch.config import cfg as global_cfg, load_from_dict
+from horch.core.catalog.helper import get_optimizer, get_lr_scheduler, get_dataloader
+from horch.datasets import train_test_split, Fullset
 from horch.models.modules import Conv2d, Flatten
+from horch.nn.loss import CrossEntropyLoss
 from horch.train import manual_seed
-from horch.train.trainer import Trainer
+from horch.train.classification.mix import get_mix
+from horch.train.classification.trainer import Trainer
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
 from horch.transforms import Compose
@@ -44,6 +47,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cfg = load_yaml_config(args.config)
+
+    if cfg.get("Global"):
+        global_cfg.merge_from_other_cfg(load_from_dict(cfg.get("Global")))
+
     manual_seed(cfg.seed)
 
     train_transform = Compose(cfg.Dataset.Train.transforms)
@@ -52,57 +59,50 @@ if __name__ == '__main__':
 
     data_home = cfg.Dataset.data_home
     ds = MNIST(data_home, train=True, download=True)
-    ds = train_test_split(ds, test_ratio=0.2, random=True)[1]
+    ds_test = MNIST(data_home, train=False, download=True)
+    if cfg.get("Debug") and cfg.Debug.get("subset"):
+        ratio = cfg.Debug.subset
+        ds = train_test_split(ds, test_ratio=ratio, random=True)[1]
+        ds_test = train_test_split(ds_test, test_ratio=ratio, random=True)[1]
+
     ds_train, ds_val = train_test_split(
         ds, test_ratio=cfg.Dataset.Split.test_ratio, random=cfg.Dataset.Split.random,
         transform=train_transform,
         test_transform=val_transform,
     )
-    ds_test = MNIST(data_home, train=False, download=True)
-    ds_test = train_test_split(ds_test, test_ratio=0.2, random=True, test_transform=test_transform)[1]
+    ds_test = Fullset(ds_test, test_transform)
+
+    train_loader = get_dataloader(cfg.Dataset.Train, ds_train)
+    val_loader = get_dataloader(cfg.Dataset.Val, ds_val)
+    test_loader = get_dataloader(cfg.Dataset.Test, ds_test)
 
     net = eval(cfg.Model)(**cfg.get(cfg.Model))
-    criterion = nn.CrossEntropyLoss()
+
+    criterion = CrossEntropyLoss(label_smoothing=cfg.get("label_smooth"))
 
     optimizer = get_optimizer(cfg.Optimizer, net)
     lr_scheduler = get_lr_scheduler(cfg.LRScheduler, optimizer)
 
-    if cfg.get("Mixup"):
-        mixup = True
-        mixup_alpha = cfg.Mixup.alpha
-    else:
-        mixup = False
-        mixup_alpha = None
+    mix = get_mix(cfg.get("Mix"))
 
     metrics = {
         'loss': TrainLoss(),
-        'acc': Accuracy(mixup=mixup),
+        'acc': Accuracy(mix),
     }
 
     test_metrics = {
-        'loss': Loss(criterion),
+        'loss': Loss(nn.CrossEntropyLoss()),
         'acc': Accuracy(),
     }
 
     trainer = Trainer(net, criterion, optimizer, lr_scheduler,
-                      metrics, test_metrics, save_path=cfg.save_path, mixup_alpha=mixup_alpha)
+                      metrics, test_metrics, save_path=cfg.save_path, mix=mix)
 
-    train_loader = DataLoader(ds_train,
-                              batch_size=cfg.Dataset.Train.batch_size,
-                              num_workers=cfg.Dataset.Train.get("num_workers", 2),
-                              shuffle=cfg.Dataset.Train.get("shuffle", True),
-                              pin_memory=cfg.Dataset.Train.get("pin_memory", True))
-    val_loader = DataLoader(ds_val,
-                            batch_size=cfg.Dataset.Val.batch_size,
-                            num_workers=cfg.Dataset.Val.get("num_workers", 2))
-    test_loader = DataLoader(ds_test,
-                             batch_size=cfg.Dataset.Test.batch_size,
-                             num_workers=cfg.Dataset.Test.get("num_workers", 2))
     if args.resume:
         trainer.resume()
 
     trainer.fit(train_loader, cfg.epochs, val_loader=val_loader,
                 eval_freq=cfg.get("eval_freq", 1), save_freq=cfg.get("save_freq"),
-                progress_bar=True)
+                n_saved=cfg.get("n_saved", 1), progress_bar=cfg.get("prograss_bar", False))
 
     trainer.evaluate(test_loader)

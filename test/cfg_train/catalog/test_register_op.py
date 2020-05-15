@@ -1,5 +1,4 @@
 import torch.nn as nn
-from torch.optim import SGD
 
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -14,7 +13,7 @@ from horch.train import manual_seed
 from horch.train.metrics import TrainLoss, Loss
 from horch.train.metrics.classification import Accuracy
 from horch.train.optimizer import SGDW
-from horch.train.trainer import Trainer
+from horch.train.classification.trainer import Trainer
 
 register_op(SGDW, serialize=False)
 
