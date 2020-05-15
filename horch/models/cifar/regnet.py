@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from horch.models.modules import get_activation, Conv2d
+from horch.models.modules import get_activation, Conv2d, get_norm_layer
 from horch.models.utils import profile
 
 
@@ -39,8 +39,17 @@ class Bottleneck(nn.Module):
             self.se = SE(out_channels, 4)
         self.conv3 = Conv2d(out_channels, out_channels, kernel_size=1,
                             norm_layer='default')
-        self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride,
-                               norm_layer='default') if stride != 1 or in_channels != out_channels else nn.Identity()
+        if stride != 1 or in_channels != out_channels:
+            layers = []
+            if stride != 1:
+                layers.append(nn.AvgPool2d(kernel_size=(2, 2), stride=2))
+            layers.extend([
+                Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+                get_norm_layer(out_channels),
+            ])
+            self.shortcut = nn.Sequential(*layers)
+        else:
+            self.shortcut = nn.Identity()
         self.relu = get_activation('default')
 
     def init_weights(self):
@@ -71,11 +80,11 @@ class RegNet(nn.Module):
         gs = [c // channels_per_group for c in cs]
         us = units_per_stage
 
-        self.layer1 = self._make_layer(
+        self.stage1 = self._make_layer(
             stem_channels, cs[0], us[0], stride=1, groups=gs[0], use_se=use_se)
-        self.layer2 = self._make_layer(
+        self.stage2 = self._make_layer(
             cs[0], cs[1], us[1], stride=2, groups=gs[1], use_se=use_se)
-        self.layer3 = self._make_layer(
+        self.stage3 = self._make_layer(
             cs[1], cs[2], us[2], stride=2, groups=gs[2], use_se=use_se)
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
@@ -101,9 +110,9 @@ class RegNet(nn.Module):
     def forward(self, x):
         x = self.conv(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
+        x = self.stage1(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)

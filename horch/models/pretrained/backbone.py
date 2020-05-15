@@ -498,8 +498,8 @@ class ResNetTV(nn.Module):
             net.relu,
         )
         self.layer2 = net.maxpool
-        self.layer3 = net.layer2
-        self.layer4 = net.layer3
+        self.layer3 = net.stage2
+        self.layer4 = net.stage3
         self.layer5 = net.layer4
 
         self.out_channels = [
