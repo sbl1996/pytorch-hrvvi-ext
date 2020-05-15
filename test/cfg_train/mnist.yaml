@@ -61,3 +61,4 @@ seed: 0
 save_path: "./checkpoints"
 epochs: 20
 eval_freq: 2
+save_freq: 5

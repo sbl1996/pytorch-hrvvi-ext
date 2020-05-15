@@ -39,6 +39,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Train MNIST.')
     parser.add_argument('-c', '--config', help='config file')
+    parser.add_argument('-r', '--resume', action='store_true',
+                        help='resume from checkpoints')
     args = parser.parse_args()
 
     cfg = load_yaml_config(args.config)
@@ -96,7 +98,11 @@ if __name__ == '__main__':
     test_loader = DataLoader(ds_test,
                              batch_size=cfg.Dataset.Test.batch_size,
                              num_workers=cfg.Dataset.Test.get("num_workers", 2))
+    if args.resume:
+        trainer.resume()
 
-    trainer.fit(train_loader, cfg.epochs, val_loader=val_loader, eval_freq=cfg.get("eval_freq", 1), progress_bar=True)
+    trainer.fit(train_loader, cfg.epochs, val_loader=val_loader,
+                eval_freq=cfg.get("eval_freq", 1), save_freq=cfg.get("save_freq"),
+                progress_bar=True)
 
     trainer.evaluate(test_loader)
