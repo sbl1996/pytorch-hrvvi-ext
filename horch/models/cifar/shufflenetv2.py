@@ -1,15 +1,14 @@
 import torch
 import torch.nn as nn
 
-from horch.models.drop import DropPath
-from horch.models.modules import Conv2d, get_activation, DWConv2d, HardSigmoid
+from horch.models.modules import Conv2d, DWConv2d, HardSigmoid
 
 
 class SELayer(nn.Module):
     def __init__(self, in_channels, reduction=4):
         super().__init__()
         channels = in_channels // reduction
-        self.layers = nn.Sequential(
+        self.attn = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             Conv2d(in_channels, channels, kernel_size=1, norm_layer='bn', activation='relu'),
             Conv2d(channels, in_channels, kernel_size=1, bias=False),
@@ -17,7 +16,7 @@ class SELayer(nn.Module):
         )
 
     def forward(self, x):
-        return x * self.layers(x)
+        return x * self.attn(x)
 
 
 def channel_shuffle(x, groups=2):

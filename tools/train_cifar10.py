@@ -7,6 +7,7 @@ import torch.nn as nn
 from torchvision.datasets import CIFAR10
 
 from horch.core import load_yaml_config
+from horch.config import cfg as global_cfg, load_from_dict
 from horch.nn.loss import CrossEntropyLoss
 from horch.train import manual_seed
 from horch.train.trainer import Trainer
@@ -25,6 +26,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cfg = load_yaml_config(args.config)
+
+    if cfg.get("Global"):
+        global_cfg.merge_from_other_cfg(load_from_dict(cfg.get("Global")))
+
     manual_seed(cfg.seed)
 
     if cfg.get("benchmark"):

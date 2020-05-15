@@ -1,1 +1,1 @@
-python test_cifar10.py -c cifar10.yaml -r
+python test_cifar10.py -c cifar10.yaml

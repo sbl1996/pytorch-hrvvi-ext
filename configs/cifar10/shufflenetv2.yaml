@@ -29,6 +29,8 @@ Dataset:
     batch_size: 1024
     num_workers: 2
 
+Global:
+  activation: swish
 
 Model: ShuffleNetV2
 
