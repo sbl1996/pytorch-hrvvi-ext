@@ -59,3 +59,4 @@ seed: 0
 save_path: "./checkpoints/CIFAR10-ShuffleNetV2"
 epochs: 10
 eval_freq: 2
+save_freq: 3

@@ -1,9 +1,9 @@
 import argparse
 
-from horch.core.catalog.helper import get_optimizer, get_lr_scheduler
+from horch.core.catalog.helper import get_optimizer, get_lr_scheduler, get_dataloader
 
-from torch.utils.data import DataLoader
-
+import torch
+import torch.nn as nn
 from torchvision.datasets import CIFAR10
 
 from horch.core import load_yaml_config
@@ -21,10 +21,15 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Train CIFAR10.')
     parser.add_argument('-c', '--config', help='config file')
+    parser.add_argument('-r', '--resume', action='store_true',
+                        help='resume from checkpoints')
     args = parser.parse_args()
 
     cfg = load_yaml_config(args.config)
     manual_seed(cfg.seed)
+
+    if cfg.get("benchmark"):
+        torch.backends.cudnn.benchmark = True
 
     train_transform = Compose(cfg.Dataset.Train.transforms)
     test_transform = Compose(cfg.Dataset.Test.transforms)
@@ -35,6 +40,9 @@ if __name__ == '__main__':
 
     ds_train = train_test_split(ds_train, test_ratio=0.01, random=True)[1]
     ds_test = train_test_split(ds_test, test_ratio=0.01, random=True)[1]
+
+    train_loader = get_dataloader(cfg.Dataset.Train, ds_train)
+    test_loader = get_dataloader(cfg.Dataset.Test, ds_test)
 
     net = eval(cfg.Model)(**cfg.get(cfg.Model))
     criterion = CrossEntropyLoss(label_smoothing=cfg.get("label_smooth"))
@@ -55,20 +63,17 @@ if __name__ == '__main__':
     }
 
     test_metrics = {
-        'loss': Loss(criterion),
+        'loss': Loss(nn.CrossEntropyLoss()),
         'acc': Accuracy(),
     }
 
     trainer = Trainer(net, criterion, optimizer, lr_scheduler,
-                      metrics, test_metrics, save_path=cfg.save_path, mixup_alpha=mixup_alpha)
+                      metrics, test_metrics, save_path=cfg.save_path, mixup_alpha=mixup_alpha,
+                      fp16=cfg.get("fp16", False))
 
-    train_loader = DataLoader(ds_train,
-                              batch_size=cfg.Dataset.Train.batch_size,
-                              num_workers=cfg.Dataset.Train.get("num_workers", 1),
-                              shuffle=cfg.Dataset.Train.get("shuffle", True),
-                              pin_memory=cfg.Dataset.Train.get("pin_memory", True))
-    test_loader = DataLoader(ds_test,
-                             batch_size=cfg.Dataset.Test.batch_size,
-                             num_workers=cfg.Dataset.Test.get("num_workers", 1))
+    if args.resume:
+        trainer.resume()
 
-    trainer.fit(train_loader, cfg.epochs, val_loader=test_loader, eval_freq=cfg.get("eval_freq", 1), progress_bar=True)
+    trainer.fit(train_loader, cfg.epochs, val_loader=test_loader,
+                eval_freq=cfg.get("eval_freq", 1), save_freq=cfg.get("save_freq"),
+                n_saved=cfg.get("n_saved", 1), progress_bar=cfg.get("prograss_bar", False))

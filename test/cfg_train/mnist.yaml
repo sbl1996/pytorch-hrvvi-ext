@@ -58,7 +58,7 @@ LRScheduler:
 
 name: "MNIST-LeNet5"
 seed: 0
-save_path: "./checkpoints"
+save_path: "./checkpoints/MNIST"
 epochs: 20
 eval_freq: 2
 save_freq: 5
