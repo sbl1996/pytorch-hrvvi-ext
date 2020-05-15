@@ -132,7 +132,7 @@ class TrainerBase:
         assert self._traier_state == TrainerState.INIT
 
         d = Path(self.save_path)
-        pattern = "checkpoint_*.pth?"
+        pattern = "checkpoint_*.pt*"
         saves = list(d.glob(pattern))
         if len(saves) == 0:
             raise FileNotFoundError("No checkpoint to load in %s" % self.save_path)
