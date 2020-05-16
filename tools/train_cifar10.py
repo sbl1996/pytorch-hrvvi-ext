@@ -24,8 +24,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Train CIFAR10.')
     parser.add_argument('-c', '--config', help='config file')
-    parser.add_argument('-r', '--resume', action='store_true',
-                        help='resume from checkpoints')
+    parser.add_argument('-r', '--resume', help='resume from checkpoints')
     args = parser.parse_args()
 
     cfg = load_yaml_config(args.config)
@@ -77,7 +76,10 @@ if __name__ == '__main__':
                       fp16=cfg.get("fp16", False))
 
     if args.resume:
-        trainer.resume()
+        if args.resume == 'default':
+            trainer.resume()
+        else:
+            trainer.resume(args.resume)
 
     trainer.fit(train_loader, cfg.epochs, val_loader=test_loader,
                 eval_freq=cfg.get("eval_freq", 1), save_freq=cfg.get("save_freq"),

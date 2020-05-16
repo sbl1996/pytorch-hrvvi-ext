@@ -1,1 +1,1 @@
-python /Users/hrvvi/Code/Library/pytorch-hrvvi-ext/tools/train_cifar10.py -c cifar10.yaml
+python /Users/hrvvi/Code/Library/pytorch-hrvvi-ext/tools/train_cifar10.py -c cifar10.yaml -r /Users/hrvvi/Code/Library/pytorch-hrvvi-ext/test/cfg_train/checkpoints/CIFAR10-ShuffleNetV2/checkpoint_9.pt

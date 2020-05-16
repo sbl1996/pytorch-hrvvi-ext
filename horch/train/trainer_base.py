@@ -128,16 +128,19 @@ class TrainerBase:
             d['amp'] = amp
         return d
 
-    def resume(self):
+    def resume(self, fp=None):
         assert self._traier_state == TrainerState.INIT
 
-        d = Path(self.save_path)
-        pattern = "checkpoint_*.pt*"
-        saves = list(d.glob(pattern))
-        if len(saves) == 0:
-            raise FileNotFoundError("No checkpoint to load in %s" % self.save_path)
-        fp = max(saves, key=lambda f: f.stat().st_mtime)
+        if fp is None:
+            d = Path(self.save_path)
+            pattern = "checkpoint_*.pt*"
+            saves = list(d.glob(pattern))
+            if len(saves) == 0:
+                raise FileNotFoundError("No checkpoint to load in %s" % self.save_path)
+            fp = max(saves, key=lambda f: f.stat().st_mtime)
+
         checkpoint = torch.load(fp)
+
         if not self.fp16 and 'amp' in checkpoint:
             del checkpoint['amp']
 
