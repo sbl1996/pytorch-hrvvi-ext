@@ -74,7 +74,7 @@ lr_scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=0.001, warmup=5, w
 
 metrics = {
     'loss': TrainLoss(),
-    'acc': Accuracy(mixup=True),
+    'acc': Accuracy(),
 }
 
 test_metrics = {
@@ -85,7 +85,7 @@ test_metrics = {
 # summary(net, (1, 32, 32))
 
 trainer = Trainer(net, criterion, optimizer, lr_scheduler,
-                  metrics, test_metrics, save_path="./checkpoints/MNIST-LeNet5", mixup_alpha=1.0)
+                  metrics, test_metrics, save_path="./checkpoints/MNIST-LeNet5")
 
 # trainer.resume()
 
