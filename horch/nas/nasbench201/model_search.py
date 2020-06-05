@@ -100,6 +100,7 @@ class Network(nn.Module):
         for cell in self.stage3:
             x = cell(x, weights)
         x = self.avg_pool(x)
+        x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
 
