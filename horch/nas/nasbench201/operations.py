@@ -11,6 +11,8 @@ OPS = {
     'sep_conv_3x3': lambda C, stride: SepConv(C, C, 3, stride, 1),
     'sep_conv_5x5': lambda C, stride: SepConv(C, C, 5, stride, 2),
     'sep_conv_7x7': lambda C, stride: SepConv(C, C, 7, stride, 3),
+    'nor_conv_1x1': lambda C, stride: ReLUConvBN(C, C, 1, stride),
+    'nor_conv_3x3': lambda C, stride: ReLUConvBN(C, C, 3, stride),
     'dil_conv_3x3': lambda C, stride: DilConv(C, C, 3, stride, 2),
     'dil_conv_5x5': lambda C, stride: DilConv(C, C, 5, stride, 4),
     'conv_7x1_1x7': lambda C, stride: nn.Sequential(
