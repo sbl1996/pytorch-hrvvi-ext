@@ -155,6 +155,10 @@ class Network(nn.Module):
             self.cells.append(cell)
             C_prev_prev, C_prev = C_prev, multiplier * C_curr
 
+        self.post_activ = nn.Sequential(
+            get_norm_layer(C),
+            get_activation(),
+        )
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(C_prev, num_classes)
 
@@ -165,6 +169,7 @@ class Network(nn.Module):
         s0 = s1 = self.stem(x)
         for cell in self.cells:
             s0, s1 = s1, cell(s0, s1, hardwts, indices)
+        s1 = self.post_activ(s1)
         out = self.avg_pool(s1)
         logits = self.classifier(out.view(out.size(0), -1))
         return logits
