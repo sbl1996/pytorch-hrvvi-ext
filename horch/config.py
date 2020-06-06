@@ -4,9 +4,10 @@ from yacs.config import CfgNode as CN
 
 DEFAULTS = {
     'bn': {
-        'momentum': 0.9,
+        'momentum': 0.1,
         'eps': 1e-5,
         'affine': True,
+        'track_running_stats': True,
     },
     'norm_layer': 'bn',
     'activation': 'relu',
