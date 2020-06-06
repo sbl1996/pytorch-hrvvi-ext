@@ -76,7 +76,7 @@ class ReductionCell(nn.Module):
             nn.MaxPool2d(3, stride=2, padding=1),
             get_norm_layer(C, affine=True)
         )
-        self.branch_a1 = nn.Sequential(
+        self.branch_b1 = nn.Sequential(
             get_activation(),
             Conv2d(C, C, (1, 3), stride=(1, 2), groups=8, bias=False),
             Conv2d(C, C, (3, 1), stride=(2, 1), groups=8, bias=False),
@@ -85,7 +85,7 @@ class ReductionCell(nn.Module):
             Conv2d(C, C, 1),
             get_norm_layer(C, affine=True),
         )
-        self.branch_a2 = nn.Sequential(
+        self.branch_b2 = nn.Sequential(
             nn.MaxPool2d(3, stride=2, padding=1),
             get_norm_layer(C, affine=True)
         )
@@ -95,12 +95,12 @@ class ReductionCell(nn.Module):
         s1 = self.preprocess1(s1)
 
         x0 = self.branch_a1(s0)
-        x1 = self.branch_a1(s1)
+        x1 = self.branch_a2(s1)
         # if self.training and drop_prob > 0.:
         #     X0, X1 = drop_path(X0, drop_prob), drop_path(X1, drop_prob)
 
-        x2 = self.branch_a2(s0)
-        x3 = self.branch_a1(s1)
+        x2 = self.branch_b1(s0)
+        x3 = self.branch_b2(s1)
         # if self.training and drop_prob > 0.:
         #     X2, X3 = drop_path(X2, drop_prob), drop_path(X3, drop_prob)
 
