@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import get_norm_layer, Conv2d
+from horch.models.modules import get_norm_layer, Conv2d, get_activation
 from horch.nas.nasbench201.operations import OPS, ReLUConvBN
 from horch.nas.darts.genotypes import PRIMITIVES
 
@@ -90,6 +90,10 @@ class Network(nn.Module):
                 stage.append(NormalCell(primitives, nodes, C))
             self.add_module("stage%d" % (i + 1), stage)
 
+        self.post_activ = nn.Sequential(
+            get_norm_layer(C),
+            get_activation(),
+        )
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(C, num_classes)
 
@@ -100,7 +104,7 @@ class Network(nn.Module):
         weights = [gumbel_sample(w, self.tau) for w in self.alphas]
         indices = [torch.argmax(w, dim=1) for w in weights]
         one_h = [F.one_hot(i, len(self.primitives)) for i in indices]
-        indices = [index.numpy() for index in indices]
+        indices = [index.cpu().numpy() for index in indices]
         hardwts = [h - w.detach() + w for w, h in zip(weights, one_h)]
         for cell in self.stage1:
             x = cell(x, hardwts, indices)
@@ -110,6 +114,7 @@ class Network(nn.Module):
         x = self.reduce2(x)
         for cell in self.stage3:
             x = cell(x, hardwts, indices)
+        x = self.post_activ(x)
         x = self.avg_pool(x)
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
