@@ -156,7 +156,7 @@ class Network(nn.Module):
             C_prev_prev, C_prev = C_prev, multiplier * C_curr
 
         self.post_activ = nn.Sequential(
-            get_norm_layer(C),
+            get_norm_layer(C_prev),
             get_activation(),
         )
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
