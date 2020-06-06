@@ -197,7 +197,8 @@ class TrainerBase:
             eval_freq: Union[int, Epochs, Iters] = 1,
             save_freq: Optional[Union[int, Epochs, Iters]] = None,
             n_saved: int = 1,
-            progress_bar: bool = False):
+            progress_bar: bool = False,
+            callbacks: Sequence[Callable] = ()):
 
         train_engine = self._create_train_engine()
         eval_engine = self._create_eval_engine()
@@ -237,6 +238,10 @@ class TrainerBase:
         if progress_bar:
             self._attach_prograss_bar(train_engine)
 
+        for callback in callbacks:
+            train_engine.add_event_handler(
+                Events.ITERATION_COMPLETED, callback, self)
+
         try:
             max_epochs = epochs if self._traier_state == TrainerState.INIT else None
             self._traier_state = TrainerState.FITTING
@@ -261,3 +266,10 @@ def get_event_by_freq(freq: Union[int, Epochs, Iters]):
         return Events.EPOCH_COMPLETED(every=freq.n)
     elif isinstance(freq, Iters):
         return Events.ITERATION_COMPLETED(every=freq.n)
+
+#
+# def trainer_callback_wrap(f):
+#     def func(engine, *args, **kwargs):
+#         return f(*args, **kwargs)
+#
+#     return func

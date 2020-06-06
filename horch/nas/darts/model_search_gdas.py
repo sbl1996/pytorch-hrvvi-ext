@@ -161,6 +161,7 @@ class Network(nn.Module):
         self._initialize_alphas()
 
     def forward(self, x):
+        print(self.tau)
         hardwts, indices = zip(*[ gumbel_sample(a, self.tau) for a in self.alphas ])
         s0 = s1 = self.stem(x)
         for cell in self.cells:
