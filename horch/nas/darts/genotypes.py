@@ -142,7 +142,6 @@ SETN = Genotype(
         (('avg_pool_3x3', 0), ('sep_conv_5x5', 1)),
         (('avg_pool_3x3', 0), ('skip_connect', 1))],
     reduce_concat=[2, 3, 4, 5],
-    connectN=None, connects=None
 )
 
 # Searching for A Robust Neural Architecture in Four GPU Hours, CVPR 2019
@@ -159,7 +158,6 @@ GDAS_V1 = Genotype(
         (('dil_conv_5x5', 2), ('sep_conv_3x3', 1)),
         (('sep_conv_5x5', 0), ('sep_conv_5x5', 1))],
     reduce_concat=[2, 3, 4, 5],
-    connectN=None, connects=None
 )
 
 Networks = {'DARTS_V1': DARTS_V1,
@@ -182,6 +180,5 @@ def build_genotype_from_dict(xdict):
         normal_concat=xdict['normal_concat'],
         reduce=remove_value(xdict['reduce']),
         reduce_concat=xdict['reduce_concat'],
-        connectN=None, connects=None
     )
     return genotype
