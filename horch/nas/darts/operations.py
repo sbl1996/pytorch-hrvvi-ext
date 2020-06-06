@@ -5,12 +5,20 @@ from horch.models.modules import Conv2d, get_activation, get_norm_layer
 
 OPS = {
     'none': lambda C, stride: Zero(stride),
-    'avg_pool_3x3': lambda C, stride: nn.AvgPool2d(3, stride=stride, padding=1, count_include_pad=False),
-    'max_pool_3x3': lambda C, stride: nn.MaxPool2d(3, stride=stride, padding=1),
+    'avg_pool_3x3': lambda C, stride: nn.Sequential(
+        nn.AvgPool2d(3, stride=stride, padding=1, count_include_pad=False),
+        get_norm_layer(C),
+    ),
+    'max_pool_3x3': lambda C, stride: nn.Sequential(
+        nn.MaxPool2d(3, stride=stride, padding=1),
+        get_norm_layer(C),
+    ),
     'skip_connect': lambda C, stride: nn.Identity() if stride == 1 else FactorizedReduce(C, C),
     'sep_conv_3x3': lambda C, stride: SepConv(C, C, 3, stride, 1),
     'sep_conv_5x5': lambda C, stride: SepConv(C, C, 5, stride, 2),
     'sep_conv_7x7': lambda C, stride: SepConv(C, C, 7, stride, 3),
+    'nor_conv_1x1': lambda C, stride: ReLUConvBN(C, C, 1, stride),
+    'nor_conv_3x3': lambda C, stride: ReLUConvBN(C, C, 3, stride),
     'dil_conv_3x3': lambda C, stride: DilConv(C, C, 3, stride, 2),
     'dil_conv_5x5': lambda C, stride: DilConv(C, C, 5, stride, 4),
     'conv_7x1_1x7': lambda C, stride: nn.Sequential(

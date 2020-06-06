@@ -112,16 +112,20 @@ def get_groups(channels, ref=32):
     return channels // c
 
 
-def get_norm_layer(channels, name='default'):
+def get_norm_layer(channels, name='default', **kwargs):
     assert channels is not None and isinstance(channels, int)
     if isinstance(name, nn.Module):
         return name
     elif hasattr(name, '__call__'):
         return name(channels)
     elif name == 'default':
-        return get_norm_layer(channels, get_default_norm_layer())
+        return get_norm_layer(channels, get_default_norm_layer(), **kwargs)
     elif name == 'bn':
-        return nn.BatchNorm2d(channels, **cfg.bn)
+        if 'affine' in kwargs:
+            cfg_bn = {**cfg.bn, 'affine': kwargs['affine']}
+        else:
+            cfg_bn = cfg.bn
+        return nn.BatchNorm2d(channels, **cfg_bn)
     elif name == 'gn':
         num_groups = get_groups(channels, 32)
         return nn.GroupNorm(num_groups, channels)
