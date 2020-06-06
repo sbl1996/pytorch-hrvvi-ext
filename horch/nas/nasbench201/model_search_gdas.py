@@ -64,7 +64,7 @@ class NormalCell(nn.Module):
 
 
 def gumbel_sample(a, tau):
-    o = -torch.log(-torch.log(torch.rand(*a.size())))
+    o = -torch.log(-torch.log(torch.rand(*a.size(), device=a.device)))
     return F.softmax((F.log_softmax(a, dim=1) + o) / tau, dim=1)
 
 
