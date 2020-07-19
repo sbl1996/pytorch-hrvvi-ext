@@ -246,6 +246,8 @@ class TrainerBase:
             max_epochs = epochs if self._traier_state == TrainerState.INIT else None
             self._traier_state = TrainerState.FITTING
             train_engine.run(train_loader, max_epochs)
+            self._train_engine_state = train_engine.state_dict()
+            self._eval_engine_state = eval_engine.state_dict()
         except KeyboardInterrupt as e:
             self._train_engine_state = train_engine.state_dict()
             self._eval_engine_state = eval_engine.state_dict()
