@@ -185,8 +185,7 @@ def Conv2d(in_channels, out_channels,
         # else:
         if mid_norm_layer is None:
             mid_norm_layer = norm_layer
-        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, bias, mid_norm_layer, norm_layer,
-                        activation, transposed)
+        return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, bias, norm_layer, activation)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
             kh, kw = kernel_size

@@ -1,14 +1,11 @@
 from typing import Callable, Sequence, Dict, Optional
 
 from ignite.metrics import Metric
-from toolz.curried import get
-
-import numpy as np
 
 import torch
 import torch.nn as nn
 from ignite.contrib.handlers import ProgressBar
-from ignite.engine import Engine, Events
+from ignite.engine import Engine
 from ignite.utils import convert_tensor
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer

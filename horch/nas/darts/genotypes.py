@@ -161,6 +161,14 @@ GDAS_V1 = Genotype(
     reduce_concat=[2, 3, 4, 5],
 )
 
+G1 = [
+    ('avg_pool_3x3', 1), ('nor_conv_1x1', 0),
+    ('sep_conv_5x5', 1), ('skip_connect', 0),
+    ('skip_connect', 1), ('sep_conv_5x5', 3),
+    ('skip_connect', 0), ('sep_conv_5x5', 4)
+]
+
+
 Networks = {'DARTS_V1': DARTS_V1,
             'DARTS_V2': DARTS_V2,
             'DARTS': DARTS_V2,
