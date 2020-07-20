@@ -128,6 +128,23 @@ class TrainerBase:
             d['amp'] = amp
         return d
 
+    def save(self):
+        train_engine = self._create_train_engine()
+        eval_engine = self._create_eval_engine()
+
+        train_engine.load_state_dict(self._train_engine_state)
+        eval_engine.load_state_dict(self._eval_engine_state)
+
+        def global_step_transform(engine, event_name):
+            return engine.state.epoch
+
+        saver = DiskSaver(str(self.save_path), create_dir=True, require_empty=False)
+        to_save = {**self.to_save(), "train_engine": train_engine, "eval_engine": eval_engine}
+
+        checkpoint_handler = Checkpoint(to_save, saver, n_saved=1,
+                                        global_step_transform=global_step_transform)
+        checkpoint_handler(train_engine)
+
     def resume(self, fp=None):
         assert self._traier_state == TrainerState.INIT
 
