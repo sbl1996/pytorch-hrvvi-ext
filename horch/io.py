@@ -7,50 +7,55 @@ import shutil
 from pathlib import Path
 from typing import Callable, Any, Union
 
+PathLike = Union[str, Path]
 
-def read_lines(fp):
+
+def read_lines(fp: PathLike):
     return fmt_path(fp).read_text().splitlines()
 
 
-def write_lines(fp, lines):
+def write_lines(lines: PathLike, fp):
     fmt_path(fp).write_text(os.linesep.join(lines))
     return fp
 
 
-
-def read_pickle(fp):
+def read_pickle(fp: PathLike):
     with open(fp, 'rb') as f:
         data = pickle.load(f)
     return data
 
 
-def save_pickle(obj, fp):
+def save_pickle(obj, fp: PathLike):
     with open(fp, 'wb') as f:
         pickle.dump(obj, f)
 
-def read_json(fp):
+
+def read_json(fp: PathLike):
     with open(fp) as f:
         data = json.load(f)
     return data
 
 
-def save_json(fp, obj):
+def save_json(obj, fp: PathLike):
     with open(fp, 'w') as f:
         json.dump(obj, f)
 
 
-def fmt_path(fp: Union[str, Path]) -> Path:
+def fmt_path(fp: PathLike) -> Path:
     return Path(fp).expanduser().absolute()
 
 
-def is_hidden(fp):
+def is_hidden(fp: PathLike):
     fp = fmt_path(fp)
-    if sys.platform == 'darwin':
+    plat = sys.platform
+    if plat == 'darwin':
         import Foundation
         url = Foundation.NSURL.fileURLWithPath_(str(fp))
         return url.getResourceValue_forKey_error_(None, Foundation.NSURLIsHiddenKey, None)[1]
-    else:
+    elif plat in ['win32', 'cygwin']:
         return bool(fp.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
+    else:
+        return fp.name.startswith(".")
 
 
 def eglob(fp, pattern):
@@ -60,9 +65,8 @@ def eglob(fp, pattern):
             yield f
 
 
-def apply_dir(dir: Path, f: Callable[[Path], Any], suffix=None, recursive=True) -> None:
-    if isinstance(dir, str):
-        dir = fmt_path(dir)
+def apply_dir(dir: PathLike, f: Callable[[PathLike], Any], suffix=None, recursive=True) -> None:
+    dir = fmt_path(dir)
     for fp in dir.iterdir():
         if fp.name.startswith('.'):
             continue
@@ -76,14 +80,30 @@ def apply_dir(dir: Path, f: Callable[[Path], Any], suffix=None, recursive=True) 
                 f(fp)
 
 
-
-def rename(fp: Path, new_name: str, stem=True):
+def rename(fp: PathLike, new_name: str, stem=True):
+    fp = fmt_path(fp)
     if stem:
         fp.rename(fp.parent / (new_name + fp.suffix))
     else:
         fp.rename(fp.parent / new_name)
 
-def copy(src: Path, dst: Path):
+
+def copy(src: PathLike, dst: PathLike):
     src = fmt_path(src)
     dst = fmt_path(dst)
     shutil.copy(str(src), str(dst))
+
+
+def mv(src: PathLike, dst: PathLike):
+    return fmt_path(shutil.move(str(src), str(dst)))
+
+
+def rm(fp: PathLike):
+    fp = fmt_path(fp)
+    if fp.exists():
+        if fp.is_dir():
+            for d in fp.iterdir():
+                rm(d)
+            fp.rmdir()
+        else:
+            fp.unlink()

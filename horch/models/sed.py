@@ -33,7 +33,7 @@ class SideHead(nn.Module):
 
 class SED(nn.Module):
     def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2,
-                 deep_supervision=False, drop_rate=0.0, out_channels=11):
+                 deep_supervision=False, drop_rate=0.0, out_channels=18):
         super().__init__()
         self.deep_supervison = deep_supervision
         self.backbone = backbone

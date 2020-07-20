@@ -14,14 +14,14 @@ def _check_levels(levels):
 
 def backbone_forward(self, x):
     outs = []
-    x = self.stage1(x)
+    x = self.layer1(x)
     if 1 in self.feature_levels:
         outs.append(x)
-    x = self.stage2(x)
+    x = self.layer2(x)
     if 2 in self.feature_levels:
         outs.append(x)
 
-    x = self.stage3(x)
+    x = self.layer3(x)
     if 3 in self.feature_levels:
         outs.append(x)
 

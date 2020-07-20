@@ -1,6 +1,8 @@
 from difflib import get_close_matches
 
 import numpy as np
+
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from horch.models.backbone import _check_levels, backbone_forward
@@ -209,6 +211,35 @@ class MobileNetV2(nn.Module):
         return backbone_forward(self, x)
 
 
+class ResNeSt(nn.Module):
+    def __init__(self, name, feature_levels=(3, 4, 5), pretrained=True):
+        super().__init__()
+        _check_levels(feature_levels)
+        self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
+        self.feature_levels = feature_levels
+        net = torch.hub.load('zhanghang1989/ResNeSt', name, pretrained=pretrained)
+        del net.fc
+        self.layer1 = nn.Sequential(
+            net.conv1,
+            net.bn1,
+            net.relu,
+        )
+        self.layer2 = nn.Sequential(
+            net.maxpool,
+            net.layer1,
+        )
+        self.layer3 = net.layer2
+        self.layer4 = net.layer3
+        self.layer5 = net.layer4
+        self.out_channels = [
+            calc_out_channels(getattr(self, ("layer%d" % i)))
+            for i in feature_levels
+        ]
+
+    def forward(self, x):
+        return backbone_forward(self, x)
+
+
 class EfficientNet(nn.Module):
     r"""EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks
 
@@ -227,7 +258,7 @@ class EfficientNet(nn.Module):
         Default: (3, 4, 5)
     """
 
-    def __init__(self, version='b0', feature_levels=(3, 4, 5), pretrained=True, **kwargs):
+    def __init__(self, version='b0', feature_levels=(3, 4, 5), pretrained=True, include_final=True, **kwargs):
         super().__init__()
         _check_levels(feature_levels)
         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
@@ -277,7 +308,7 @@ class EfficientNet(nn.Module):
             features.stage5.unit1.se,
             features.stage5.unit1.conv3,
             features.stage5[1:],
-            features.final_block
+            *([features.final_block] if include_final else []),
         )
 
         self.out_channels = np.array([
@@ -735,59 +766,6 @@ class VoVNet(nn.Module):
         return backbone_forward(self, x)
 
 
-# class VGG16BN(nn.Module):
-#     def __init__(self, feature_levels=(3, 4), pretrained=True, l2_norm=True, **kwargs):
-#         super().__init__()
-#         assert feature_levels == (3, 4)
-#         assert pretrained, "Only pretrained VGG16 is provided."
-#         _check_levels(feature_levels)
-#         self.forward_levels = tuple(range(1, feature_levels[-1] + 1))
-#         self.feature_levels = feature_levels
-#         from torchvision.models import vgg16_bn
-#         backbone = vgg16_bn(pretrained=True)
-#         f = backbone.features
-#         f[6].ceil_mode = True
-#         f[13].ceil_mode = True
-#         f[23].ceil_mode = True
-#         f[33].ceil_mode = True
-#         f[43].kernel_size = (3, 3)
-#         f[43].stride = (1, 1)
-#         f[43].padding = (1, 1)
-#
-#         conv6 = nn.Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6)
-#         fc6 = backbone.classifier[0]
-#         fc6_weight = fc6.weight.data.view(4096, 512, 7, 7)
-#         fc6_bias = fc6.bias.data
-#         conv6.weight.data = decimate(fc6_weight, m=[4, None, 3, 3])
-#         conv6.bias.data = decimate(fc6_bias, m=[4])
-#
-#         conv7 = nn.Conv2d(1024, 1024, kernel_size=1)
-#         fc7 = backbone.classifier[3]
-#         fc7_weight = fc7.weight.data.view(4096, 4096, 1, 1)
-#         fc7_bias = fc7.bias.data
-#         conv7.weight.data = decimate(fc7_weight, m=[4, 4, None, None])
-#         conv7.bias.data = decimate(fc7_bias, m=[4])
-#
-#         self.layer1 = f[:13]
-#         self.layer2 = f[13:23]
-#         self.layer3 = f[23:33]
-#         self.l2_norm = L2Norm(512, 20) if l2_norm else nn.Identity()
-#         self.layer4 = nn.Sequential(
-#             *f[33:],
-#             conv6,
-#             nn.ReLU(inplace=True),
-#             conv7,
-#             nn.ReLU(inplace=True),
-#         )
-#
-#         self.out_channels = [512, 1024]
-#
-#     def forward(self, x):
-#         c3, c4 = backbone_forward(self, x)
-#         c3 = self.l2_norm(c3)
-#         return c3, c4
-
-
 class VGG16BN(nn.Module):
     def __init__(self, feature_levels=(3, 4), pretrained=True):
         super().__init__()
@@ -847,6 +825,7 @@ class VGG16BN(nn.Module):
                 outs.append(x)
 
         return outs
+
 
 class VGG16(nn.Module):
     def __init__(self, feature_levels=(3, 4), pretrained=True, l2_norm=True, **kwargs):

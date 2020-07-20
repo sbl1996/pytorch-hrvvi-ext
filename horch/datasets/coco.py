@@ -94,7 +94,7 @@ def extract(ann_file, d, indices, suffix, img_dir=None):
     sub_annotations = [ann for ann in d['annotations'] if ann['image_id'] in sub_images_ids]
     sub_d['images'] = sub_images
     sub_d['annotations'] = sub_annotations
-    save_json(ann_file.parent / (ann_file.stem + "_" + suffix + ".json"), sub_d)
+    save_json(sub_d, ann_file.parent / (ann_file.stem + "_" + suffix + ".json"))
 
 def sample(ann_file, k):
     ann_file = fmt_path(ann_file)
