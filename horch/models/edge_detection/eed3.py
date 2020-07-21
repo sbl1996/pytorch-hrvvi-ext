@@ -8,12 +8,12 @@ from horch.models.modules import Conv2d
 
 class SideHead(nn.Module):
 
-    def __init__(self, side_in_channels):
+    def __init__(self, side_in_channels, out_channels):
         super().__init__()
         n = len(side_in_channels)
         self.sides = nn.ModuleList([
             nn.Sequential(
-                Conv2d(c, 1, 1, norm_layer='default')
+                Conv2d(c, out_channels, 1, norm_layer='default')
             )
             for c in side_in_channels
         ])
@@ -32,8 +32,9 @@ class SideHead(nn.Module):
         return p
 
 
-class EED(nn.Module):
-    def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2, drop_rate=0.0):
+class SED(nn.Module):
+    def __init__(self, backbone, in_channels_list, f_channels=128, num_fpn_layers=2,
+                 drop_rate=0.0, out_channels=18):
         super().__init__()
         self.backbone = backbone
         self.num_fpn_layers = num_fpn_layers
@@ -47,7 +48,7 @@ class EED(nn.Module):
             BiFPN([f_channels] * n, f_channels)
             for _ in range(num_fpn_layers)
         ])
-        self.head = SideHead([f_channels] * n)
+        self.head = SideHead([f_channels] * n, out_channels)
 
         self.weights = nn.Parameter(
             torch.ones((self.num_fpn_layers + 1, self.num_levels)), requires_grad=True)

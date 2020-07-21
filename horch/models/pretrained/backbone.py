@@ -231,10 +231,10 @@ class ResNeSt(nn.Module):
         self.layer3 = net.layer2
         self.layer4 = net.layer3
         self.layer5 = net.layer4
-        self.out_channels = [
-            calc_out_channels(getattr(self, ("layer%d" % i)))
+        self.out_channels = np.array([
+            get_out_channels(getattr(self, ("layer%d" % i)))
             for i in feature_levels
-        ]
+        ])
 
     def forward(self, x):
         return backbone_forward(self, x)
@@ -884,3 +884,10 @@ def search(name, n=10, cutoff=0.6):
     from pytorchcv.models.model_store import _model_sha1
     models = _model_sha1.keys()
     return get_close_matches(name, models, n=n, cutoff=cutoff)
+
+
+def freeze_bn(model):
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            m.eval()
+            m._freezed = True
