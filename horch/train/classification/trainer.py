@@ -8,7 +8,7 @@ from ignite.contrib.handlers import ProgressBar
 from ignite.engine import Engine
 from ignite.utils import convert_tensor
 from torch.nn.utils import clip_grad_norm_
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 
 from horch.functools import pick
 from horch.train.classification.mix import MixBase

@@ -286,7 +286,7 @@ def DWConv2d(in_channels, out_channels,
              kernel_size=3, stride=1,
              padding='same', bias=True,
              norm_layer=None, activation=None):
-    mid_norm_layer = norm_layer
+    mid_norm_layer = None
     return nn.Sequential(
         Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels,
                norm_layer=mid_norm_layer),
