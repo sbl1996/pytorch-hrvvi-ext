@@ -434,7 +434,7 @@ class HighResolutionNet(nn.Module):
             self.load_state_dict(model_dict)
 
 
-def hrnetv2_w32():
+def hrnetv2_w32(model_path=None):
     stage_modules = [1, 1, 4, 3]
     stage_branches = [1, 2, 3, 4]
     blocks = ['bottleneck', 'basic', 'basic', 'basic']
@@ -442,4 +442,6 @@ def hrnetv2_w32():
     stage_channels = [[64], [32, 64], [32, 64, 128], [32, 64, 128, 256]]
     net = HighResolutionNet(stage_modules, stage_branches, blocks,
                             stage_blocks, stage_channels)
+    if model_path:
+        net.load_state_dict(torch.load(model_path), strict=False)
     return net
