@@ -49,14 +49,15 @@ class Engine(Serializable):
 
         state.dataloader = dataloader
         state.epoch_length = len(dataloader)
-        state.total_epochs = state.epoch + num_epochs
+        state.end_epochs = state.epoch + num_epochs
         start_epoch = state.epoch
-        total_epochs = state.total_epochs
+        end_epochs = state.end_epochs
         cbks.on_begin(self)
-        for epoch in range(start_epoch, total_epochs):
-            state.epoch = epoch
+        for epoch in range(start_epoch, end_epochs):
             self._run_epoch()
+            state.epoch = epoch + 1
         cbks.on_end(self)
+        return start_epoch, end_epochs
 
     def _run_epoch(self):
         state = self.state

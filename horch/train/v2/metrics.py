@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from typing import Any, Mapping
-from toolz import identity
+from toolz.curried import identity, get
+
 from horch.train.v2.callback import Callback
 
 
@@ -11,8 +12,6 @@ class NotComputableError(RuntimeError):
 
 
 class Metric(Callback, metaclass=ABCMeta):
-
-    _required_output_keys = ("y", "y_pred")
 
     def __init__(self, output_transform=lambda x: x, name=None):
         super().__init__()
@@ -64,19 +63,6 @@ class Metric(Callback, metaclass=ABCMeta):
 
     def on_batch_end(self, engine):
         output = self._output_transform(engine.state.output)
-        if isinstance(output, Mapping):
-            if self._required_output_keys is None:
-                raise TypeError(
-                    "Transformed engine output for {} metric should be a tuple/list, but given {}".format(
-                        self.__class__.__name__, type(output)
-                    )
-                )
-            if not all([k in output for k in self._required_output_keys]):
-                raise ValueError(
-                    "When transformed engine's output is a mapping, "
-                    "it should contain {} keys, but given {}".format(self._required_output_keys, list(output.keys()))
-                )
-            output = tuple(output[k] for k in self._required_output_keys)
         self.update(output)
         engine.state.metrics[self.name] = self.compute()
 
@@ -108,17 +94,20 @@ class TrainLoss(Average):
     _required_output_keys = ("loss", "batch_size")
 
     def __init__(self, name="loss"):
-        super().__init__(identity, name)
+        super().__init__(output_transform=self.output_transform, name=name)
+
+    @staticmethod
+    def output_transform(output):
+        return get(["loss", "batch_size"], output)
 
 
 class Loss(Average):
-    _required_output_keys = ("y_pred", "y_true")
 
     def __init__(self, criterion, name="loss"):
         self.criterion = criterion
         super().__init__(output_transform=self.output_transform, name=name)
 
     def output_transform(self, output):
-        y_pred, y_true = output
+        y_true, y_pred = get(["y_true", "y_pred"], output)
         loss = self.criterion(y_pred, y_true).item()
         return loss, y_pred.shape[0]

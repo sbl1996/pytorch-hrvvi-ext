@@ -1,4 +1,4 @@
-from typing import Union, Callable, List, Optional, Sequence
+from typing import Union, Callable, List, Optional, Sequence, Mapping
 
 import torch
 import torch.nn as nn
@@ -8,18 +8,19 @@ from torch.optim.optimizer import Optimizer
 
 from horch.common import CUDA
 from horch.train.v2.engine import Engine, backward
-from horch.train.v2.callback import DefaultTrainLogger, DefaultEvalLogger, ModelCheckpoint
+from horch.train.v2.callback import DefaultTrainLogger, DefaultEvalLogger, Checkpoint
 from horch.train.v2.metrics import Metric
+from horch.train.v2.trainer_base import TrainerBase
 
 
 def create_supervised_trainer(
     model: nn.Module,
     criterion: Union[Callable, nn.Module],
     optimizer: Optimizer,
-    metrics: List[Metric],
+    metrics: Mapping[str, Metric],
+    device: Union[str, torch.device] = 'auto',
     clip_grad_norm: Optional[float] = None,
     fp16: bool = False,
-    device: Union[str, torch.device] = 'auto',
 ):
     if device == 'auto':
         device = 'cuda' if CUDA else "cpu"
@@ -46,7 +47,9 @@ def create_supervised_trainer(
         }
         return outs
 
-    callbacks = [*metrics]
+    callbacks = []
+    for k, v in metrics.items():
+        callbacks.append(v)
     engine = Engine(
         train_batch, callbacks,
         model=model, criterion=criterion, optimizer=optimizer)
@@ -55,8 +58,7 @@ def create_supervised_trainer(
 
 def create_supervised_evaluator(
     model: nn.Module,
-    criterion: Union[Callable, nn.Module],
-    metrics: List[Metric],
+    metrics: Mapping[str, Metric],
     device: Union[str, torch.device] = 'auto',
 ):
     if device == 'auto':
@@ -78,8 +80,21 @@ def create_supervised_evaluator(
 
         return output
 
-    callbacks = [*metrics]
-    engine = Engine(test_batch, callbacks,
-                    model=model, criterion=criterion)
+    callbacks = []
+    for k, v in metrics.items():
+        callbacks.append(v)
+    engine = Engine(test_batch, callbacks, model=model)
 
     return engine
+
+
+class Trainer(TrainerBase):
+
+    def _create_train_engine(self):
+        engine = create_supervised_trainer(
+            self.model, self.criterion, self.optimizers[0], self.metrics, self.device, fp16=self.fp16)
+        return engine
+
+    def _create_eval_engine(self):
+        engine = create_supervised_evaluator(self.model, self.test_metrics, self.device)
+        return engine

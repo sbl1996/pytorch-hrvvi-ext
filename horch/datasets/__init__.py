@@ -1,28 +1,13 @@
+import bisect
 import math
 
 import numpy as np
-from torch.utils.data import Dataset
+from sklearn.utils import check_random_state
+from sklearn.model_selection import train_test_split as sklearn_train_test_split
+from torch.utils.data import Dataset, ConcatDataset as TorchConcatDataset
 from torchvision.transforms import Compose
+
 from horch.transforms import InputTransform
-
-BACKENDS = {
-    'PIL': 0,
-    'cv2': 1,
-}
-__BACKEND__ = 0
-
-
-def get_backend():
-    global __BACKEND__
-    return __BACKEND__
-
-
-def set_backend(name):
-    assert name in BACKENDS, "%s is not a valid backend, %s are supported." % (name, list(BACKENDS.keys()))
-    global __BACKEND__
-    __BACKEND__ = BACKENDS[name]
-
-
 from horch.datasets.captcha import Captcha, CaptchaDetectionOnline, CaptchaOnline, CaptchaSegmentationOnline
 from horch.datasets.coco import CocoDetection
 from horch.datasets.voc import VOCDetection, VOCSegmentation, VOCDetectionConcat
@@ -39,10 +24,6 @@ class Fullset(Dataset):
     def __getitem__(self, idx):
         input, target = self.dataset[idx]
         return self.transform(input, target)
-
-    def to_coco(self):
-        assert hasattr(self.dataset, "to_coco"), "Dataset don't support to_coco"
-        return self.dataset.to_coco()
 
     def __len__(self):
         return len(self.dataset)
@@ -63,7 +44,20 @@ class Subset(Dataset):
     def __init__(self, dataset, indices, transform=None):
         self.dataset = dataset
         self.indices = indices
+
+        self._transform = None
+
         self.transform = transform
+
+    @property
+    def transform(self):
+        return self._transform
+
+    @transform.setter
+    def transform(self, transform):
+        if isinstance(transform, Compose):
+            transform = InputTransform(transform)
+        self._transform = transform
 
     def __getitem__(self, idx):
         img, target = self.dataset[self.indices[idx]]
@@ -79,17 +73,11 @@ class Subset(Dataset):
     def get_target(self, idx):
         return self.dataset.get_target(self.indices[idx])
 
+    def get_class(self, idx):
+        return self.dataset.get_class(self.indices[idx])
 
     def __len__(self):
         return len(self.indices)
-
-    def to_coco(self, indices=None):
-        assert hasattr(self.dataset, "to_coco"), "Dataset don't support to_coco"
-        if indices is None:
-            indices = self.indices
-        else:
-            indices = [self.indices[i] for i in indices]
-        return self.dataset.to_coco(indices)
 
     def __repr__(self):
         fmt_str = 'Subset of ' + self.dataset.__class__.__name__ + '\n'
@@ -97,26 +85,18 @@ class Subset(Dataset):
         return fmt_str
 
 
-def train_test_split(dataset, test_ratio, random=False, transform=None, test_transform=None):
+def train_test_split(dataset, test_ratio, shuffle=False, transform=None, test_transform=None, random_state=None):
     if isinstance(transform, Compose):
         transform = InputTransform(transform)
     if isinstance(test_transform, Compose):
         test_transform = InputTransform(test_transform)
-    num_examples = len(dataset)
-    num_test_examples = int(num_examples * test_ratio)
-    num_train_examples = num_examples - num_test_examples
-    if random:
-        indices = np.random.permutation(num_examples)
-        train_indices = indices[:num_train_examples]
-        test_indices = indices[num_train_examples:]
-    else:
-        train_indices = np.arange(num_train_examples)
-        test_indices = np.arange(num_train_examples, num_examples)
-    train_set = Subset(
-        dataset, train_indices, transform)
-    test_set = Subset(
-        dataset, test_indices, test_transform)
-    return train_set, test_set
+
+    n = len(dataset)
+    train_indices, test_indices = sklearn_train_test_split(
+        list(range(n)), test_size=test_ratio, shuffle=shuffle, random_state=random_state)
+    ds_train = Subset(dataset, train_indices, transform)
+    ds_test = Subset(dataset, test_indices, test_transform)
+    return ds_train, ds_test
 
 
 class CachedDataset(Dataset):
@@ -132,6 +112,9 @@ class CachedDataset(Dataset):
         if self.cache[idx] is None:
             self.cache[idx] = self.dataset[idx]
         return self.cache[idx]
+
+    def get_class(self, idx):
+        return self.dataset.get_class(idx)
 
 
 def batchify(ds, batch_size):
@@ -155,3 +138,18 @@ class CombineDataset(Dataset):
 
     def __getitem__(self, idx):
         return tuple(ds[idx] for ds in self.datasets)
+
+
+class ConcatDataset(TorchConcatDataset):
+
+    def get_class(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError("absolute value of index should not exceed dataset length")
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        return self.datasets[dataset_idx].get_class(sample_idx)

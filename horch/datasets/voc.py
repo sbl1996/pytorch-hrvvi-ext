@@ -7,7 +7,6 @@ from pathlib import Path
 
 import xmltodict
 from PIL import Image
-from horch.datasets import get_backend
 from toolz.curried import groupby
 from torch.utils.data import Dataset
 from torchvision.datasets.utils import download_url, check_integrity

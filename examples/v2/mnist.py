@@ -26,7 +26,7 @@ test_transform = Compose([
 
 data_home = "datasets"
 ds = MNIST(data_home, train=True, download=True)
-ds = train_test_split(ds, test_ratio=0.1, random=True)[1]
+ds = train_test_split(ds, test_ratio=0.1, shuffle=True)[1]
 ds_train, ds_val = train_test_split(
     ds, test_ratio=0.02,
     transform=train_transform,

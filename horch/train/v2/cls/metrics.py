@@ -1,3 +1,5 @@
+from toolz.curried import get
+
 import numpy as np
 from sklearn.metrics import roc_auc_score
 
@@ -25,15 +27,13 @@ def accuracy(y_true, y_pred):
 
 class TopKAccuracy(Average):
 
-    _required_output_keys = ("y_true", "y_pred")
-
     def __init__(self, k=5, name=None):
         self.k = k
         name = self._init_name(name)
         super().__init__(self.output_transform, name)
 
     def output_transform(self, output):
-        y_true, y_pred = output
+        y_true, y_pred = get(["y_true", "y_pred"], output)
         return topk_accuracy(y_true, y_pred, self.k)
 
     def _init_name(self, name):
@@ -44,20 +44,16 @@ class TopKAccuracy(Average):
 
 class Accuracy(Average):
 
-    _required_output_keys = ("y_true", "y_pred")
-
     def __init__(self, name="acc"):
         super().__init__(self.output_transform, name)
 
     @staticmethod
     def output_transform(output):
-        y_true, y_pred = output
+        y_true, y_pred = get(["y_true", "y_pred"], output)
         return accuracy(y_true, y_pred)
 
 
 class ROCAUC(Metric):
-
-    _required_output_keys = ("y_true", "y_pred")
 
     def __init__(self, name='auc'):
         super().__init__(name=name)
@@ -67,7 +63,7 @@ class ROCAUC(Metric):
         self.y_trues = []
 
     def update(self, output):
-        y_pred, y_true = output
+        y_true, y_pred = get(["y_true", "y_pred"], output)
         self.y_preds.append(y_pred)
         self.y_trues.append(y_true)
 

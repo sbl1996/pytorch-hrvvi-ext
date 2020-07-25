@@ -26,8 +26,8 @@ train_transform = Compose([
 root = '/Users/hrvvi/Code/study/pytorch/datasets'
 ds_all = MNIST(root=root, train=True, download=True, transform=train_transform)
 
-ds = train_test_split(ds_all, test_ratio=0.001, random=True)[1]
-ds_train, ds_val = train_test_split(ds, test_ratio=0.5, random=True)
+ds = train_test_split(ds_all, test_ratio=0.001, shuffle=True)[1]
+ds_train, ds_val = train_test_split(ds, test_ratio=0.5, shuffle=True)
 ds = CombineDataset(ds_train, ds_val)
 
 train_loader = DataLoader(ds, batch_size=2, pin_memory=True, num_workers=2)

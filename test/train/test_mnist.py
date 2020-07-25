@@ -1,19 +1,21 @@
 import math
 
 import torch.nn as nn
-from torch.optim import SGD, AdamW
-from torch.optim.lr_scheduler import MultiStepLR, OneCycleLR
+from torch.optim import SGD
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad
 
-from horch.datasets import train_test_split
+from horch.datasets import train_test_split, Subset
 from horch.models.modules import Conv2d, Flatten
 from horch.models.utils import summary
-from horch.train import Trainer, manual_seed
+from horch.train import manual_seed
 from horch.train.lr_scheduler import CosineAnnealingLR
-from horch.train.metrics import TrainLoss, Loss
-from horch.train.metrics.classification import Accuracy
+
+from horch.train.v2.cls import Trainer
+from horch.train.v2.metrics import TrainLoss, Loss
+from horch.train.v2.cls.metrics import Accuracy
 
 manual_seed(0)
 
@@ -47,14 +49,14 @@ test_transform = Compose([
 
 data_home = "/Users/hrvvi/Code/study/pytorch/datasets"
 ds = MNIST(data_home, train=True, download=False)
-ds = train_test_split(ds, test_ratio=0.1, random=True)[1]
+ds = train_test_split(ds, test_ratio=0.1, shuffle=True)[1]
 ds_train, ds_val = train_test_split(
-    ds, test_ratio=0.05, random=True,
+    ds, test_ratio=0.05, shuffle=True,
     transform=train_transform,
     test_transform=test_transform,
 )
 ds_test = MNIST(data_home, train=False, download=False, transform=test_transform)
-ds_test = train_test_split(ds_test, test_ratio=0.1, random=True)[1]
+ds_test = train_test_split(ds_test, test_ratio=0.1, shuffle=True)[1]
 
 mul = 1
 batch_size = 128
@@ -65,8 +67,8 @@ max_lr = 0.1 * mul
 net = LeNet5()
 criterion = nn.CrossEntropyLoss()
 optimizer = SGD(net.parameters(), lr=min_lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
-lr_scheduler = MultiStepLR(optimizer, [10, 20], gamma=0.1)
-# lr_scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=0.001, warmup=5, warmup_eta_min=0.01)
+# lr_scheduler = MultiStepLR(optimizer, [10, 20], gamma=0.1)
+lr_scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=0.001, warmup=5, warmup_eta_min=0.001)
 
 metrics = {
     'loss': TrainLoss(),
@@ -79,14 +81,17 @@ test_metrics = {
 }
 
 trainer = Trainer(net, criterion, optimizer, lr_scheduler,
-                  metrics=metrics, save_path="./checkpoints", name="MNIST-LeNet5")
-
-summary(net, (1, 32, 32))
+                  metrics=metrics, test_metrics=test_metrics,
+                  work_dir="./checkpoints/MNIST-LeNet5")
+# summary(net, (1, 32, 32))
 
 train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2, pin_memory=True)
 test_loader = DataLoader(ds_test, batch_size=128)
 val_loader = DataLoader(ds_val, batch_size=128)
 
-trainer.fit(train_loader, 30, val_loader=val_loader)
+print(trainer.fit(train_loader, 5, val_loader=val_loader))
+# trainer.save()
+# trainer.load()
+# print(trainer.fit(train_loader, 2, val_loader=val_loader))
 
-trainer.evaluate(test_loader)
+print(trainer.evaluate(test_loader))

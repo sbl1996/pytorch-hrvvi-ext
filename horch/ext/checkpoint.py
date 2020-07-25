@@ -2,7 +2,7 @@ import os
 import tempfile
 
 import torch
-
+from ignite.handlers import ModelCheckpoint
 
 class ModelCheckpoint(object):
     """ ModelCheckpoint handler can be used to periodically save objects to disk.

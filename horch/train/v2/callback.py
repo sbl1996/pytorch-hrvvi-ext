@@ -1,11 +1,10 @@
 from enum import Enum
 from queue import Queue
-from typing import Sequence, Mapping, Callable
+from typing import Sequence, Mapping, Callable, Union
 
 import torch
 from horch.io import fmt_path, save_pickle, rm, read_pickle, PathLike
 from horch.train.v2.base import Serializable
-from horch.train.v2.engine import Engine
 from horch.utils import time_now
 
 
@@ -81,7 +80,7 @@ class DefaultTrainLogger(Callback):
         super().__init__()
         self.log_freq = log_freq
 
-    def on_epoch_begin(self, engine: Engine):
+    def on_epoch_begin(self, engine):
         state = engine.state
         engine.log.info('Epoch %d/%d, lr: %f' % (state.epoch + 1, state.max_epochs, state.output['lr']))
 
@@ -107,7 +106,7 @@ class DefaultEvalLogger(Callback):
         super().__init__()
         self.log_freq = log_freq
 
-    def on_batch_end(self, engine: Engine):
+    def on_batch_end(self, engine):
         state = engine.state
         i = state.iteration
 
@@ -179,7 +178,7 @@ def call_on(event, freq, f):
 class Checkpoint(Callback):
 
     def __init__(self,
-                 to_save: Mapping[str, Serializable],
+                 to_save: Mapping[str, Union[Serializable, Callable[[], Mapping]]],
                  save_freq: int,
                  save_dir: PathLike,
                  n_saved: int = 1):
@@ -191,14 +190,17 @@ class Checkpoint(Callback):
         self.n_saved = n_saved
         self._saved = Queue(n_saved)
 
-    def save(self, engine: Engine):
+    def save(self, engine):
         if self._saved.full():
             self.delete()
         path = str(self.save_dir / f"epoch_{engine.state.epoch + 1}.pth")
 
         state_dict = {}
-        for k, v in self.to_save:
-            state_dict[k] = v.state_dict()
+        for k, v in self.to_save.items():
+            if hasattr(v, "state_dict"):
+                state_dict[k] = v.state_dict()
+            else:
+                state_dict[k] = v()
         torch.save(state_dict, path)
         self._saved.put(path)
         print('Save checkpoint at %s' % path)
