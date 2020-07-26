@@ -12,3 +12,4 @@ sklearn
 pytorchcv
 yacs
 thop
+timm

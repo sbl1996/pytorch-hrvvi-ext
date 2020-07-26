@@ -2,6 +2,7 @@ import logging
 from typing import Sequence, Mapping
 from collections import OrderedDict
 
+from ignite.utils import convert_tensor
 from torch.utils.data import DataLoader
 
 from horch.train.v2.base import Serializable
