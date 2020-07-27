@@ -198,7 +198,7 @@ class TrainerBase:
         self._train_engine_state = state_dict["train_engine"]
         print("Load trainer from %s" % fp)
 
-    def _create_train_engine(self) -> Engine:
+    def _create_train_engine(self, **kwargs) -> Engine:
         raise NotImplementedError
 
     def _create_eval_engine(self) -> Engine:
@@ -245,7 +245,7 @@ class TrainerBase:
             save_by: Optional[Union[str, int, Epochs, Iters]] = None,
             callbacks: Sequence[Callable] = ()):
 
-        self.train_engine = self._create_train_engine()
+        self.train_engine = self._create_train_engine(**self._kwargs)
         eval_engine = self._create_eval_engine()
         if self._train_engine_state:
             self.train_engine.load_state_dict(self._train_engine_state)
