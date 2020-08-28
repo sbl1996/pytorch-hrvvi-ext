@@ -1,6 +1,18 @@
 import numpy as np
 from sklearn.model_selection import KFold as R_KFold
+from torchvision.ops import nms
+
 from horch.datasets import Subset
+nms
+
+def k_fold(ds, n_splits=5, shuffle=True, transform=None, test_transform=None, random_state=None):
+
+    n = len(ds)
+    kf = KFold(n_splits, shuffle, random_state)
+    for train_indices, test_indices in kf.split(list(range(n))):
+        ds_train = Subset(ds, train_indices, transform)
+        ds_test = Subset(ds, test_indices, test_transform)
+        yield ds_train, ds_test
 
 
 class KFold(R_KFold):
@@ -15,16 +27,6 @@ class KFold(R_KFold):
             ds_train = Subset(ds, train_indices, self.transform)
             ds_test = Subset(ds, test_indices, self.test_transform)
             yield ds_train, ds_test
-
-
-def k_fold(ds, n_splits=5, shuffle=True, transform=None, test_transform=None, random_state=None):
-
-    n = len(ds)
-    kf = KFold(n_splits, shuffle, random_state)
-    for train_indices, test_indices in kf.split(list(range(n))):
-        ds_train = Subset(ds, train_indices, transform)
-        ds_test = Subset(ds, test_indices, test_transform)
-        yield ds_train, ds_test
 
 
 def cross_val_score(fit_fn, ds, cv: KFold, verbose=0):

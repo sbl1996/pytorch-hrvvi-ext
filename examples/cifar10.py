@@ -5,7 +5,6 @@ from torch.optim import SGD
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
 
-from horch.dataloader.dataloader import DataLoader
 from horch.datasets import train_test_split
 from horch.train.lr_scheduler import CosineAnnealingLR
 from horch.models.cifar.efficientnet import efficientnet_b0

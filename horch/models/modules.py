@@ -188,9 +188,14 @@ def Conv2d(in_channels, out_channels,
         return DWConv2d(in_channels, out_channels, kernel_size, stride, padding, bias, norm_layer, activation)
     if padding == 'same':
         if isinstance(kernel_size, tuple):
+            if dilation == 1:
+                dilation = (1, 1)
+            else:
+                assert isinstance(dilation, tuple)
             kh, kw = kernel_size
-            ph = (kh - 1) // 2
-            pw = (kw - 1) // 2
+            dh, dw = dilation
+            ph = (kh + (kh - 1) * (dh - 1) - 1) // 2
+            pw = (kw + (kw - 1) * (dw - 1) - 1) // 2
             padding = (ph, pw)
         else:
             padding = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2

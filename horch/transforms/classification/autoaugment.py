@@ -53,9 +53,9 @@ class ImageNetPolicy(Transform):
             SubPolicy(0.8, "equalize", 8, 0.6, "equalize", 3, fillcolor)
         ]
 
-    def __call__(self, img, target):
+    def __call__(self, img):
         policy_idx = random.randint(0, len(self.policies) - 1)
-        return self.policies[policy_idx](img), target
+        return self.policies[policy_idx](img)
 
     def __repr__(self):
         return "AutoAugment ImageNet Policy"

@@ -47,7 +47,7 @@ if __name__ == '__main__':
     if cfg.get("Debug") and cfg.Debug.get("subset"):
         ratio = cfg.Debug.subset
         ds_train = train_test_split(ds_train, test_ratio=ratio, shuffle=True)[1]
-        ds_test = train_test_split(ds_test, test_ratio=ratio, shuffle=True)[1]
+        ds_test = train_test_split(ds_test, test_ratio=ratio, shuffle=False)[1]
 
     train_loader = get_dataloader(cfg.Dataset.Train, ds_train)
     test_loader = get_dataloader(cfg.Dataset.Test, ds_test)
