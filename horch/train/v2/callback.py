@@ -2,8 +2,9 @@ from enum import Enum
 from queue import Queue
 from typing import Sequence, Mapping, Callable, Union
 
+from hhutil.io import fmt_path, rm, PathLike
+
 import torch
-from horch.io import fmt_path, save_pickle, rm, read_pickle, PathLike
 from horch.train.v2.base import Serializable
 from horch.utils import time_now
 

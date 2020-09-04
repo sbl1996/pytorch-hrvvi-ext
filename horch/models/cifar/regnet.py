@@ -1,9 +1,7 @@
-import math
-
 import torch
 import torch.nn as nn
 
-from horch.models.modules import get_activation, Conv2d, get_norm_layer
+from horch.models.layers import Act, Conv2d, Norm
 from horch.models.utils import profile
 
 
@@ -16,7 +14,7 @@ class SE(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.f_ex = nn.Sequential(
             Conv2d(channels, c, 1),
-            get_activation(),
+            Act(),
             Conv2d(c, channels, 1),
             nn.Sigmoid(),
         )
@@ -32,25 +30,25 @@ class Bottleneck(nn.Module):
         self.use_se = use_se
 
         self.conv1 = Conv2d(in_channels, out_channels, kernel_size=1,
-                            norm_layer='default', activation='default')
+                            norm='default', act='default')
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, stride=stride, groups=groups,
-                            norm_layer='default', activation='default')
+                            norm='default', act='default')
         if self.use_se:
             self.se = SE(out_channels, 4)
         self.conv3 = Conv2d(out_channels, out_channels, kernel_size=1,
-                            norm_layer='default')
+                            norm='default')
         if stride != 1 or in_channels != out_channels:
             layers = []
             if stride != 1:
                 layers.append(nn.AvgPool2d(kernel_size=(2, 2), stride=2))
             layers.extend([
                 Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
-                get_norm_layer(out_channels),
+                Norm(out_channels),
             ])
             self.shortcut = nn.Sequential(*layers)
         else:
             self.shortcut = nn.Identity()
-        self.relu = get_activation('default')
+        self.relu = Act('default')
 
     def init_weights(self):
         self.conv3[1].weight.data.fill_(0.0)
@@ -74,7 +72,7 @@ class RegNet(nn.Module):
         super().__init__()
 
         self.conv = Conv2d(3, stem_channels, kernel_size=3,
-                           norm_layer='default', activation='default')
+                           norm='default', act='default')
 
         cs = channels_per_stage
         gs = [c // channels_per_group for c in cs]

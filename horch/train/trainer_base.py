@@ -1,7 +1,10 @@
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Sequence, Dict, Callable, Union, Optional, Any
+from typing import Sequence, Dict, Callable,\
+    Union, Optional, Any
+
+from hhutil.io import fmt_path
 
 import torch
 import torch.nn as nn
@@ -13,7 +16,6 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from horch.common import CUDA
-from horch.io import fmt_path
 from ignite.engine import Events, Engine
 from ignite.handlers import Checkpoint, DiskSaver
 from ignite.metrics import Metric

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.optim import SGD
-
+from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
 

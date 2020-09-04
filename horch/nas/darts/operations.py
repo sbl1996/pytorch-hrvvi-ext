@@ -1,17 +1,17 @@
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, get_activation, get_norm_layer
+from horch.models.modules import Conv2d, Act, Norm
 
 OPS = {
     'none': lambda C, stride: Zero(stride),
     'avg_pool_3x3': lambda C, stride: nn.Sequential(
         nn.AvgPool2d(3, stride=stride, padding=1, count_include_pad=False),
-        get_norm_layer(C),
+        Norm(C),
     ),
     'max_pool_3x3': lambda C, stride: nn.Sequential(
         nn.MaxPool2d(3, stride=stride, padding=1),
-        get_norm_layer(C),
+        Norm(C),
     ),
     'skip_connect': lambda C, stride: nn.Identity() if stride == 1 else FactorizedReduce(C, C),
     'sep_conv_3x3': lambda C, stride: SepConv(C, C, 3, stride, 1),
@@ -22,10 +22,10 @@ OPS = {
     'dil_conv_3x3': lambda C, stride: DilConv(C, C, 3, stride, 2),
     'dil_conv_5x5': lambda C, stride: DilConv(C, C, 5, stride, 4),
     'conv_7x1_1x7': lambda C, stride: nn.Sequential(
-        get_activation(),
+        Act(),
         Conv2d(C, C, (1, 7), stride=(1, stride), bias=False),
         Conv2d(C, C, (7, 1), stride=(stride, 1), bias=False),
-        get_norm_layer(C),
+        Norm(C),
     ),
 }
 
@@ -35,9 +35,9 @@ class ReLUConvBN(nn.Module):
     def __init__(self, C_in, C_out, kernel_size, stride=1):
         super().__init__()
         self.op = nn.Sequential(
-            get_activation(),
+            Act(),
             Conv2d(C_in, C_out, kernel_size, bias=False, stride=stride),
-            get_norm_layer(C_out),
+            Norm(C_out),
         )
 
     def forward(self, x):
@@ -49,10 +49,10 @@ class DilConv(nn.Module):
     def __init__(self, C_in, C_out, kernel_size, stride, dilation):
         super().__init__()
         self.op = nn.Sequential(
-            get_activation(),
+            Act(),
             Conv2d(C_in, C_in, kernel_size=kernel_size, stride=stride, dilation=dilation, groups=C_in, bias=False),
             Conv2d(C_in, C_out, kernel_size=1, bias=False),
-            get_norm_layer(C_out),
+            Norm(C_out),
         )
 
     def forward(self, x):
@@ -64,14 +64,14 @@ class SepConv(nn.Module):
     def __init__(self, C_in, C_out, kernel_size, stride, padding):
         super().__init__()
         self.op = nn.Sequential(
-            get_activation(),
+            Act(),
             Conv2d(C_in, C_in, kernel_size=kernel_size, stride=stride, groups=C_in, bias=False),
             Conv2d(C_in, C_in, kernel_size=1, bias=False),
-            get_norm_layer(C_in),
-            get_activation(),
+            Norm(C_in),
+            Act(),
             nn.Conv2d(C_in, C_in, kernel_size=kernel_size, stride=1, padding=padding, groups=C_in, bias=False),
             nn.Conv2d(C_in, C_out, kernel_size=1, padding=0, bias=False),
-            get_norm_layer(C_out),
+            Norm(C_out),
         )
 
     def forward(self, x):
@@ -98,7 +98,7 @@ class FactorizedReduce(nn.Module):
         self.relu = nn.ReLU(inplace=False)
         self.conv_1 = Conv2d(C_in, C_out // 2, 1, stride=2, bias=False)
         self.conv_2 = Conv2d(C_in, C_out // 2, 1, stride=2, bias=False)
-        self.bn = get_norm_layer(C_out)
+        self.bn = Norm(C_out)
 
     def forward(self, x):
         x = self.relu(x)

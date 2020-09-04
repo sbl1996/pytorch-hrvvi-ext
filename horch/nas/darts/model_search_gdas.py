@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import get_norm_layer, Conv2d, get_activation
+from horch.models.modules import Norm, Conv2d, Act
 
 from horch.nas.darts.operations import OPS, FactorizedReduce, ReLUConvBN
 from horch.nas.darts.genotypes import PRIMITIVES, Genotype
@@ -16,7 +16,7 @@ class MixedOp(nn.Module):
         for primitive in PRIMITIVES:
             op = OPS[primitive](C, 1)
             if 'pool' in primitive:
-                op = nn.Sequential(op, get_norm_layer(C))
+                op = nn.Sequential(op, Norm(C))
             self._ops.append(op)
 
     def forward(self, x, hardwts, index):
@@ -64,30 +64,30 @@ class ReductionCell(nn.Module):
         self.preprocess1 = ReLUConvBN(C_prev, C, 1)
 
         self.branch_a1 = nn.Sequential(
-            get_activation(),
+            Act(),
             Conv2d(C, C, (1, 3), stride=(1, 2), groups=8, bias=False),
             Conv2d(C, C, (3, 1), stride=(2, 1), groups=8, bias=False),
-            get_norm_layer(C, affine=True),
-            get_activation(),
+            Norm(C, affine=True),
+            Act(),
             Conv2d(C, C, 1),
-            get_norm_layer(C, affine=True),
+            Norm(C, affine=True),
         )
         self.branch_a2 = nn.Sequential(
             nn.MaxPool2d(3, stride=2, padding=1),
-            get_norm_layer(C, affine=True)
+            Norm(C, affine=True)
         )
         self.branch_b1 = nn.Sequential(
-            get_activation(),
+            Act(),
             Conv2d(C, C, (1, 3), stride=(1, 2), groups=8, bias=False),
             Conv2d(C, C, (3, 1), stride=(2, 1), groups=8, bias=False),
-            get_norm_layer(C, affine=True),
-            get_activation(),
+            Norm(C, affine=True),
+            Act(),
             Conv2d(C, C, 1),
-            get_norm_layer(C, affine=True),
+            Norm(C, affine=True),
         )
         self.branch_b2 = nn.Sequential(
             nn.MaxPool2d(3, stride=2, padding=1),
-            get_norm_layer(C, affine=True)
+            Norm(C, affine=True)
         )
 
     def forward(self, s0, s1, *args):
@@ -135,7 +135,7 @@ class Network(nn.Module):
         C_curr = stem_multiplier * C
         self.stem = nn.Sequential(
             Conv2d(3, C_curr, kernel_size=3, bias=False),
-            get_norm_layer(C_curr),
+            Norm(C_curr),
         )
 
         C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
@@ -156,8 +156,8 @@ class Network(nn.Module):
             C_prev_prev, C_prev = C_prev, multiplier * C_curr
 
         self.post_activ = nn.Sequential(
-            get_norm_layer(C_prev),
-            get_activation(),
+            Norm(C_prev),
+            Act(),
         )
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(C_prev, num_classes)

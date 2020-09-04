@@ -2,7 +2,6 @@
 # from toolz import curry
 # from toolz.curried import get
 #
-# from horch.functools import lmap
 # from horch.train.metrics import Average
 #
 #

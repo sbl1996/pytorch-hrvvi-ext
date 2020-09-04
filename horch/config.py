@@ -9,8 +9,8 @@ DEFAULTS = {
         'affine': True,
         'track_running_stats': True,
     },
-    'norm_layer': 'bn',
-    'activation': 'relu',
+    'norm': 'bn',
+    'act': 'relu',
     'relu': {
         'inplace': True,
     },
@@ -23,7 +23,7 @@ DEFAULTS = {
     },
     'hswish': {
         'inplace': True,
-    }
+    },
 }
 
 

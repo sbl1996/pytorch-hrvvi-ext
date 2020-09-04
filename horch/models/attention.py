@@ -1,7 +1,9 @@
 import torch
-from horch.models.modules import Conv2d, HardSigmoid, Identity
 from torch import nn as nn
 from torch.nn import functional as F
+
+from horch.nn import HardSigmoid
+from horch.models.layers import Conv2d
 
 
 class SEModule(nn.Module):
@@ -46,7 +48,7 @@ class CBAMChannelAttention(nn.Module):
 class CBAMSpatialAttention(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2d(2, 1, kernel_size=7, norm_layer='bn')
+        self.conv = Conv2d(2, 1, kernel_size=7, norm='bn')
 
     def forward(self, x):
         aa = x.mean(dim=1, keepdim=True)
@@ -74,24 +76,10 @@ class SELayerM(nn.Module):
         channels = in_channels // reduction
         self.layers = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            Conv2d(in_channels, channels, kernel_size=1, norm_layer='bn', activation='relu6'),
+            Conv2d(in_channels, channels, kernel_size=1, norm='bn', act='relu6'),
             Conv2d(channels, in_channels, kernel_size=1, bias=False),
             HardSigmoid(True),
         )
 
     def forward(self, x):
         return x * self.layers(x)
-
-
-def get_attention(name, **kwargs):
-    if not name:
-        return Identity()
-    name = name.lower()
-    if name == 'se':
-        return SEModule(**kwargs)
-    elif name == 'sem':
-        return SELayerM(**kwargs)
-    elif name == 'cbam':
-        return CBAM(**kwargs)
-    else:
-        raise NotImplementedError("No attention module named %s" % name)

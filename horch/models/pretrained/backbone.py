@@ -5,8 +5,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horch.models.backbone import _check_levels, backbone_forward
-from horch.models.modules import Sequential, L2Norm
+
+from horch.nn import L2Norm
 from horch.models.pretrained.vovnet import vovnet27_slim, vovnet39, vovnet57
 
 from pytorchcv.model_provider import get_model as ptcv_get_model
@@ -14,6 +14,34 @@ from pytorchcv.models.efficientnet import calc_tf_padding
 
 from horch.models.pretrained.mobilenetv3 import mobilenetv3_large
 from horch.models.utils import get_out_channels, calc_out_channels, conv_to_atrous, decimate
+
+
+def _check_levels(levels):
+    assert tuple(range(levels[0], levels[-1] + 1)) == tuple(levels), "Feature levels must in ascending order."
+
+
+def backbone_forward(self, x):
+    outs = []
+    x = self.layer1(x)
+    if 1 in self.feature_levels:
+        outs.append(x)
+    x = self.layer2(x)
+    if 2 in self.feature_levels:
+        outs.append(x)
+
+    x = self.layer3(x)
+    if 3 in self.feature_levels:
+        outs.append(x)
+
+    x = self.layer4(x)
+    if 4 in self.feature_levels:
+        outs.append(x)
+
+    if 5 in self.forward_levels:
+        x = self.layer5(x)
+        if 5 in self.feature_levels:
+            outs.append(x)
+    return outs
 
 
 class ShuffleNetV2(nn.Module):

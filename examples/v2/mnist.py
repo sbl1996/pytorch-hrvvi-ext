@@ -43,9 +43,9 @@ class LeNet5(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Sequential(
-            Conv2d(1, 6, kernel_size=5, padding=0, norm_layer='default', activation='default'),
+            Conv2d(1, 6, kernel_size=5, padding=0, norm='default', act='default'),
             nn.AvgPool2d(kernel_size=2, stride=2),
-            Conv2d(6, 16, kernel_size=5, padding=0, norm_layer='default', activation='default'),
+            Conv2d(6, 16, kernel_size=5, padding=0, norm='default', act='default'),
             nn.AvgPool2d(kernel_size=2, stride=2),
         )
         self.fc = nn.Sequential(

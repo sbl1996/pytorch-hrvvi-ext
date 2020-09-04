@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 
-from horch.models.modules import Conv2d, HardSigmoid, DWConv2d
+from horch.models.layers import Conv2d, DWConv2d
+from horch.nn import HardSigmoid
 
 
 class SELayer(nn.Module):
@@ -10,7 +11,7 @@ class SELayer(nn.Module):
         channels = in_channels // reduction
         self.layers = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            Conv2d(in_channels, channels, kernel_size=1, norm_layer='bn', activation='relu'),
+            Conv2d(in_channels, channels, kernel_size=1, norm='bn', act='relu'),
             Conv2d(channels, in_channels, kernel_size=1, bias=False),
             HardSigmoid(True),
         )
@@ -34,11 +35,11 @@ class XceptionUnit(nn.Module):
         channels = in_channels // 2
         branch = [
             DWConv2d(channels, channels, kernel_size=3,
-                     norm_layer='default', activation=activation),
+                     norm='default', act=activation),
             DWConv2d(channels, channels, kernel_size=3,
-                     norm_layer='default', activation=activation),
+                     norm='default', act=activation),
             DWConv2d(channels, channels, kernel_size=3,
-                     norm_layer='default', activation=activation),
+                     norm='default', act=activation),
         ]
         if use_se:
             branch.append(SELayer(channels, reduction=2))
@@ -56,9 +57,9 @@ class BasicUnit(nn.Module):
         channels = in_channels // 2
         branch = [
             Conv2d(channels, channels, kernel_size=1,
-                   norm_layer='default', activation=activation),
+                   norm='default', act=activation),
             DWConv2d(channels, channels, kernel_size=kernel_size,
-                     norm_layer='default', activation=activation),
+                     norm='default', act=activation),
         ]
         if use_se:
             branch.append(SELayer(channels, reduction=2))
@@ -77,16 +78,16 @@ class ReduceUnit(nn.Module):
         output = out_channels - in_channels
         branch_main = [
             Conv2d(in_channels, mid_channels, kernel_size=1,
-                   norm_layer='default', activation=activation),
+                   norm='default', act=activation),
             DWConv2d(mid_channels, output, kernel_size=kernel_size, stride=2,
-                     norm_layer='default', activation=activation),
+                     norm='default', act=activation),
         ]
         if use_se:
             branch_main.append(SELayer(output, reduction=2))
         self.branch_main = nn.Sequential(*branch_main)
 
         self.branch_proj = DWConv2d(in_channels, in_channels, kernel_size=kernel_size, stride=2,
-                                    norm_layer='default', activation=activation)
+                                    norm='default', act=activation)
 
     def forward(self, x):
         return torch.cat((self.branch_proj(x), self.branch_main(x)), dim=1)
@@ -97,7 +98,7 @@ def _make_layer(block, num_units, in_channels, out_channels, stride, use_se):
     units.add_module("unit1",
                      ReduceUnit(in_channels, out_channels) if stride == 2 \
                          else Conv2d(in_channels, out_channels, kernel_size=3,
-                                     norm_layer='default', activation='default'))
+                                     norm='default', act='default'))
     for i in range(1, num_units):
         units.add_module(f"unit{i + 1}", block(out_channels, use_se))
     return units

@@ -1,5 +1,7 @@
 from typing import Callable, Sequence, Dict, Optional
 
+from hhutil.functools import pick
+
 from ignite.metrics import Metric
 
 import torch
@@ -10,7 +12,6 @@ from ignite.utils import convert_tensor
 from torch.nn.utils import clip_grad_norm_
 from torch.optim.optimizer import Optimizer
 
-from horch.functools import pick
 from horch.train.classification.mix import MixBase
 from horch.train.trainer_base import backward, TrainerBase
 

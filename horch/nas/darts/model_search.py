@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import get_norm_layer, Conv2d
+from horch.models.modules import Norm, Conv2d
 
 from horch.nas.darts.operations import OPS, FactorizedReduce, ReLUConvBN
 from horch.nas.darts.genotypes import PRIMITIVES, Genotype
@@ -18,7 +18,7 @@ class MixedOp(nn.Module):
         for primitive in PRIMITIVES:
             op = OPS[primitive](C, stride)
             if 'pool' in primitive:
-                op = nn.Sequential(op, get_norm_layer(C))
+                op = nn.Sequential(op, Norm(C))
             self._ops.append(op)
 
     def forward(self, x, weights):
@@ -73,7 +73,7 @@ class Network(nn.Module):
         C_curr = stem_multiplier * C
         self.stem = nn.Sequential(
             Conv2d(3, C_curr, kernel_size=3, bias=False),
-            get_norm_layer(C_curr),
+            Norm(C_curr),
         )
 
         C_prev_prev, C_prev, C_curr = C_curr, C_curr, C

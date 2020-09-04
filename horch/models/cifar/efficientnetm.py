@@ -2,8 +2,8 @@ import math
 
 import torch.nn as nn
 
-from horch.models.drop import DropPath
-from horch.models.modules import Conv2d, HardSigmoid
+from horch.nn import DropPath, HardSigmoid
+from horch.models.layers import Conv2d
 
 
 def round_channels(channels, multiplier=None, divisor=8, min_depth=None):
@@ -58,11 +58,11 @@ class MBConv(nn.Module):
         if expand_ratio != 1:
             layers.add_module(
                 "expand", Conv2d(in_channels, channels, kernel_size=1,
-                                 norm_layer='default', activation='hswish'))
+                                 norm='default', act='hswish'))
 
         layers.add_module(
             "dwconv", Conv2d(channels, channels, kernel_size, stride, groups=channels,
-                             norm_layer='default', activation='hswish'))
+                             norm='default', act='hswish'))
 
         if use_se:
             layers.add_module(
@@ -70,7 +70,7 @@ class MBConv(nn.Module):
 
         layers.add_module(
             "project", Conv2d(channels, out_channels, kernel_size=1,
-                              norm_layer='default'))
+                              norm='default'))
 
         self.layers = layers
         if self.use_res_connect:
@@ -106,7 +106,7 @@ class EfficientNet(nn.Module):
         # building stem
         self.features = nn.Sequential()
         self.features.init_block = Conv2d(3, in_channels, kernel_size=3, stride=1,
-                                          norm_layer='default', activation='hswish')
+                                          norm='default', act='hswish')
         si = 1
         j = 1
         stage = nn.Sequential()
@@ -130,7 +130,7 @@ class EfficientNet(nn.Module):
         self.features.add_module("stage%d" % si, stage)
         self.features.add_module("final_block",
                                  Conv2d(out_channels, last_channels, kernel_size=1,
-                                        norm_layer='default', activation='hswish'))
+                                        norm='default', act='hswish'))
         self.classifier = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Dropout(dropout),

@@ -1,7 +1,7 @@
 import torch.nn as nn
 
 from horch.models.attention import SELayerM
-from horch.models.modules import Conv2d, Identity
+from horch.models.layers import Conv2d
 
 
 def _make_divisible(v, divisor=8, min_value=None):
@@ -30,19 +30,19 @@ class InvertedResidual(nn.Module):
         self.with_se = with_se
         if in_channels != channels:
             self.expand = Conv2d(in_channels, channels, kernel_size=1,
-                                 norm_layer='default', activation=activation)
+                                 norm='default', act=activation)
         else:
-            self.expand = Identity()
+            self.expand = nn.Identity()
 
         self.dwconv = Conv2d(channels, channels, kernel_size, stride, groups=channels,
-                             norm_layer='default',
-                             activation=activation)
+                             norm='default',
+                             act=activation)
 
         if self.with_se:
             self.se = SELayerM(channels, 4)
 
         self.project = Conv2d(channels, out_channels, kernel_size=1,
-                              norm_layer='default')
+                              norm='default')
         self.use_res_connect = stride == 1 and in_channels == out_channels
 
     def forward(self, x):
@@ -86,7 +86,7 @@ class MobileNetV3(nn.Module):
 
         # building first layer
         features = [Conv2d(3, in_channels, kernel_size=3, stride=1,
-                           norm_layer='default', activation='hswish')]
+                           norm='default', act='hswish')]
         # building inverted residual blocks
         for k, exp, c, se, nl, s in inverted_residual_setting:
             out_channels = _make_divisible(c * width_mult)
@@ -97,7 +97,7 @@ class MobileNetV3(nn.Module):
         # building last several layers
         features.extend([
             Conv2d(in_channels, exp_channels, kernel_size=1,
-                   norm_layer='default', activation='hswish'),
+                   norm='default', act='hswish'),
         ])
         in_channels = exp_channels
         # make it nn.Sequential
@@ -107,7 +107,7 @@ class MobileNetV3(nn.Module):
         self.classifier = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             Conv2d(in_channels, last_channels, kernel_size=1,
-                   activation='hswish'),
+                   act='hswish'),
             Conv2d(last_channels, num_classes, kernel_size=1)
         )
 

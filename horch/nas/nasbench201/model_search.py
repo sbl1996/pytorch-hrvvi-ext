@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import get_norm_layer, Conv2d
+from horch.models.modules import Norm, Conv2d
 from horch.nas.nasbench201.operations import OPS, ReLUConvBN
 from horch.nas.darts.genotypes import PRIMITIVES
 
@@ -15,7 +15,7 @@ class MixedOp(nn.Module):
         for primitive in primitives:
             op = OPS[primitive](C, 1)
             if 'pool' in primitive:
-                op = nn.Sequential(op, get_norm_layer(C))
+                op = nn.Sequential(op, Norm(C))
             self._ops.append(op)
 
     def forward(self, x, weights):
@@ -73,7 +73,7 @@ class Network(nn.Module):
         self.num_stacked = num_stacked
         self.nodes = nodes
 
-        self.stem = Conv2d(3, C, kernel_size=3, norm_layer='default')
+        self.stem = Conv2d(3, C, kernel_size=3, norm='default')
         for i in range(3):
             if i != 0:
                 self.add_module("reduce%d" % i, ReductionCell(C, C * 2))

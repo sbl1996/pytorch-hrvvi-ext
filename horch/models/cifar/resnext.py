@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from horch.models.modules import get_activation, Conv2d
+from horch.models.layers import Act, Conv2d
 from horch.models.utils import profile
 
 
@@ -16,14 +16,14 @@ class Bottleneck(nn.Module):
         D = math.floor(out_channels // self.expansion * (base_width / 64))
 
         self.conv1 = Conv2d(in_channels, D * groups, kernel_size=1,
-                            norm_layer='default', activation='default')
+                            norm='default', act='default')
         self.conv2 = Conv2d(D * groups, D * groups, kernel_size=3, stride=stride, groups=groups,
-                            norm_layer='default', activation='default')
+                            norm='default', act='default')
         self.conv3 = Conv2d(D * groups, out_channels, kernel_size=1,
-                            norm_layer='default')
+                            norm='default')
         self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride,
-                               norm_layer='default') if stride != 1 or in_channels != out_channels else nn.Identity()
-        self.relu = get_activation('default')
+                               norm='default') if stride != 1 or in_channels != out_channels else nn.Identity()
+        self.relu = Act('default')
 
     def forward(self, x):
         identity = self.shortcut(x)

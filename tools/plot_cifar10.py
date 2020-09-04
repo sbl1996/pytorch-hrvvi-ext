@@ -2,8 +2,8 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 
-from horch.functools import lmap
-from horch.io import read_lines
+from hhutil.io import read_lines
+from hhutil.functools import lmap
 
 epoch_p = re.compile(r"""Epoch \d+, lr (\d\.\d{6})""")
 def get_lr(s):

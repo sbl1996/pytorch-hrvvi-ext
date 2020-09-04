@@ -6,6 +6,8 @@ from typing import Sequence, Dict, Callable, Union, Optional, Any, List, Mapping
 
 from toolz.curried import curry
 
+from hhutil.io import fmt_path
+
 import torch
 import torch.nn as nn
 from torch.optim.optimizer import Optimizer
@@ -14,7 +16,6 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from horch.common import CUDA
-from horch.io import fmt_path
 from horch.train.v2.base import StatefulList, Serializable
 from horch.train.v2.callback import Events, Checkpoint
 from horch.train.v2.engine import Engine

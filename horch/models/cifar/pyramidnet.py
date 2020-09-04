@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.modules import Conv2d, get_activation, get_norm_layer
+from horch.models.layers import Conv2d, Act, Norm
 
 
 class PadChannel(nn.Module):
@@ -35,12 +35,12 @@ class BasicBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super().__init__()
         self.conv = nn.Sequential(
-            get_norm_layer(in_channels),
+            Norm(in_channels),
             Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, bias=False),
-            get_norm_layer(out_channels),
-            get_activation(),
+            Norm(out_channels),
+            Act(),
             Conv2d(out_channels, out_channels, kernel_size=3, bias=False),
-            get_norm_layer(out_channels),
+            Norm(out_channels),
         )
         self.shortcut = Shortcut(in_channels, out_channels, stride)
 
@@ -55,15 +55,15 @@ class Bottleneck(nn.Module):
         super().__init__()
         out_channels = channels * self.expansion
         self.conv = nn.Sequential(
-            get_norm_layer(in_channels),
+            Norm(in_channels),
             Conv2d(in_channels, channels, kernel_size=1, bias=False),
-            get_norm_layer(channels),
-            get_activation(),
+            Norm(channels),
+            Act(),
             Conv2d(channels, channels, kernel_size=3, stride=stride, bias=False),
-            get_norm_layer(channels),
-            get_activation(),
+            Norm(channels),
+            Act(),
             Conv2d(channels, out_channels, kernel_size=1, bias=False),
-            get_norm_layer(out_channels),
+            Norm(out_channels),
         )
         self.shortcut = Shortcut(in_channels, out_channels, stride)
 
@@ -99,7 +99,7 @@ class PyramidNet(nn.Module):
         self.in_channels = start_channels
         self.channels = start_channels
 
-        layers = [Conv2d(3, start_channels, kernel_size=3, norm_layer='default')]
+        layers = [Conv2d(3, start_channels, kernel_size=3, norm='default')]
 
         for n, s in zip(num_layers, strides):
             layers.append(self._make_layer(block, n, stride=s))
@@ -107,8 +107,8 @@ class PyramidNet(nn.Module):
         self.features = nn.Sequential(*layers)
         assert (start_channels + widening_fractor) * block.expansion == self.in_channels
         self.post_activ = nn.Sequential(
-            get_norm_layer(self.in_channels),
-            get_activation('default'),
+            Norm(self.in_channels),
+            Act('default'),
         )
         self.final_pool = nn.AdaptiveAvgPool2d(1)
         self.output = nn.Linear(self.in_channels, num_classes)

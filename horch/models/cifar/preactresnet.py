@@ -1,19 +1,19 @@
 import torch.nn as nn
 
-from horch.models.drop import DropPath
-from horch.models.modules import get_activation, Conv2d, get_norm_layer
+from horch.nn import DropPath
 from horch.models.attention import SEModule
+from horch.models.layers import Act, Conv2d, Norm
 
 
 class PreActDownBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, use_se=False):
         super().__init__()
         self.use_se = use_se
-        self.bn1 = get_norm_layer(in_channels)
-        self.nl1 = get_activation("default")
+        self.bn1 = Norm(in_channels)
+        self.nl1 = Act("default")
         self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3, stride=stride)
-        self.bn2 = get_norm_layer(out_channels)
-        self.nl2 = get_activation("default")
+        self.bn2 = Norm(out_channels)
+        self.nl2 = Act("default")
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3)
         if self.use_se:
             self.se = SEModule(out_channels, reduction=8)
@@ -36,11 +36,11 @@ class PreActDownBlock(nn.Module):
 class PreActResBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, use_se, drop_path):
         super().__init__()
-        self.bn1 = get_norm_layer(in_channels)
-        self.nl1 = get_activation("default")
+        self.bn1 = Norm(in_channels)
+        self.nl1 = Act("default")
         self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3)
-        self.bn2 = get_norm_layer(out_channels)
-        self.nl2 = get_activation("default")
+        self.bn2 = Norm(out_channels)
+        self.nl2 = Act("default")
         self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3)
         if use_se:
             self.se = SEModule(out_channels, reduction=8)
@@ -68,8 +68,8 @@ class PreActResNet(nn.Module):
         self.layer3 = self._make_layer(
             self.stages[2] * k, self.stages[3] * k, num_blocks, stride=2, use_se=use_se, drop_path=drop_path)
 
-        self.bn = get_norm_layer(self.stages[3] * k)
-        self.nl = get_activation('default')
+        self.bn = Norm(self.stages[3] * k)
+        self.nl = Act('default')
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(self.stages[3] * k, num_classes)
 
