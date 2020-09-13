@@ -6,7 +6,7 @@ from thop import profile as thop_profile, clever_format
 from thop.vision.basic_hooks import count_relu
 
 from horch.ext.summary import summary
-from horch.models.modules import Swish, HardSwish, HardSigmoid
+from horch.nn.act import Swish, HardSwish, HardSigmoid
 
 
 def count_sigmoid(m, x, y):
