@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from horch.common import CUDA
 from horch.train.v2.base import StatefulList, Serializable
-from horch.train.v2.callback import Events, Checkpoint
+from horch.train.v2.callback import Events, Checkpoint, Callback
 from horch.train.v2.engine import Engine
 from horch.train.v2.metrics import Metric
 from horch.utils import time_now
@@ -244,7 +244,7 @@ class TrainerBase:
             val_loader: Optional[DataLoader] = None,
             eval_freq: Optional[int] = 1,
             save_by: Optional[Union[str, int, Epochs, Iters]] = None,
-            callbacks: Sequence[Callable] = ()):
+            callbacks: Sequence[Union[Callable, Callback]] = ()):
 
         self.train_engine = self._create_train_engine(**self._kwargs)
         eval_engine = self._create_eval_engine()
@@ -273,8 +273,11 @@ class TrainerBase:
                 Events.EPOCH_END, self.log_metrics(writer=self.writer, stage='valid', metric_history=self.metric_history))
 
         for callback in callbacks:
-            self.train_engine.call_on(
-                Events.BATCH_BEGIN, callback)
+            if isinstance(callback, Callback):
+                self.train_engine.call(callback)
+            else:
+                self.train_engine.call_on(
+                    Events.BATCH_BEGIN, callback)
 
         try:
             start_epoch, end_epoch = self.train_engine.run(train_loader, epochs)
