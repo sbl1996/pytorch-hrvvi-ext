@@ -2,57 +2,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from horch.nas.nasnet.search.darts import parse_weights
+from horch.nn import GlobalAvgPool
 from horch.models.layers import Norm, Conv2d, Act
 
-from horch.nas.operations import OPS, FactorizedReduce, ReLUConvBN
-from horch.nas.nasnet.genotypes import get_primitives, Genotype
-from horch.nn import GlobalAvgPool
+from horch.nas.operations import ReLUConvBN
+from horch.nas.nasnet.genotypes import Genotype
+from horch.nas.primitives import get_primitives
+from horch.nas.nasnet.search.gdas import Cell, gumbel_sample
 
 
-class MixedOp(nn.Module):
-
-    def __init__(self, C):
-        super().__init__()
-        self._ops = nn.ModuleList()
-        for primitive in get_primitives():
-            op = OPS[primitive](C, 1)
-            self._ops.append(op)
-
-    def forward(self, x, hardwts, index):
-        return sum(hardwts[i] * op(x) if i == index else hardwts[i] for i, op in enumerate(self._ops))
-
-
-class NormalCell(nn.Module):
+class NormalCell(Cell):
 
     def __init__(self, steps, multiplier, C_prev_prev, C_prev, C, reduction_prev):
-        super().__init__()
-
-        if reduction_prev:
-            self.preprocess0 = FactorizedReduce(C_prev_prev, C)
-        else:
-            self.preprocess0 = ReLUConvBN(C_prev_prev, C, 1)
-        self.preprocess1 = ReLUConvBN(C_prev, C, 1)
-        self._steps = steps
-        self._multiplier = multiplier
-
-        self._ops = nn.ModuleList()
-        for i in range(self._steps):
-            for j in range(2 + i):
-                op = MixedOp(C)
-                self._ops.append(op)
-
-    def forward(self, s0, s1, hardwts, indices):
-        s0 = self.preprocess0(s0)
-        s1 = self.preprocess1(s1)
-
-        states = [s0, s1]
-        offset = 0
-        for i in range(self._steps):
-            s = sum(self._ops[offset + j](h, hardwts[offset + j], int(indices[offset + j])) for j, h in enumerate(states))
-            offset += len(states)
-            states.append(s)
-
-        return torch.cat(states[-self._multiplier:], dim=1)
+        super().__init__(
+            steps, multiplier, C_prev_prev, C_prev, C, False, reduction_prev)
 
 
 class ReductionCell(nn.Module):
@@ -102,30 +66,15 @@ class ReductionCell(nn.Module):
         return torch.cat([x0, x1, x2, x3], dim=1)
 
 
-def gumbel_sample(a, tau):
-    while True:
-        gumbels = -torch.empty_like(a).exponential_().log()
-        logits = (a.log_softmax(dim=1) + gumbels) / tau
-        probs = nn.functional.softmax(logits, dim=1)
-        index = probs.max(-1, keepdim=True)[1]
-        one_h = torch.zeros_like(logits).scatter_(-1, index, 1.0)
-        hardwts = one_h - probs.detach() + probs
-        if (torch.isinf(gumbels).any()) or (torch.isinf(probs).any()) or (torch.isnan(probs).any()):
-            continue
-        else:
-            return hardwts, [int(i) for i in index.cpu().numpy()]
-
-
 class Network(nn.Module):
 
-    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, num_classes=10, tau=10.0):
+    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, num_classes=10):
         super().__init__()
-        self.C = C
-        self.num_classes = num_classes
-        self.layers = layers
-        self.steps = steps
-        self.multiplier = multiplier
-        self.tau = tau
+        self._C = C
+        self._num_classes = num_classes
+        self._steps = steps
+        self._multiplier = multiplier
+        self.tau = None
 
         C_curr = stem_multiplier * C
         self.stem = nn.Sequential(
@@ -150,10 +99,6 @@ class Network(nn.Module):
             self.cells.append(cell)
             C_prev_prev, C_prev = C_prev, multiplier * C_curr
 
-        self.post_activ = nn.Sequential(
-            Norm(C_prev),
-            Act(),
-        )
         self.avg_pool = GlobalAvgPool()
         self.classifier = nn.Linear(C_prev, num_classes)
 
@@ -185,28 +130,8 @@ class Network(nn.Module):
                 yield p
 
     def genotype(self):
-        PRIMITIVES = get_primitives()
 
-        def get_op(w):
-            if 'none' in PRIMITIVES:
-                i = max([k for k in range(len(PRIMITIVES)) if k != PRIMITIVES.index('none')], key=lambda k: w[k])
-            else:
-                i = max(range(len(PRIMITIVES)), key=lambda k: w[k])
-            return w[i], PRIMITIVES[i]
-
-        def _parse(weights):
-            gene = []
-            start = 0
-            for i in range(self._steps):
-                end = start + i + 2
-                W = weights[start:end]
-                edges = sorted(range(i + 2), key=lambda x: -get_op(W[x])[0])[:2]
-                for j in edges:
-                    gene.append((get_op(W[j])[1], j))
-                start = end
-            return gene
-
-        gene_normal = _parse(F.softmax(self.alphas.detach().cpu(), dim=0).numpy())
+        gene_normal = parse_weights(F.softmax(self.alphas.detach().cpu(), dim=0).numpy(), self._steps)
 
         concat = range(2 + self._steps - self._multiplier, self._steps + 2)
         genotype = Genotype(

@@ -9,12 +9,11 @@ from torchvision.transforms import ToTensor, Normalize, Compose, RandomCrop, Ran
 
 from horch.datasets import train_test_split, CombineDataset
 from horch.defaults import set_defaults
-from horch.nas.nasnet.search.gdas import Network, TauSchedule
+from horch.nas.nas_bench_201.search.gdas import Network, TauSchedule
 
 from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.train import manual_seed
 from horch.train.cls.metrics import Accuracy
-from horch.train.v3.callbacks import Callback
 from horch.train.v3.darts import DARTSLearner
 from horch.train.v3.metrics import TrainLoss, Loss
 
@@ -55,9 +54,10 @@ set_defaults({
 model = Network(4, 8)
 criterion = nn.CrossEntropyLoss()
 
+epochs = 250
 optimizer_model = SGD(model.model_parameters(), 0.025, momentum=0.9, weight_decay=3e-4, nesterov=True)
 optimizer_arch = Adam(model.arch_parameters(), lr=3e-4, betas=(0.5, 0.999), weight_decay=1e-3)
-lr_scheduler = CosineAnnealingLR(optimizer_model, epochs=250, min_lr=0.001)
+lr_scheduler = CosineAnnealingLR(optimizer_model, epochs=epochs, min_lr=1e-5)
 
 train_metrics = {
     "loss": TrainLoss(),
@@ -74,5 +74,4 @@ learner = DARTSLearner(
     model, criterion, optimizer_arch, optimizer_model, lr_scheduler,
     train_metrics=train_metrics, eval_metrics=eval_metrics, work_dir='models/DARTS', fp16=False)
 
-learner.fit(train_loader, 10, val_loader,
-            callbacks=[TauSchedule(10, 0.1)])
+learner.fit(train_loader, epochs, val_loader, callbacks=[TauSchedule(10, 0.1)])

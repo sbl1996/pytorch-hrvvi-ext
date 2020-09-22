@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,26 +8,17 @@ from horch.nn import DropPath, GlobalAvgPool
 from horch.models.layers import Conv2d
 
 from horch.nas.operations import OPS, FactorizedReduce, ReLUConvBN
-from horch.nas.nasnet.genotypes import get_primitives, Genotype
-
-
-def Seq(*layers):
-    layers = [
-        l for l in layers if l is not None
-    ]
-    return nn.Sequential(*layers) if len(layers) != 1 else layers[0]
+from horch.nas.nasnet.genotypes import Genotype
+from horch.nas.primitives import get_primitives
 
 
 class MixedOp(nn.Module):
 
-    def __init__(self, C, stride, drop_path=0):
+    def __init__(self, C, stride):
         super().__init__()
         self._ops = nn.ModuleList()
         for primitive in get_primitives():
-            op = Seq(
-                OPS[primitive](C, stride),
-                DropPath(drop_path) if drop_path else None,
-            )
+            op = OPS[primitive](C, stride)
             self._ops.append(op)
 
     def forward(self, x, weights):
@@ -34,9 +27,7 @@ class MixedOp(nn.Module):
 
 class Cell(nn.Module):
 
-    op_cls = MixedOp
-
-    def __init__(self, steps, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev, drop_path):
+    def __init__(self, steps, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev, op_cls=MixedOp):
         super().__init__()
         self.reduction = reduction
 
@@ -52,7 +43,7 @@ class Cell(nn.Module):
         for i in range(self._steps):
             for j in range(2 + i):
                 stride = 2 if reduction and j < 2 else 1
-                op = self.op_cls(C, stride, drop_path)
+                op = op_cls(C, stride)
                 self._ops.append(op)
 
     def forward(self, s0, s1, weights):
@@ -71,15 +62,12 @@ class Cell(nn.Module):
 
 class Network(nn.Module):
 
-    cell_cls = Cell
-
-    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, drop_path=0, num_classes=10):
+    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, num_classes=10, cell_cls=Cell):
         super().__init__()
         self._C = C
         self._num_classes = num_classes
         self._steps = steps
         self._multiplier = multiplier
-        self._drop_path = drop_path
 
         C_curr = stem_multiplier * C
         self.stem = Conv2d(3, C_curr, kernel_size=3, norm='def')
@@ -93,7 +81,7 @@ class Network(nn.Module):
                 reduction = True
             else:
                 reduction = False
-            cell = self.cell_cls(steps, multiplier, C_prev_prev, C_prev, C_curr, reduction, reduction_prev, drop_path)
+            cell = cell_cls(steps, multiplier, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
             reduction_prev = reduction
             self.cells.append(cell)
             C_prev_prev, C_prev = C_prev, multiplier * C_curr
@@ -131,29 +119,9 @@ class Network(nn.Module):
                 yield p
 
     def genotype(self):
-        PRIMITIVES = get_primitives()
 
-        def get_op(w):
-            if 'none' in PRIMITIVES:
-                i = max([k for k in range(len(PRIMITIVES)) if k != PRIMITIVES.index('none')], key=lambda k: w[k])
-            else:
-                i = max(range(len(PRIMITIVES)), key=lambda k: w[k])
-            return w[i], PRIMITIVES[i]
-
-        def _parse(weights):
-            gene = []
-            start = 0
-            for i in range(self._steps):
-                end = start + i + 2
-                W = weights[start:end]
-                edges = sorted(range(i + 2), key=lambda x: -get_op(W[x])[0])[:2]
-                for j in edges:
-                    gene.append((get_op(W[j])[1], j))
-                start = end
-            return gene
-
-        gene_normal = _parse(F.softmax(self.alphas_normal.detach().cpu(), dim=0).numpy())
-        gene_reduce = _parse(F.softmax(self.alphas_reduce.detach().cpu(), dim=0).numpy())
+        gene_normal = parse_weights(F.softmax(self.alphas_normal.detach().cpu(), dim=0).numpy(), self._steps)
+        gene_reduce = parse_weights(F.softmax(self.alphas_reduce.detach().cpu(), dim=0).numpy(), self._steps)
 
         concat = range(2 + self._steps - self._multiplier, self._steps + 2)
         genotype = Genotype(
@@ -161,3 +129,25 @@ class Network(nn.Module):
             reduce=gene_reduce, reduce_concat=concat
         )
         return genotype
+
+
+def parse_weights(weights, steps):
+    PRIMITIVES = get_primitives()
+
+    def get_op(w):
+        if 'none' in PRIMITIVES:
+            i = max([k for k in range(len(PRIMITIVES)) if k != PRIMITIVES.index('none')], key=lambda k: w[k])
+        else:
+            i = max(range(len(PRIMITIVES)), key=lambda k: w[k])
+        return w[i], PRIMITIVES[i]
+
+    gene = []
+    start = 0
+    for i in range(steps):
+        end = start + i + 2
+        W = weights[start:end]
+        edges = sorted(range(i + 2), key=lambda x: -get_op(W[x])[0])[:2]
+        for j in edges:
+            gene.append((get_op(W[j])[1], j))
+        start = end
+    return gene

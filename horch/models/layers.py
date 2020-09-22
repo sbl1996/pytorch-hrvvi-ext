@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn as nn
 
 from horch.defaults import DEFAULTS
 from horch.nn import HardSwish, Swish
@@ -137,3 +138,10 @@ def DWConv2d(in_channels, out_channels, kernel_size=3, stride=1, dilation=1,
                groups=in_channels, dilation=dilation, padding=padding, bias=False, norm=mid_norm),
         Conv2d(in_channels, out_channels, 1, bias=bias, norm=norm, act=act),
     )
+
+
+def Seq(*layers):
+    layers = [
+        l for l in layers if l is not None
+    ]
+    return nn.Sequential(*layers) if len(layers) != 1 else layers[0]

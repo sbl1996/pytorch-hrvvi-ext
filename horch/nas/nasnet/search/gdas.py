@@ -18,7 +18,9 @@ class MixedOp(darts.MixedOp):
 
 class Cell(darts.Cell):
 
-    op_cls = MixedOp
+    def __init__(self, steps, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev):
+        super().__init__(
+            steps, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev, MixedOp)
 
     def forward(self, s0, s1, hardwts, indices):
         s0 = self.preprocess0(s0)
@@ -37,7 +39,10 @@ class Cell(darts.Cell):
 
 class Network(darts.Network):
 
-    cell_cls = Cell
+    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, num_classes=10):
+        super().__init__(
+            C, layers, steps, multiplier, stem_multiplier, num_classes, Cell
+        )
 
     def forward(self, x):
         s0 = s1 = self.stem(x)
