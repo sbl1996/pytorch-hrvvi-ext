@@ -29,7 +29,7 @@ class Cell(nn.Module):
 
         self.preprocess = ReLUConvBN(C_prev, C, 1, 1)
         self._steps = steps
-        self._ops = []
+        self._ops = nn.ModuleList()
         for i in range(self._steps):
             for j in range(1 + i):
                 op = op_cls(C)

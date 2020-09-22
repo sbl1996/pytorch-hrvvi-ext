@@ -1,3 +1,5 @@
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,11 +11,13 @@ from torchvision.transforms import ToTensor, Normalize, Compose, RandomCrop, Ran
 
 from horch.datasets import train_test_split, CombineDataset
 from horch.defaults import set_defaults
+from horch.nas.nas_bench_201.api import SimpleNASBench201
 from horch.nas.nas_bench_201.search.gdas import Network, TauSchedule
 
 from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.train import manual_seed
 from horch.train.cls.metrics import Accuracy
+from horch.train.v3.callbacks import Callback
 from horch.train.v3.darts import DARTSLearner
 from horch.train.v3.metrics import TrainLoss, Loss
 
@@ -42,6 +46,8 @@ ds = CombineDataset(ds_train, ds_val)
 
 train_loader = DataLoader(ds, batch_size=256, pin_memory=True, num_workers=2)
 val_loader = DataLoader(ds_val, batch_size=256, pin_memory=True, num_workers=2)
+
+api = SimpleNASBench201("/Users/hrvvi/Code/study/pytorch/datasets/NAS-Bench-201-v1_1-096897-simple.pth")
 
 set_defaults({
     'relu': {
@@ -73,5 +79,17 @@ eval_metrics = {
 learner = DARTSLearner(
     model, criterion, optimizer_arch, optimizer_model, lr_scheduler,
     train_metrics=train_metrics, eval_metrics=eval_metrics, work_dir='models/DARTS', fp16=False)
+
+class EvalGenotype(Callback):
+
+    def after_epoch(self, state):
+        g = model.genotype()
+        print(g)
+        print("*************************")
+        acc = np.mean(api.query_eval_acc(g))
+        rank = api.query_eval_acc_rank(g)
+        print("**%d**%.2f**" % (rank, acc))
+        print("*************************")
+
 
 learner.fit(train_loader, epochs, val_loader, callbacks=[TauSchedule(10, 0.1)])
