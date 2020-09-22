@@ -30,6 +30,7 @@ class Learner(Serializable, metaclass=ABCMeta):
                  fp16=False, device='auto', **kwargs):
         if not isinstance(optimizers, Sequence):
             optimizers = [optimizers]
+        optimizers = list(optimizers)
         if not isinstance(lr_schedulers, Sequence):
             lr_schedulers = [lr_schedulers]
         if device == 'auto':

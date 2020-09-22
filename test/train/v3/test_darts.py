@@ -12,10 +12,13 @@ from horch.defaults import set_defaults
 from horch.nas.nasnet.search.gdas import Network, TauSchedule
 
 from horch.optim.lr_scheduler import CosineAnnealingLR
+from horch.train import manual_seed
 from horch.train.cls.metrics import Accuracy
 from horch.train.v3.callbacks import Callback
 from horch.train.v3.darts import DARTSLearner
 from horch.train.v3.metrics import TrainLoss, Loss
+
+manual_seed(0)
 
 train_transform = Compose([
     RandomCrop(32, padding=4),
