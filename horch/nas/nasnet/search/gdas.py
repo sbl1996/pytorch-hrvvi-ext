@@ -61,5 +61,5 @@ class TauSchedule(Callback):
     def begin_epoch(self, state):
         tau_max = self.tau_max
         tau_min = self.tau_min
-        tau = (tau_max - tau_min) * (state['epoch'] / state['epochs']) + tau_min
+        tau = tau_max - (tau_max - tau_min) * (state['epoch'] / state['epochs'])
         self.learner.model.tau = tau

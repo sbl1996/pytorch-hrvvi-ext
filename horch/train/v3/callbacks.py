@@ -152,10 +152,9 @@ class ModelCheckpoint(Callback):
         return self.learner.work_dir
 
     def after_epoch(self, state):
-        epoch = state['epoch']
-        if state['epoch'] % self.save_freq == 0:
-            path = '%s/%d'.format(self.get_save_dir(), epoch)
-            print('save checkpoint at %s' % (path,))
+        epoch = state['epoch'] + 1
+        if epoch % self.save_freq == 0:
+            self.learner.save()
 
     def on_train_end(self):
             path = '{}/final'.format(self.get_save_dir())
