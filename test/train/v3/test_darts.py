@@ -4,18 +4,18 @@ import torch.nn.functional as F
 from torch.optim import SGD, Adam
 from torch.utils.data import DataLoader
 
-from torchvision.datasets import MNIST, CIFAR10
-from torchvision.transforms import ToTensor, Normalize, Compose, Pad, Lambda, RandomCrop, RandomHorizontalFlip
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import ToTensor, Normalize, Compose, RandomCrop, RandomHorizontalFlip
 
 from horch.datasets import train_test_split, CombineDataset
+from horch.defaults import set_defaults
+from horch.nas.nasnet.search.gdas import Network, TauSchedule
+
 from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.train.cls.metrics import Accuracy
 from horch.train.v3.callbacks import Callback
 from horch.train.v3.darts import DARTSLearner
-
-from horch.nas.nasnet.search.gdas import Network, TauSchedule
 from horch.train.v3.metrics import TrainLoss, Loss
-from horch.defaults import set_defaults
 
 train_transform = Compose([
     RandomCrop(32, padding=4),
