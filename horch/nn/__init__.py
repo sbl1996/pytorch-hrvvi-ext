@@ -1,9 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from horch.nn.max_unpool import MaxUnpool2d
-from horch.nn.act import HardSwish, HardSigmoid,Swish
+from horch.nn.act import HardSwish, HardSigmoid, Swish
 from horch.nn.drop import DropPath
+from horch.nn.loss import CrossEntropyLoss
+
 
 class Flatten(nn.Module):
     def __init__(self):
@@ -31,3 +34,15 @@ class L2Norm(nn.Module):
         out = self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x) * x
         return out
 
+
+class GlobalAvgPool(nn.Module):
+
+    def __init__(self, keep_dim=False):
+        super().__init__()
+        self.keep_dim = keep_dim
+
+    def forward(self, x):
+        x = F.adaptive_avg_pool2d(x, 1)
+        if not self.keep_dim:
+            x = x.view(x.size(0), -1)
+        return x

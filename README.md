@@ -40,12 +40,13 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
 
 from horch.datasets import train_test_split
-from horch.train.lr_scheduler import CosineAnnealingWarmRestarts
+from horch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from horch.models.utils import summary
 from horch.models.cifar.efficientnet import efficientnet_b0
-from horch.train import Trainer, Save
-from horch.train.metrics import  TrainLoss
-from horch.train.metrics.classification import Accuracy
+from horch.train import Trainer
+from horch.legacy.train import Save
+from horch.legacy.train.metrics import  TrainLoss
+from horch.legacy.train.metrics import Accuracy
 from horch.transforms.classification.autoaugment import Cutout, CIFAR10Policy
 
 # Data Augmentation

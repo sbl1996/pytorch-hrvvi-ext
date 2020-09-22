@@ -1,9 +1,7 @@
-import numpy as np
 from sklearn.model_selection import KFold as R_KFold
-from torchvision.ops import nms
 
 from horch.datasets import Subset
-nms
+
 
 def k_fold(ds, n_splits=5, shuffle=True, transform=None, test_transform=None, random_state=None):
 

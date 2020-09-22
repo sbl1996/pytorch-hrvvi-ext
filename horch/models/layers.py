@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.config import cfg
+from horch.defaults import DEFAULTS
 from horch.nn import HardSwish, Swish
 
 
@@ -21,12 +21,12 @@ def Norm(channels, type='default', **kwargs):
     if isinstance(type, nn.Module):
         return type
     if type in ['default', 'def']:
-        return Norm(channels, cfg.norm, **kwargs)
+        return Norm(channels, DEFAULTS['norm'], **kwargs)
     elif type == 'bn':
         if 'affine' in kwargs:
-            cfg_bn = {**cfg.bn, 'affine': kwargs['affine']}
+            cfg_bn = {**DEFAULTS['bn'], 'affine': kwargs['affine']}
         else:
-            cfg_bn = cfg.bn
+            cfg_bn = DEFAULTS['bn']
         return nn.BatchNorm2d(channels, **cfg_bn)
     elif type == 'gn':
         num_groups = get_groups(channels, 32)
@@ -39,17 +39,17 @@ def Act(type='default'):
     if isinstance(type, nn.Module):
         return type
     if type in ['default', 'def']:
-        return Act(cfg.act)
+        return Act(DEFAULTS['act'])
     elif type == 'relu':
-        return nn.ReLU(**cfg.relu)
+        return nn.ReLU(**DEFAULTS['relu'])
     elif type == 'relu6':
-        return nn.ReLU6(**cfg.relu6)
+        return nn.ReLU6(**DEFAULTS['relu6'])
     elif type == 'leaky_relu':
-        return nn.LeakyReLU(**cfg.leaky_relu)
+        return nn.LeakyReLU(**DEFAULTS['leaky_relu'])
     elif type == 'sigmoid':
         return nn.Sigmoid()
     elif type == 'hswish':
-        return HardSwish(**cfg.hswish)
+        return HardSwish(**DEFAULTS['hswisg'])
     elif type == 'swish':
         return Swish()
     else:

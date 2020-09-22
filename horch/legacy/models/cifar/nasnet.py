@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from horch.nas.darts.operations import FactorizedReduce, ReLUConvBN
+from horch.nas.operations import FactorizedReduce, ReLUConvBN
 
 class Cell(nn.Module):
 

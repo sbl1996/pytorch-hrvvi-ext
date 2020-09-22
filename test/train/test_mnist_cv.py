@@ -7,12 +7,12 @@ from torchvision.transforms import Compose, ToTensor, Normalize, Pad
 from horch.datasets import train_test_split
 from horch.models.modules import Conv2d, Flatten
 from horch.train import manual_seed
-from horch.train.lr_scheduler import CosineAnnealingLR
+from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.train.model_selection import KFold, cross_val_score
 
-from horch.train.v2.cls import Trainer
-from horch.train.v2.metrics import TrainLoss, Loss
-from horch.train.v2.cls.metrics import Accuracy
+from horch.train.cls import Trainer
+from horch.train.metrics import TrainLoss, Loss
+from horch.train.cls.metrics import Accuracy
 
 manual_seed(0)
 

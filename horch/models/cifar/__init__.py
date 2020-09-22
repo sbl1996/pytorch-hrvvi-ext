@@ -6,3 +6,4 @@ from horch.models.cifar.efficientnet import EfficientNet
 from horch.models.cifar.efficientnetm import EfficientNet as EfficientNetM
 from horch.models.cifar.pyramidnet import PyramidNet
 from horch.models.cifar.regnet import RegNet
+from horch.models.cifar.lenet5 import LeNet5

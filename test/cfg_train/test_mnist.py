@@ -2,8 +2,6 @@ import argparse
 
 import torch.nn as nn
 
-from torch.utils.data import DataLoader
-
 from torchvision.datasets import MNIST
 
 from horch.core import load_yaml_config, register_op
@@ -13,10 +11,10 @@ from horch.datasets import train_test_split, Fullset
 from horch.models.modules import Conv2d, Flatten
 from horch.nn.loss import CrossEntropyLoss
 from horch.train import manual_seed
-from horch.train.classification.mix import get_mix
-from horch.train.classification.trainer import Trainer
-from horch.train.metrics import TrainLoss, Loss
-from horch.train.metrics.classification import Accuracy
+from horch.legacy.train.classification.mix import get_mix
+from horch.legacy.train.classification.trainer import Trainer
+from horch.legacy.train.metrics import TrainLoss, Loss
+from horch.legacy.train.metrics import Accuracy
 from horch.transforms import Compose
 
 from torch.optim.lr_scheduler import MultiStepLR

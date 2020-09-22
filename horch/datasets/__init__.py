@@ -1,18 +1,11 @@
 import bisect
 import math
 
-import numpy as np
-from sklearn.utils import check_random_state
 from sklearn.model_selection import train_test_split as sklearn_train_test_split
 from torch.utils.data import Dataset, ConcatDataset as TorchConcatDataset
 from torchvision.transforms import Compose
 
 from horch.transforms import InputTransform
-from horch.datasets.captcha import Captcha, CaptchaDetectionOnline, CaptchaOnline, CaptchaSegmentationOnline
-from horch.datasets.coco import CocoDetection
-from horch.datasets.voc import VOCDetection, VOCSegmentation, VOCDetectionConcat
-from horch.datasets.svhn import SVHNDetection
-from horch.datasets.animefaces import AnimeFaces
 
 
 class Fullset(Dataset):

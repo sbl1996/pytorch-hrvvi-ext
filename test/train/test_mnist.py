@@ -2,20 +2,19 @@ import math
 
 import torch.nn as nn
 from torch.optim import SGD
-from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad
 
-from horch.datasets import train_test_split, Subset
-from horch.models.modules import Conv2d, Flatten
-from horch.models.utils import summary
+from horch.datasets import train_test_split
+from horch.models.layers import Conv2d
+from horch.nn import Flatten
 from horch.train import manual_seed
-from horch.train.lr_scheduler import CosineAnnealingLR
+from horch.optim.lr_scheduler import CosineAnnealingLR
 
-from horch.train.v2.cls import Trainer
-from horch.train.v2.metrics import TrainLoss, Loss
-from horch.train.v2.cls.metrics import Accuracy
+from horch.train.cls import Trainer
+from horch.train.metrics import TrainLoss, Loss
+from horch.train.cls.metrics import Accuracy
 
 manual_seed(0)
 

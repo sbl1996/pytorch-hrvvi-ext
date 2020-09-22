@@ -6,10 +6,10 @@ from torch.optim import SGD
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad
 from horch.datasets import train_test_split
-from horch.train.lr_scheduler import CosineAnnealingLR
-from horch.train.metrics import TrainLoss, Loss
-from horch.train.metrics.classification import Accuracy
-from horch.train.classification.trainer import Trainer
+from horch.optim.lr_scheduler import CosineAnnealingLR
+from horch.legacy.train.metrics import TrainLoss, Loss
+from horch.legacy.train.metrics import Accuracy
+from horch.legacy.train.classification.trainer import Trainer
 
 train_transform = Compose([
     Pad(2),

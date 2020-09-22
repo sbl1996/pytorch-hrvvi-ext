@@ -177,21 +177,30 @@ def calculate_gain(p, c):
 
 
 class CrossEntropyLoss(nn.Module):
-    def __init__(self, reduction='mean', label_smoothing=None):
+    def __init__(self, non_sparse=False, label_smoothing=None, reduction='mean'):
         super().__init__()
-        self.label_smoothing, self.reduction = label_smoothing, reduction
+        self.non_sparse = non_sparse
+        self.label_smoothing = label_smoothing
+        self.reduction = reduction
 
-    def forward(self, output, target):
-        if self.label_smoothing:
-            c = output.size(1)
-            log_probs = F.log_softmax(output, dim=1)
-            if self.reduction == 'sum':
-                loss = -log_probs.sum()
-            else:
-                loss = -log_probs.sum(dim=1)
-                if self.reduction == 'mean':
-                    loss = loss.mean()
-            loss = loss * self.label_smoothing / c + (1 - self.label_smoothing) * F.nll_loss(log_probs, target, reduction=self.reduction)
-            return loss - calculate_gain(self.label_smoothing, c)
+    def forward(self, logits, labels):
+        c = logits.size(1)
+        if self.non_sparse:
+            labels = labels.to(logits.dtype)
+            if self.label_smoothing:
+                labels = labels * (1 - self.label_smoothing) + self.label_smoothing / c
+            log_probs = F.log_softmax(logits, dim=1)
+            loss = torch.sum(-labels * log_probs, dim=1)
+            loss = loss.sum() if self.reduction == 'sum' else loss.mean()
+            if self.label_smoothing:
+                loss = loss
+            return loss
         else:
-            return F.cross_entropy(output, target, reduction=self.reduction)
+            if self.label_smoothing:
+                log_probs = F.log_softmax(logits, dim=1)
+                loss = -log_probs.sum(dim=1)
+                loss = loss.sum() if self.reduction == 'sum' else loss.mean()
+                loss = loss * self.label_smoothing / c + (1 - self.label_smoothing) * F.nll_loss(log_probs, labels, reduction=self.reduction)
+                return loss
+            else:
+                return F.cross_entropy(logits, labels, reduction=self.reduction)

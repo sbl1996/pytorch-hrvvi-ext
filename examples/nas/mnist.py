@@ -7,11 +7,11 @@ from torchvision.transforms import ToTensor, Normalize, Compose, Pad, Lambda
 
 from horch.config import cfg
 from horch.datasets import train_test_split, CombineDataset
-from horch.nas.darts.model_search_gdas import Network
+from horch.nas.darts.search.model_search_gdas import Network
 from horch.nas.darts.trainer import DARTSTrainer
 from horch.train import manual_seed
-from horch.train.metrics import TrainLoss, Loss
-from horch.train.metrics.classification import Accuracy
+from horch.legacy.train.metrics import TrainLoss, Loss
+from horch.legacy.train.metrics import Accuracy
 
 manual_seed(0)
 
