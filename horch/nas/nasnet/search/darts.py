@@ -73,7 +73,7 @@ class Network(nn.Module):
 
     cell_cls = Cell
 
-    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, drop_path=0.6, num_classes=10):
+    def __init__(self, C, layers, steps=4, multiplier=4, stem_multiplier=3, drop_path=0, num_classes=10):
         super().__init__()
         self._C = C
         self._num_classes = num_classes
