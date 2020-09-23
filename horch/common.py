@@ -58,7 +58,7 @@ def tuplify(x, n=-1):
         return tuple(x)
 
 
-def convert_tensor(input_, device, non_blocking=False):
+def convert_tensor(input_, device, non_blocking=True):
 
     def _func(tensor: torch.Tensor) -> torch.Tensor:
         return tensor.to(device=device, non_blocking=non_blocking) if device is not None else tensor
