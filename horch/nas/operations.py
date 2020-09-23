@@ -95,13 +95,13 @@ class FactorizedReduce(nn.Module):
     def __init__(self, C_in, C_out):
         super().__init__()
         assert C_out % 2 == 0
-        self.relu = nn.ReLU(inplace=False)
+        self.act = Act()
         self.conv_1 = Conv2d(C_in, C_out // 2, 1, stride=2, bias=False)
         self.conv_2 = Conv2d(C_in, C_out // 2, 1, stride=2, bias=False)
         self.bn = Norm(C_out)
 
     def forward(self, x):
-        x = self.relu(x)
+        x = self.act(x)
         out = torch.cat([self.conv_1(x), self.conv_2(x[:, :, 1:, 1:])], dim=1)
         out = self.bn(out)
         return out

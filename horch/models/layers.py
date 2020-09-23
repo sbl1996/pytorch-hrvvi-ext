@@ -36,21 +36,21 @@ def Norm(channels, type='default', **kwargs):
         raise NotImplementedError("No normalization named %s" % type)
 
 
-def Act(type='default'):
+def Act(type='default', **kwargs):
     if isinstance(type, nn.Module):
         return type
     if type in ['default', 'def']:
-        return Act(DEFAULTS['act'])
+        return Act(DEFAULTS['act'], **kwargs)
     elif type == 'relu':
-        return nn.ReLU(**DEFAULTS['relu'])
+        return nn.ReLU(**{**DEFAULTS[type], **kwargs})
     elif type == 'relu6':
-        return nn.ReLU6(**DEFAULTS['relu6'])
+        return nn.ReLU6(**{**DEFAULTS[type], **kwargs})
     elif type == 'leaky_relu':
-        return nn.LeakyReLU(**DEFAULTS['leaky_relu'])
+        return nn.LeakyReLU(**{**DEFAULTS[type], **kwargs})
     elif type == 'sigmoid':
         return nn.Sigmoid()
     elif type == 'hswish':
-        return HardSwish(**DEFAULTS['hswisg'])
+        return HardSwish(**{**DEFAULTS[type], **kwargs})
     elif type == 'swish':
         return Swish()
     else:

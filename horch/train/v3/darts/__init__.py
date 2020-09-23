@@ -10,7 +10,7 @@ class DARTSLearner(Learner):
     def __init__(self, network, criterion, optimizer_arch, optimizer_model, lr_scheduler,
                  clip_grad_norm=5, **kwargs):
         super().__init__(network, criterion, (optimizer_arch, optimizer_model),
-                         lr_scheduler, clip_grad_norm=clip_grad_norm, **kwargs)
+                         lr_scheduler, clip_grad_norm=clip_grad_norm, train_arch=True, **kwargs)
 
     def train_batch(self, batch):
         state = self._state['train']
@@ -21,12 +21,13 @@ class DARTSLearner(Learner):
         network.train()
         input, target, input_search, target_search = convert_tensor(batch, self.device)
 
-        requires_grad(network, arch=True, model=False)
-        optimizer_arch.zero_grad()
-        logits = network(input)
-        loss = self.criterion(logits, target)
-        backward(loss, optimizer_arch, self.fp16)
-        optimizer_arch.step()
+        if self.train_arch:
+            requires_grad(network, arch=True, model=False)
+            optimizer_arch.zero_grad()
+            logits = network(input)
+            loss = self.criterion(logits, target)
+            backward(loss, optimizer_arch, self.fp16)
+            optimizer_arch.step()
 
         requires_grad(network, arch=False, model=True)
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
@@ -39,7 +40,7 @@ class DARTSLearner(Learner):
         optimizer_model.step()
 
         state.update({
-            "loss": loss.item(),
+            "loss": loss.item() if self.train_arch else logits_search.item(),
             "batch_size": input.size(0),
             "y_true": target_search,
             "y_pred": logits_search.detach(),

@@ -77,10 +77,7 @@ class Network(nn.Module):
         self.tau = None
 
         C_curr = stem_multiplier * C
-        self.stem = nn.Sequential(
-            Conv2d(3, C_curr, kernel_size=3, bias=False),
-            Norm(C_curr),
-        )
+        self.stem = Conv2d(3, C_curr, kernel_size=3, norm='def')
 
         C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
         self.cells = nn.ModuleList()
@@ -115,7 +112,6 @@ class Network(nn.Module):
         s0 = s1 = self.stem(x)
         for cell in self.cells:
             s0, s1 = s1, cell(s0, s1, hardwts, indices)
-        s1 = self.post_activ(s1)
         out = self.avg_pool(s1)
         logits = self.classifier(out)
         return logits
