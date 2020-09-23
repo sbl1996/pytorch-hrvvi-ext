@@ -29,7 +29,7 @@ class MixedOp(nn.Module):
 
         self._ops = nn.ModuleList()
         for primitive in get_primitives():
-            op = OPS[primitive](C, stride)
+            op = OPS[primitive](self._channels, stride)
             self._ops.append(op)
 
     def forward(self, x, weights):
