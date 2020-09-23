@@ -117,11 +117,11 @@ class Network(darts.Network):
 
     def genotype(self):
         alphas_normal = F.softmax(self.alphas_normal.detach().cpu(), dim=0).numpy()
-        betas_normal = beta_softmax(self.betas_normal, self._steps).numpy()
+        betas_normal = beta_softmax(self.betas_normal.detach().cpu(), self._steps).numpy()
         alphas_normal = alphas_normal * betas_normal[:, None]
 
         alphas_reduce = F.softmax(self.alphas_reduce.detach().cpu(), dim=0).numpy()
-        betas_reduce = beta_softmax(self.betas_reduce, self._steps).numpy()
+        betas_reduce = beta_softmax(self.betas_reduce.detach().cpu(), self._steps).numpy()
         alphas_reduce = alphas_reduce * betas_reduce[:, None]
 
         gene_normal = darts.parse_weights(alphas_normal, self._steps)
