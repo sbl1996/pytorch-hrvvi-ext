@@ -146,7 +146,7 @@ class Learner(Serializable, metaclass=ABCMeta):
             self._run_one_epoch(train_loader, cbks, 'train')
             cbks.after_epoch(state)
 
-            if do_eval and epoch % val_freq == 0:
+            if do_eval and (epoch + 1) % val_freq == 0:
                 cbks.begin_eval(self._state['eval'])
                 self._state['eval']['metrics'] = {}
                 self._run_one_epoch(val_loader, cbks, 'eval')
