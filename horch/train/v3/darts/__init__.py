@@ -40,7 +40,7 @@ class DARTSLearner(Learner):
         optimizer_model.step()
 
         state.update({
-            "loss": loss.item() if self.train_arch else logits_search.item(),
+            "loss": loss.item() if self.train_arch else loss_search.item(),
             "batch_size": input.size(0),
             "y_true": target_search,
             "y_pred": logits_search.detach(),
