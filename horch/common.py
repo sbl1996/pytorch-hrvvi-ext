@@ -63,6 +63,9 @@ def convert_tensor(input_, device, non_blocking=False):
     def _func(tensor: torch.Tensor) -> torch.Tensor:
         return tensor.to(device=device, non_blocking=non_blocking) if device is not None else tensor
 
+    if isinstance(input_, list) and len(input_) == 1 and isinstance(input_[0], dict):
+        # DALI
+        return tuple(input_[0].values())
     return apply_to_tensor(input_, _func)
 
 

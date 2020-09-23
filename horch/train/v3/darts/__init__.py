@@ -19,7 +19,7 @@ class DARTSLearner(Learner):
         lr_scheduler = self.lr_schedulers[0]
 
         network.train()
-        (input, target), (input_search, target_search) = convert_tensor(batch, self.device)
+        input, target, input_search, target_search = convert_tensor(batch, self.device)
 
         requires_grad(network, arch=True, model=False)
         optimizer_arch.zero_grad()

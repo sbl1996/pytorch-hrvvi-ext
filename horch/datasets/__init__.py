@@ -122,14 +122,23 @@ def batchify(ds, batch_size):
 
 class CombineDataset(Dataset):
 
-    def __init__(self, *datasets):
+    def __init__(self, *datasets, flatten=True):
         self.datasets = datasets
+        self.flatten = flatten
         assert len(set(len(ds) for ds in datasets)) == 1, "All datasets must be of the same length"
 
     def __len__(self):
         return len(self.datasets[0])
 
     def __getitem__(self, idx):
+        if self.flatten:
+            outs = ()
+            for ds in self.datasets:
+                out = ds[idx]
+                if not isinstance(out, tuple):
+                    out = (out,)
+                outs = outs + out
+            return outs
         return tuple(ds[idx] for ds in self.datasets)
 
 
