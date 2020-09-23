@@ -52,6 +52,17 @@ class Cell(darts.Cell):
             partial(MixedOp, k=k)
         )
 
+    def forward(self, s0, s1, alphas, betas):
+        s0 = self.preprocess0(s0)
+        s1 = self.preprocess1(s1)
+        states = [s0, s1]
+        offset = 0
+        for i in range(self._steps):
+            s = sum([betas[offset + j] * self._ops[offset + j]([h, alphas[offset + j]]) for j, h in enumerate(states)])
+            offset += len(states)
+            states.append(s)
+
+        return torch.cat(states[-self._multiplier:], dim=1)
 
 def beta_softmax(betas, steps, scale=False):
     beta_list = []
