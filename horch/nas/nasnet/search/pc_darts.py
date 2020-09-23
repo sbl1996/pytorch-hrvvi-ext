@@ -58,7 +58,7 @@ class Cell(darts.Cell):
         states = [s0, s1]
         offset = 0
         for i in range(self._steps):
-            s = sum([betas[offset + j] * self._ops[offset + j]([h, alphas[offset + j]]) for j, h in enumerate(states)])
+            s = sum([betas[offset + j] * self._ops[offset + j](h, alphas[offset + j]) for j, h in enumerate(states)])
             offset += len(states)
             states.append(s)
 
