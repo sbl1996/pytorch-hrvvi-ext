@@ -23,8 +23,12 @@ class CNNLearner(Learner):
 
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
         optimizer.zero_grad()
-        logits = model(input)
-        loss = self.criterion(logits, target)
+        outputs = self.model(input)
+        if isinstance(outputs, tuple) and len(outputs) == 2:
+            logits, logits_aux = outputs
+        else:
+            logits = outputs
+        loss = self.criterion(outputs, target)
         backward(loss, optimizer, self.fp16)
         if self.clip_grad_norm:
             nn.utils.clip_grad_norm_(model.parameters(), self.clip_grad_norm)

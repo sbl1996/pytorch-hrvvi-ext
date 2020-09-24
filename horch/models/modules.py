@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.models.layers import Conv2d, Pool
+from horch.models.layers import Conv2d, Pool2d
 
 
 class SelfAttention(nn.Module):
@@ -14,7 +14,7 @@ class SelfAttention(nn.Module):
         self.pool_phi = nn.MaxPool2d(kernel_size=2, stride=(2, 2))
 
         self.conv_g = Conv2d(in_channels, in_channels // 2, kernel_size=1)
-        self.pool_g = Pool(kernel_size=2, stride=2, type='max')
+        self.pool_g = Pool2d(kernel_size=2, stride=2, type='max')
 
         self.conv_attn = Conv2d(in_channels // 2, in_channels, kernel_size=1)
 

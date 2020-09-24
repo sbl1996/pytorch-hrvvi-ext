@@ -114,7 +114,7 @@ def Linear(in_channels, out_channels, bias=None, norm=None, act=None):
         return nn.Sequential(*layers)
 
 
-def Pool(type, kernel_size, stride=1, padding='same', ceil_mode=False):
+def Pool2d(kernel_size, stride=1, padding='same', type='avg', ceil_mode=False):
     if isinstance(kernel_size, int):
         kernel_size = (kernel_size, kernel_size)
     if isinstance(stride, int):

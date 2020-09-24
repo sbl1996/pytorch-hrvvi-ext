@@ -5,7 +5,7 @@ from horch.common import tuplify
 from horch.models.block import mb_conv_block, MBConv
 from horch.models.detection.nasfpn import ReLUConvBN
 
-from horch.models.modules import upsample_add, Conv2d, Sequential, Pool, upsample_concat
+from horch.models.modules import upsample_add, Conv2d, Sequential, Pool2d, upsample_concat
 from horch.models.detection.nasfpn import NASFPN
 from horch.models.utils import remove_stride_padding
 
@@ -62,9 +62,9 @@ class FPNExtraLayers(nn.Module):
             if downsample == 'conv':
                 l = ReLUConvBN(in_channels, f_channels, stride=2, lite=lite)
             elif downsample == 'maxpool':
-                l = Pool('max', kernel_size=1, stride=2)
+                l = Pool2d('max', kernel_size=1, stride=2)
             elif downsample == 'avgpool':
-                l = Pool('avg', kernel_size=1, stride=2)
+                l = Pool2d('avg', kernel_size=1, stride=2)
             else:
                 raise ValueError("%s as downsampling is invalid." % downsample)
             in_channels = f_channels

@@ -1,61 +1,92 @@
+from toolz.curried import concat
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+from horch.nn import DropPath, GlobalAvgPool
+from horch.models.layers import Act, Norm, Pool2d, Conv2d, Linear
+
+from horch.nas.nasnet.genotypes import Genotype
 from horch.nas.operations import FactorizedReduce, ReLUConvBN, OPS
+
+
+def standardize(genotype: Genotype):
+    if len(genotype.normal[0]) == 2:
+        assert all(len(c) == 2 for c in genotype.normal)
+        n = len(genotype.normal) // 2
+        op_indices = concat([(i, i) for i in range(2, 2 + n)])
+        op_names, indices = zip(*genotype.normal)
+        normal = list(zip(op_names, op_indices, indices))
+
+        assert all(len(c) == 2 for c in genotype.reduce)
+        n = len(genotype.reduce) // 2
+        op_indices = concat([(i, i) for i in range(2, 2 + n)])
+        op_names, indices = zip(*genotype.reduce)
+        reduce = list(zip(op_names, op_indices, indices))
+    else:
+        normal = genotype.normal
+        reduce = genotype.reduce
+    normal = sorted(normal, key=lambda c: (c[1], c[2]))
+    reduce = sorted(reduce, key=lambda c: (c[1], c[2]))
+    return Genotype(
+            normal=normal, normal_concat=genotype.normal_concat,
+            reduce=reduce, reduce_concat=genotype.reduce_concat)
 
 
 class Cell(nn.Module):
 
-    def __init__(self, genotype, C_prev_prev, C_prev, C, reduction, reduction_prev):
-        super(Cell, self).__init__()
-        print(C_prev_prev, C_prev, C)
-
+    def __init__(self, genotype, C_prev_prev, C_prev, C, reduction, reduction_prev, drop_path):
+        super().__init__()
+        genotype = standardize(genotype)
+        self.drop_path = drop_path
         if reduction_prev:
             self.preprocess0 = FactorizedReduce(C_prev_prev, C)
         else:
-            self.preprocess0 = ReLUConvBN(C_prev_prev, C, 1, 1, 0)
-        self.preprocess1 = ReLUConvBN(C_prev, C, 1, 1, 0)
+            self.preprocess0 = ReLUConvBN(C_prev_prev, C, 1, 1)
+        self.preprocess1 = ReLUConvBN(C_prev, C, 1, 1)
 
         if reduction:
-            op_names, indices = zip(*genotype.reduce)
+            op_names, op_indices, indices = zip(*genotype.reduce)
             concat = genotype.reduce_concat
         else:
-            op_names, indices = zip(*genotype.normal)
+            op_names, op_indices, indices = zip(*genotype.normal)
             concat = genotype.normal_concat
-        self._compile(C, op_names, indices, concat, reduction)
+        self._compile(C, op_names, op_indices, indices, concat, reduction)
 
-    def _compile(self, C, op_names, indices, concat, reduction):
-        assert len(op_names) == len(indices)
-        self._steps = len(op_names) // 2
+    def _compile(self, C, op_names, op_indices, indices, concat, reduction):
         self._concat = concat
         self.multiplier = len(concat)
 
         self._ops = nn.ModuleList()
-        for name, index in zip(op_names, indices):
-            stride = 2 if reduction and index < 2 else 1
-            op = OPS[name](C, stride, True)
-            self._ops += [op]
-        self._indices = indices
+        self._indices = []
+        prev_op_index = 1
+        for name, op_index, index in zip(op_names, op_indices, indices):
+            if op_index != prev_op_index:
+                self._ops.append(nn.ModuleList())
+                self._indices.append([])
 
-    def forward(self, s0, s1, drop_prob):
+            stride = 2 if reduction and index < 2 else 1
+            op = OPS[name](C, stride)
+
+            if self.drop_path and not isinstance(op, nn.Identity):
+                op = nn.Sequential(
+                    op,
+                    DropPath(self.drop_path),
+                )
+
+            self._ops[-1].append(op)
+            self._indices[-1].append(index)
+            prev_op_index = op_index
+
+    def forward(self, s0, s1):
         s0 = self.preprocess0(s0)
         s1 = self.preprocess1(s1)
 
         states = [s0, s1]
-        for i in range(self._steps):
-            h1 = states[self._indices[2 * i]]
-            h2 = states[self._indices[2 * i + 1]]
-            op1 = self._ops[2 * i]
-            op2 = self._ops[2 * i + 1]
-            h1 = op1(h1)
-            h2 = op2(h2)
-            if self.training and drop_prob > 0.:
-                if not isinstance(op1, nn.Identity):
-                    h1 = drop_path(h1, drop_prob)
-                if not isinstance(op2, nn.Identity):
-                    h2 = drop_path(h2, drop_prob)
-            s = h1 + h2
-            states += [s]
+        for ops, indices in zip(self._ops, self._indices):
+            s = sum([op(states[index]) for op, index in zip(ops, indices)])
+            states.append(s)
         return torch.cat([states[i] for i in self._concat], dim=1)
 
 
@@ -63,63 +94,35 @@ class AuxiliaryHeadCIFAR(nn.Module):
 
     def __init__(self, C, num_classes):
         """assuming input size 8x8"""
-        super(AuxiliaryHeadCIFAR, self).__init__()
+        super().__init__()
         self.features = nn.Sequential(
-            nn.ReLU(inplace=True),
-            nn.AvgPool2d(5, stride=3, padding=0, count_include_pad=False),  # image size = 2 x 2
-            nn.Conv2d(C, 128, 1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 768, 2, bias=False),
-            nn.BatchNorm2d(768),
-            nn.ReLU(inplace=True)
+            Act('relu', inplace=True),
+            Pool2d(5, stride=3, padding=0, type='avg'),
+            Conv2d(C, 128, 1, norm='def', act='relu'),
+            Conv2d(128, 768, 2, norm='def', act='relu', padding=0),
         )
-        self.classifier = nn.Linear(768, num_classes)
+        self.classifier = nn.Sequential(
+            GlobalAvgPool(),
+            Linear(768, num_classes),
+        )
 
     def forward(self, x):
         x = self.features(x)
-        x = self.classifier(x.view(x.size(0), -1))
+        x = self.classifier(x)
         return x
 
 
-class AuxiliaryHeadImageNet(nn.Module):
+class NASNet(nn.Module):
 
-    def __init__(self, C, num_classes):
-        """assuming input size 14x14"""
-        super(AuxiliaryHeadImageNet, self).__init__()
-        self.features = nn.Sequential(
-            nn.ReLU(inplace=True),
-            nn.AvgPool2d(5, stride=2, padding=0, count_include_pad=False),
-            nn.Conv2d(C, 128, 1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 768, 2, bias=False),
-            # NOTE: This batchnorm was omitted in my earlier implementation due to a typo.
-            # Commenting it out for consistency with the experiments in the paper.
-            # nn.BatchNorm2d(768),
-            nn.ReLU(inplace=True)
-        )
-        self.classifier = nn.Linear(768, num_classes)
-
-    def forward(self, x):
-        x = self.features(x)
-        x = self.classifier(x.view(x.size(0), -1))
-        return x
-
-
-class NetworkCIFAR(nn.Module):
-
-    def __init__(self, C, num_classes, layers, auxiliary, genotype):
-        super(NetworkCIFAR, self).__init__()
-        self._layers = layers
+    def __init__(self, C, layers, auxiliary, drop_path, num_classes, genotype):
+        super().__init__()
+        self._num_layers = layers
         self._auxiliary = auxiliary
+        self._drop_path = drop_path
 
         stem_multiplier = 3
         C_curr = stem_multiplier * C
-        self.stem = nn.Sequential(
-            nn.Conv2d(3, C_curr, 3, padding=1, bias=False),
-            nn.BatchNorm2d(C_curr)
-        )
+        self.stem = Conv2d(3, C_curr, 3, norm='def')
 
         C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
         self.cells = nn.ModuleList()
@@ -130,84 +133,28 @@ class NetworkCIFAR(nn.Module):
                 reduction = True
             else:
                 reduction = False
-            cell = Cell(genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
+            cell = Cell(genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev, drop_path)
             reduction_prev = reduction
-            self.cells += [cell]
+            self.cells.append(cell)
             C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
             if i == 2 * layers // 3:
                 C_to_auxiliary = C_prev
 
         if auxiliary:
             self.auxiliary_head = AuxiliaryHeadCIFAR(C_to_auxiliary, num_classes)
-        self.global_pooling = nn.AdaptiveAvgPool2d(1)
-        self.classifier = nn.Linear(C_prev, num_classes)
-
-    def forward(self, input):
-        logits_aux = None
-        s0 = s1 = self.stem(input)
-        for i, cell in enumerate(self.cells):
-            s0, s1 = s1, cell(s0, s1, self.drop_path_prob)
-            if i == 2 * self._layers // 3:
-                if self._auxiliary and self.training:
-                    logits_aux = self.auxiliary_head(s1)
-        out = self.global_pooling(s1)
-        logits = self.classifier(out.view(out.size(0), -1))
-        return logits, logits_aux
-
-
-class NetworkImageNet(nn.Module):
-
-    def __init__(self, C, num_classes, layers, auxiliary, genotype):
-        super(NetworkImageNet, self).__init__()
-        self._layers = layers
-        self._auxiliary = auxiliary
-
-        self.stem0 = nn.Sequential(
-            nn.Conv2d(3, C // 2, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(C // 2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(C // 2, C, 3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(C),
+        self.classifier = nn.Sequential(
+            GlobalAvgPool(),
+            Linear(C_prev, num_classes),
         )
 
-        self.stem1 = nn.Sequential(
-            nn.ReLU(inplace=True),
-            nn.Conv2d(C, C, 3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(C),
-        )
-
-        C_prev_prev, C_prev, C_curr = C, C, C
-
-        self.cells = nn.ModuleList()
-        reduction_prev = True
-        for i in range(layers):
-            if i in [layers // 3, 2 * layers // 3]:
-                C_curr *= 2
-                reduction = True
-            else:
-                reduction = False
-            cell = Cell(genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
-            reduction_prev = reduction
-            self.cells += [cell]
-            C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
-            if i == 2 * layers // 3:
-                C_to_auxiliary = C_prev
-
-        if auxiliary:
-            self.auxiliary_head = AuxiliaryHeadImageNet(C_to_auxiliary, num_classes)
-        self.global_pooling = nn.AvgPool2d(7)
-        self.classifier = nn.Linear(C_prev, num_classes)
-
-    def forward(self, input):
-        logits_aux = None
-        s0 = self.stem0(input)
-        s1 = self.stem1(s0)
+    def forward(self, x):
+        s0 = s1 = self.stem(x)
         for i, cell in enumerate(self.cells):
-            s0, s1 = s1, cell(s0, s1, self.drop_path_prob)
-            if i == 2 * self._layers // 3:
-                if self._auxiliary and self.training:
-                    logits_aux = self.auxiliary_head(s1)
-        out = self.global_pooling(s1)
-        logits = self.classifier(out.view(out.size(0), -1))
-        return logits, logits_aux
-
+            s0, s1 = s1, cell(s0, s1)
+            if self._auxiliary and i == 2 * self._num_layers // 3:
+                logits_aux = self.auxiliary_head(s1)
+        logits = self.classifier(s1)
+        if self._auxiliary and self.training:
+            return logits, logits_aux
+        else:
+            return logits

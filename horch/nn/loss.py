@@ -1,6 +1,5 @@
 import math
 import random
-from toolz import curry
 
 import torch
 import torch.nn as nn
@@ -36,14 +35,6 @@ def focal_loss2(input, target, gamma=2, beta=1, alpha=0.25, eps=1e-6, reduction=
 def conf_penalty(input, beta=0.1):
     p = F.softmax(input, dim=1)
     loss = (torch.log(p) * (beta * p - 1)).sum(dim=1).mean()
-    return loss
-
-
-@curry
-def cross_entropy(input, target, weight=None, confidence_penalty=None):
-    loss = F.cross_entropy(input, target, weight)
-    if confidence_penalty:
-        loss = loss + conf_penalty(input, beta=confidence_penalty)
     return loss
 
 
@@ -176,31 +167,40 @@ def calculate_gain(p, c):
     return -(p - pc) * math.log(pc) - p1 * math.log(p1)
 
 
+def cross_entropy(logits, labels, sparse=True, label_smoothing=None):
+    c = logits.size(1)
+    if sparse:
+        if label_smoothing:
+            log_probs = F.log_softmax(logits, dim=1)
+            loss = -log_probs.sum(dim=1)
+            loss = loss * label_smoothing / c + (1 - label_smoothing) * F.nll_loss(log_probs, labels, reduction="none")
+            return loss
+        else:
+            return F.cross_entropy(logits, labels, reduction='none')
+    else:
+        labels = labels.to(logits.dtype)
+        if label_smoothing:
+            labels = labels * (1 - label_smoothing) + label_smoothing / c
+        log_probs = F.log_softmax(logits, dim=1)
+        loss = torch.sum(-labels * log_probs, dim=1)
+        return loss
+
+
 class CrossEntropyLoss(nn.Module):
-    def __init__(self, non_sparse=False, label_smoothing=None, reduction='mean'):
+
+    def __init__(self, sparse=True, label_smoothing=None, auxiliary_weight=0.0, reduction='mean'):
         super().__init__()
-        self.non_sparse = non_sparse
+        self.sparse = sparse
         self.label_smoothing = label_smoothing
+        self.auxiliary_weight = auxiliary_weight
         self.reduction = reduction
 
     def forward(self, logits, labels):
-        c = logits.size(1)
-        if self.non_sparse:
-            labels = labels.to(logits.dtype)
-            if self.label_smoothing:
-                labels = labels * (1 - self.label_smoothing) + self.label_smoothing / c
-            log_probs = F.log_softmax(logits, dim=1)
-            loss = torch.sum(-labels * log_probs, dim=1)
-            loss = loss.sum() if self.reduction == 'sum' else loss.mean()
-            if self.label_smoothing:
-                loss = loss
-            return loss
+        if self.auxiliary_weight:
+            logits, logits_aux = logits
+            loss = cross_entropy(logits, labels, self.sparse, self.label_smoothing) + \
+                self.auxiliary_weight * cross_entropy(logits_aux, labels, self.sparse, self.label_smoothing)
         else:
-            if self.label_smoothing:
-                log_probs = F.log_softmax(logits, dim=1)
-                loss = -log_probs.sum(dim=1)
-                loss = loss.sum() if self.reduction == 'sum' else loss.mean()
-                loss = loss * self.label_smoothing / c + (1 - self.label_smoothing) * F.nll_loss(log_probs, labels, reduction=self.reduction)
-                return loss
-            else:
-                return F.cross_entropy(logits, labels, reduction=self.reduction)
+            loss = cross_entropy(logits, labels, self.sparse, self.label_smoothing)
+        loss = loss.sum() if self.reduction == 'sum' else loss.mean()
+        return loss
