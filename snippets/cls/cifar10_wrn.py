@@ -8,7 +8,7 @@ from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, Ran
 from horch.datasets import train_test_split
 from horch.nn import CrossEntropyLoss, DropPath
 from horch.optim.lr_scheduler import CosineAnnealingLR
-from horch.models.cifar.preactresnet import PreActResNet
+from horch.models.cifar.preactresnet import ResNet
 from horch.nas.nasnet.genotypes import Genotype
 from horch.train import manual_seed
 from horch.train.v3.callbacks import Callback
@@ -43,7 +43,7 @@ ds_test = train_test_split(ds_test, test_ratio=0.01)[1]
 
 epochs = 200
 # net = PreActResNet(28, 10)
-net = PreActResNet(16, 1)
+net = ResNet(16, 1)
 criterion = CrossEntropyLoss()
 optimizer = SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4, nesterov=True)
 lr_scheduler = CosineAnnealingLR(optimizer, epochs, min_lr=0)

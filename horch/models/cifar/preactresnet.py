@@ -5,7 +5,7 @@ from horch.models.attention import SEModule
 from horch.models.layers import Act, Conv2d, Norm
 
 
-class PreActDownBlock(nn.Module):
+class DownBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, dropout=0, use_se=False):
         super().__init__()
         self.use_se = use_se
@@ -39,7 +39,7 @@ class PreActDownBlock(nn.Module):
         return x + self.shortcut(identity)
 
 
-class PreActResBlock(nn.Sequential):
+class BasicBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, dropout, use_se, drop_path):
         super().__init__()
         self.norm1 = Norm(in_channels)
@@ -61,7 +61,7 @@ class PreActResBlock(nn.Sequential):
         return x + identity
 
 
-class PreActResNet(nn.Module):
+class ResNet(nn.Module):
     stages = [16, 16, 32, 64]
 
     def __init__(self, depth, k, num_classes=10, dropout=0, use_se=False, drop_path=0):
@@ -86,12 +86,12 @@ class PreActResNet(nn.Module):
 
     def _make_layer(self, in_channels, out_channels, blocks, stride,
                     dropout, use_se, drop_path):
-        layers = [PreActDownBlock(in_channels, out_channels, stride=stride,
-                                  dropout=dropout, use_se=use_se)]
+        layers = [DownBlock(in_channels, out_channels, stride=stride,
+                            dropout=dropout, use_se=use_se)]
         for i in range(1, blocks):
             layers.append(
-                PreActResBlock(out_channels, out_channels,
-                               dropout=dropout, use_se=use_se, drop_path=drop_path))
+                BasicBlock(out_channels, out_channels,
+                           dropout=dropout, use_se=use_se, drop_path=drop_path))
         return nn.Sequential(*layers)
 
     def forward(self, x):
