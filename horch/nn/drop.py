@@ -13,7 +13,7 @@ class DropPath(nn.Module):
             return x
         keep_prob = 1.0 - self.p
         batch_size = x.size(0)
-        t = torch.rand(batch_size, 1, 1, 1, dtype=x.dtype, device=x.device) < keep_prob
+        t = torch.rand(batch_size, 1, 1, 1, dtype=x.dtype, device=x.device) > keep_prob
         x = (x / keep_prob).masked_fill(t, 0)
         return x
 

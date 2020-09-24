@@ -77,7 +77,7 @@ eval_metrics = {
 }
 
 trainer = CNNLearner(net, criterion, optimizer, lr_scheduler,
-                     train_metrics=train_metrics, eval_metrics=eval_metrics, work_dir="../models")
+                     train_metrics=train_metrics, eval_metrics=eval_metrics, work_dir="../train/v3/models")
 
 # summary(net, (3, 32, 32))
 
