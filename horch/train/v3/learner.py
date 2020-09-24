@@ -165,8 +165,12 @@ class Learner(Serializable, metaclass=ABCMeta):
             })
 
             callbacks.begin_batch(state)
-            if mode in ['train', 'eval']:
-                getattr(self, mode + '_batch')(batch)
+            if mode == 'train':
+                self.train_batch(batch)
+                if self.fp16:
+                    self.scaler.update()
+            elif mode == 'eval':
+                self.eval_batch(batch)
             else:
                 pred = self.test_batch(batch)
                 outputs.append(pred)
@@ -204,15 +208,14 @@ def backward(learner: Learner, loss):
 
 
 @patch
-def optimizer_step(learner: Learner, optimizer, params=None):
+def optimizer_step(learner: Learner, optimizer, grad_clip_params=None):
     if learner.fp16:
         scaler = learner.scaler
-        if learner.grad_clip_norm and params:
+        if learner.grad_clip_norm and grad_clip_params:
             scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(params, learner.grad_clip_norm)
+            nn.utils.clip_grad_norm_(grad_clip_params, learner.grad_clip_norm)
         scaler.step(optimizer)
-        scaler.update()
     else:
-        if learner.grad_clip_norm and params:
-            nn.utils.clip_grad_norm_(params, learner.grad_clip_norm)
+        if learner.grad_clip_norm and grad_clip_params:
+            nn.utils.clip_grad_norm_(grad_clip_params, learner.grad_clip_norm)
         optimizer.step()
