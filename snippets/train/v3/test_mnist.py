@@ -81,7 +81,7 @@ eval_metrics = {
 trainer = CNNLearner(net, criterion, optimizer, lr_scheduler,
                      train_metrics=train_metrics, eval_metrics=eval_metrics,
                      work_dir="./checkpoints/MNIST-LeNet5")
-trainer.load()
+# trainer.load()
 
 train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2, pin_memory=True)
 val_loader = DataLoader(ds_val, batch_size=128)

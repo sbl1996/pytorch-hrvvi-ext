@@ -190,3 +190,4 @@ fabric.properties
 
 snippets/**/models
 snippets/**/**/models
+snippets/**/**/**/models

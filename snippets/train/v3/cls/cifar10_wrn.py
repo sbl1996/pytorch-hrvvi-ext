@@ -8,7 +8,7 @@ from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, Ran
 from horch.datasets import train_test_split
 from horch.nn import CrossEntropyLoss, DropPath
 from horch.optim.lr_scheduler import CosineAnnealingLR
-from horch.models.cifar.nasnet import NASNet
+from horch.models.cifar.preactresnet import PreActResNet
 from horch.nas.nasnet.genotypes import Genotype
 from horch.train import manual_seed
 from horch.train.v3.callbacks import Callback
@@ -22,7 +22,7 @@ manual_seed(0)
 # torch.backends.cudnn.benchmark = True
 
 train_transform = Compose([
-    RandomCrop(32, padding=4, fill=128),
+    RandomCrop(32, padding=4),
     RandomHorizontalFlip(),
     # CIFAR10Policy(),
     ToTensor(),
@@ -41,29 +41,11 @@ ds_test = CIFAR10(data_home, train=False, download=True, transform=test_transfor
 ds_train = train_test_split(ds_train, test_ratio=0.01)[1]
 ds_test = train_test_split(ds_test, test_ratio=0.01)[1]
 
-PC_DARTS_cifar = Genotype(
-    normal=[
-        ('sep_conv_3x3', 1), ('skip_connect', 0),
-        ('sep_conv_3x3', 0), ('dil_conv_3x3', 1),
-        ('sep_conv_5x5', 0), ('sep_conv_3x3', 1),
-        ('avg_pool_3x3', 0), ('dil_conv_3x3', 1)
-    ],
-    normal_concat=[2, 3, 4, 5],
-    reduce=[
-        ('sep_conv_5x5', 1), ('max_pool_3x3', 0),
-        ('sep_conv_5x5', 1), ('sep_conv_5x5', 2),
-        ('sep_conv_3x3', 0), ('sep_conv_3x3', 3),
-        ('sep_conv_3x3', 1), ('sep_conv_3x3', 2)
-    ],
-    reduce_concat=[2, 3, 4, 5]
-)
-
-drop_path = 0.3
-epochs = 600
-# net = NASNet(36, 20, True, drop_path, 10, PC_DARTS_cifar)
-net = NASNet(4, 5, True, drop_path, 10, PC_DARTS_cifar)
-criterion = CrossEntropyLoss(auxiliary_weight=0.4)
-optimizer = SGD(net.parameters(), lr=0.025, momentum=0.9, weight_decay=3e-4)
+epochs = 200
+# net = PreActResNet(28, 10)
+net = PreActResNet(16, 1)
+criterion = CrossEntropyLoss()
+optimizer = SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4, nesterov=True)
 lr_scheduler = CosineAnnealingLR(optimizer, epochs, min_lr=0)
 
 train_metrics = {
@@ -77,27 +59,13 @@ eval_metrics = {
 }
 
 trainer = CNNLearner(net, criterion, optimizer, lr_scheduler,
-                     train_metrics=train_metrics, eval_metrics=eval_metrics, work_dir="./models")
+                     train_metrics=train_metrics, eval_metrics=eval_metrics, work_dir="models/WRN")
 
 # summary(net, (3, 32, 32))
 
 train_loader = DataLoader(ds_train, batch_size=32, shuffle=True, num_workers=2)
 test_loader = DataLoader(ds_test, batch_size=32)
 
-
-class DropPathSchedule(Callback):
-
-    def __init__(self, drop_path):
-        super().__init__()
-        self.drop_path = drop_path
-
-    def begin_epoch(self, state):
-        drop_path = self.drop_path * (state['epoch'] / state['epochs'])
-        for m in self.learner.model.modules():
-            if isinstance(m, DropPath):
-                m.p = drop_path
-
-trainer.fit(train_loader, epochs, val_loader=test_loader, val_freq=5,
-            callbacks=[DropPathSchedule(drop_path)])
+trainer.fit(train_loader, epochs, val_loader=test_loader, val_freq=5)
 
 trainer.evaluate(test_loader)

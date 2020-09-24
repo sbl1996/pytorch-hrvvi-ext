@@ -137,7 +137,7 @@ class NASNet(nn.Module):
             reduction_prev = reduction
             self.cells.append(cell)
             C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
-            if i == 2 * layers // 3:
+            if auxiliary and i == 2 * layers // 3:
                 C_to_auxiliary = C_prev
 
         if auxiliary:
