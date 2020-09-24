@@ -20,7 +20,7 @@ from horch.transforms.classification import CIFAR10Policy, Cutout
 
 manual_seed(0)
 # torch.backends.cudnn.benchmark = True
-torch.autograd.set_detect_anomaly(True)
+
 train_transform = Compose([
     RandomCrop(32, padding=4, fill=128),
     RandomHorizontalFlip(),

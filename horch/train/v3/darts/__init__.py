@@ -3,15 +3,23 @@ import torch.nn as nn
 from torch.cuda.amp import autocast
 
 from horch.common import convert_tensor
-from horch.train.v3.learner import Learner, requires_grad, backward, optimizer_step
+from horch.train.v3.learner import Learner, backward, optimizer_step
+
+
+def requires_grad(network: nn.Module, arch: bool, model: bool):
+    for p in network.arch_parameters():
+        p.requires_grad_(arch)
+    for p in network.model_parameters():
+        p.requires_grad_(model)
 
 
 class DARTSLearner(Learner):
 
     def __init__(self, network, criterion, optimizer_arch, optimizer_model, lr_scheduler,
-                 clip_grad_norm=5, **kwargs):
+                 grad_clip_norm=5, **kwargs):
+        self.train_arch = True
         super().__init__(network, criterion, (optimizer_arch, optimizer_model),
-                         lr_scheduler, clip_grad_norm=clip_grad_norm, train_arch=True, **kwargs)
+                         lr_scheduler, grad_clip_norm=grad_clip_norm, **kwargs)
 
     def train_batch(self, batch):
         state = self._state['train']

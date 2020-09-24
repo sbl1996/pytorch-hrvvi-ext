@@ -1,6 +1,7 @@
 from abc import ABCMeta
 from datetime import datetime
 from typing import Sequence, Mapping
+from fastcore.dispatch import patch
 
 import torch
 import torch.nn as nn
@@ -8,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from hhutil.io import fmt_path
 
-from horch.common import CUDA, convert_tensor
+from horch.common import CUDA
 from horch.train.base import StatefulList, Serializable
 from horch.train.metric_history import MetricHistory
 from horch.train.v3.callbacks import config_callbacks
@@ -27,7 +28,7 @@ def find_most_recent(work_dir, pattern):
 class Learner(Serializable, metaclass=ABCMeta):
 
     def __init__(self, model, criterion, optimizers, lr_schedulers, train_metrics, eval_metrics, work_dir,
-                 fp16=False, device='auto', **kwargs):
+                 fp16=False, device='auto', grad_clip_norm=0.0):
         if not isinstance(optimizers, Sequence):
             optimizers = [optimizers]
         optimizers = list(optimizers)
@@ -53,9 +54,7 @@ class Learner(Serializable, metaclass=ABCMeta):
         self.work_dir = work_dir
         self.fp16 = fp16
         self.device = device
-
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+        self.grad_clip_norm = grad_clip_norm
 
         self._log_dir = self.work_dir / "runs"
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
@@ -88,9 +87,6 @@ class Learner(Serializable, metaclass=ABCMeta):
              'lr_schedulers': StatefulList(self.lr_schedulers),
              "metric_history": self.metric_history,
              "learner": self}
-        if self.fp16:
-            from apex import amp
-            d['amp'] = amp
         return d
 
     def save(self):
@@ -198,23 +194,8 @@ class Learner(Serializable, metaclass=ABCMeta):
         pass
 
 
-def requires_grad(network: nn.Module, arch: bool, model: bool):
-    for p in network.arch_parameters():
-        p.requires_grad_(arch)
-    for p in network.model_parameters():
-        p.requires_grad_(model)
-
-
-# def backward(loss, optimizer, fp16):
-#     if fp16:
-#         from apex import amp
-#         with amp.scale_loss(loss, optimizer) as scaled_loss:
-#             scaled_loss.backward()
-#     else:
-#         loss.backward()
-#     return
-
-def backward(learner, loss):
+@patch
+def backward(learner: Learner, loss):
     if learner.fp16:
         scaler = learner.scaler
         scaler.scale(loss).backward()
@@ -222,15 +203,16 @@ def backward(learner, loss):
         loss.backward()
 
 
-def optimizer_step(learner, optimizer, params=None):
+@patch
+def optimizer_step(learner: Learner, optimizer, params=None):
     if learner.fp16:
         scaler = learner.scaler
-        if hasattr(learner, "clip_grad_norm") and learner.clip_grad_norm and params:
+        if learner.grad_clip_norm and params:
             scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(params, learner.clip_grad_norm)
+            nn.utils.clip_grad_norm_(params, learner.grad_clip_norm)
         scaler.step(optimizer)
         scaler.update()
     else:
-        if hasattr(learner, "clip_grad_norm") and learner.clip_grad_norm and params:
-            nn.utils.clip_grad_norm_(params, learner.clip_grad_norm)
+        if learner.grad_clip_norm and params:
+            nn.utils.clip_grad_norm_(params, learner.grad_clip_norm)
         optimizer.step()

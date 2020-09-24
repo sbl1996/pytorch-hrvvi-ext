@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from torch.cuda.amp import autocast
 
 from horch.common import convert_tensor
@@ -9,9 +8,9 @@ from horch.train.v3.learner import Learner, backward, optimizer_step
 class CNNLearner(Learner):
 
     def __init__(self, model, criterion, optimizer, lr_scheduler,
-                 clip_grad_norm=5, **kwargs):
+                 grad_clip_norm=5, **kwargs):
         super().__init__(model, criterion, optimizer,
-                         lr_scheduler, clip_grad_norm=clip_grad_norm, **kwargs)
+                         lr_scheduler, grad_clip_norm=grad_clip_norm, **kwargs)
 
     def train_batch(self, batch):
         state = self._state['train']

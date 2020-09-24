@@ -15,6 +15,7 @@ def log_metrics(stage, metrics, epochs, writer, metric_history, stage_name=None)
     log_str += ", ".join(metric_logs)
     print(log_str)
 
+
 def config_callbacks(
     learner,
     callbacks=None,
@@ -157,8 +158,8 @@ class ModelCheckpoint(Callback):
             self.learner.save()
 
     def on_train_end(self):
-            path = '{}/final'.format(self.get_save_dir())
-            print('save checkpoint at %d' % (path))
+        path = '{}/final'.format(self.get_save_dir())
+        print('save checkpoint at %d' % path)
 
 
 class TrainEvalLogger(Callback):
