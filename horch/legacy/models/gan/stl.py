@@ -25,7 +25,7 @@ class ResNetGenerator(nn.Module):
 
         if use_sn:
             spectral_norm(self.dense)
-            spectral_norm(self.conv.conv)
+            spectral_norm(self.conv.stem)
 
     def forward(self, x):
         x = self.dense(x).view(x.size(0), -1, 6, 6)

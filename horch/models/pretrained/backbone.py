@@ -77,7 +77,7 @@ class ShuffleNetV2(nn.Module):
         net = ptcv_get_model(self.mult2name[mult], pretrained=pretrained)
         del net.output
         net = net.features
-        self.layer1 = net.init_block.conv
+        self.layer1 = net.init_block.stem
         self.layer2 = net.init_block.pool
         self.layer3 = net.stage1
         self.layer4 = net.stage2
@@ -137,7 +137,7 @@ class ShuffleNetV2b(nn.Module):
         net = ptcv_get_model(self.mult2name[mult], pretrained=pretrained)
         del net.output
         net = net.features
-        self.layer1 = net.init_block.conv
+        self.layer1 = net.init_block.stem
         self.layer2 = net.init_block.pool
         self.layer3 = net.stage1
         self.layer4 = net.stage2
@@ -298,7 +298,7 @@ class EfficientNet(nn.Module):
         self._kernel_sizes = [3]
         self._strides = [2]
         self.layer1 = nn.Sequential(
-            features.init_block.conv,
+            features.init_block.stem,
             features.stage1,
             features.stage2.unit1.conv1,
         )
@@ -517,7 +517,7 @@ class ResNet(nn.Module):
         net = ptcv_get_model(name, pretrained=pretrained)
         del net.output
         net = net.features
-        self.layer1 = net.init_block.conv
+        self.layer1 = net.init_block.stem
         self.layer2 = nn.Sequential(
             net.init_block.pool,
             net.stage1,
@@ -608,7 +608,7 @@ class Backbone(nn.Module):
         net = ptcv_get_model(name, pretrained=pretrained)
         del net.output
         net = net.features
-        self.layer1 = net.init_block.conv
+        self.layer1 = net.init_block.stem
         self.layer2 = nn.Sequential(
             net.init_block.pool,
             net.stage1,
@@ -672,7 +672,7 @@ class ESPNetv2(nn.Module):
             net.stage1[-1].activ.num_parameters,
             net.stage2[-1].activ.num_parameters,
             net.stage3[-1].activ.num_parameters,
-            net.final_block.conv2.conv.out_channels if include_final else net.stage4[-1].activ.num_parameters,
+            net.final_block.conv2.stem.out_channels if include_final else net.stage4[-1].activ.num_parameters,
         ]
         self.out_channels = [
             out_channels[i-2] for i in feature_levels
@@ -721,22 +721,22 @@ class MobileNetV3(nn.Module):
         self.layer1 = features[:2]
         self.layer2 = nn.Sequential(
             features[2:4],
-            features[4].conv[:3],
+            features[4].stem[:3],
         )
         self.layer3 = nn.Sequential(
-            features[4].conv[3:],
+            features[4].stem[3:],
             *features[5:7],
-            features[7].conv[:3],
+            features[7].stem[:3],
         )
         self.layer4 = nn.Sequential(
-            features[7].conv[3:],
+            features[7].stem[3:],
             *features[8:13],
-            features[13].conv[:3],
+            features[13].stem[:3],
         )
         self.layer5 = nn.Sequential(
-            features[13].conv[3:],
+            features[13].stem[3:],
             *features[14:],
-            backbone.conv
+            backbone.stem
         )
 
         self.out_channels = [

@@ -1,8 +1,8 @@
 import torch.nn as nn
 
-from horch.nn import DropPath
+from horch.nn import DropPath, GlobalAvgPool
 from horch.models.attention import SEModule
-from horch.models.layers import Act, Conv2d, Norm
+from horch.models.layers import Act, Conv2d, Norm, Linear
 
 
 class DownBlock(nn.Module):
@@ -56,9 +56,7 @@ class BasicBlock(nn.Sequential):
             self.drop_path = DropPath(drop_path)
 
     def forward(self, x):
-        identity = x
-        x = super().forward(x)
-        return x + identity
+        return x + super().forward(x)
 
 
 class ResNet(nn.Module):
@@ -67,7 +65,7 @@ class ResNet(nn.Module):
     def __init__(self, depth, k, num_classes=10, dropout=0, use_se=False, drop_path=0):
         super().__init__()
         num_blocks = (depth - 4) // 6
-        self.conv = Conv2d(3, self.stages[0], kernel_size=3)
+        self.stem = Conv2d(3, self.stages[0], kernel_size=3)
 
         self.layer1 = self._make_layer(
             self.stages[0] * 1, self.stages[1] * k, num_blocks, stride=1,
@@ -79,10 +77,15 @@ class ResNet(nn.Module):
             self.stages[2] * k, self.stages[3] * k, num_blocks, stride=2,
             dropout=dropout, use_se=use_se, drop_path=drop_path)
 
-        self.norm = Norm(self.stages[3] * k)
-        self.act = Act('def')
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Linear(self.stages[3] * k, num_classes)
+        self.post_activ = nn.Sequential(
+            Norm(self.stages[3] * k),
+            Act()
+        )
+
+        self.classifier = nn.Sequential(
+            GlobalAvgPool(),
+            Linear(self.stages[3] * k, num_classes),
+        )
 
     def _make_layer(self, in_channels, out_channels, blocks, stride,
                     dropout, use_se, drop_path):
@@ -95,17 +98,15 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.conv(x)
+        x = self.stem(x)
 
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
 
-        x = self.norm(x)
-        x = self.act(x)
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
+        x = self.post_activ(x)
+
+        x = self.classifier(x)
         return x
 
 
