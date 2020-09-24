@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.nn import DropPath, GlobalAvgPool
-from horch.models.layers import Act, Norm, Pool2d, Conv2d, Linear
+from horch.models.layers import Act, Pool2d, Conv2d, Linear
 
 from horch.nas.nasnet.genotypes import Genotype
 from horch.nas.operations import FactorizedReduce, ReLUConvBN, OPS

@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 
 from horch.common import convert_tensor
-from horch.train.v3.learner import Learner, requires_grad, backward
+from horch.train.v3.learner import Learner, requires_grad, backward, optimizer_step
 
 
 class DARTSLearner(Learner):
@@ -24,20 +25,20 @@ class DARTSLearner(Learner):
         if self.train_arch:
             requires_grad(network, arch=True, model=False)
             optimizer_arch.zero_grad()
-            logits_search = network(input_search)
-            loss_search = self.criterion(logits_search, target_search)
-            backward(loss_search, optimizer_arch, self.fp16)
-            optimizer_arch.step()
+            with autocast(self.fp16):
+                logits_search = network(input_search)
+                loss_search = self.criterion(logits_search, target_search)
+            backward(self, loss_search)
+            optimizer_step(self, optimizer_arch)
 
         requires_grad(network, arch=False, model=True)
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
         optimizer_model.zero_grad()
-        logits = network(input)
-        loss = self.criterion(logits, target)
-        backward(loss, optimizer_model, self.fp16)
-        if self.clip_grad_norm:
-            nn.utils.clip_grad_norm_(network.parameters(), self.clip_grad_norm)
-        optimizer_model.step()
+        with autocast(self.fp16):
+            logits = network(input)
+            loss = self.criterion(logits, target)
+        backward(self, loss)
+        optimizer_step(self, optimizer_model, network.parameters())
 
         state.update({
             "loss": loss.item(),

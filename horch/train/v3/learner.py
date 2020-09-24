@@ -42,8 +42,7 @@ class Learner(Serializable, metaclass=ABCMeta):
             criterion.to(device)
 
         if fp16:
-            from apex import amp
-            model, optimizers = amp.initialize(model, optimizers, opt_level="O1", verbosity=0)
+            self.scaler = torch.cuda.amp.GradScaler()
 
         self.model = model
         self.criterion = criterion
@@ -206,11 +205,32 @@ def requires_grad(network: nn.Module, arch: bool, model: bool):
         p.requires_grad_(model)
 
 
-def backward(loss, optimizer, fp16):
-    if fp16:
-        from apex import amp
-        with amp.scale_loss(loss, optimizer) as scaled_loss:
-            scaled_loss.backward()
+# def backward(loss, optimizer, fp16):
+#     if fp16:
+#         from apex import amp
+#         with amp.scale_loss(loss, optimizer) as scaled_loss:
+#             scaled_loss.backward()
+#     else:
+#         loss.backward()
+#     return
+
+def backward(learner, loss):
+    if learner.fp16:
+        scaler = learner.scaler
+        scaler.scale(loss).backward()
     else:
         loss.backward()
-    return
+
+
+def optimizer_step(learner, optimizer, params=None):
+    if learner.fp16:
+        scaler = learner.scaler
+        if hasattr(learner, "clip_grad_norm") and learner.clip_grad_norm and params:
+            scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(params, learner.clip_grad_norm)
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        if hasattr(learner, "clip_grad_norm") and learner.clip_grad_norm and params:
+            nn.utils.clip_grad_norm_(params, learner.clip_grad_norm)
+        optimizer.step()

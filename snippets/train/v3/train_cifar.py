@@ -10,6 +10,7 @@ from horch.nn import CrossEntropyLoss, DropPath
 from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.models.cifar.nasnet import NASNet
 from horch.nas.nasnet.genotypes import Genotype
+from horch.train import manual_seed
 from horch.train.v3.callbacks import Callback
 
 from horch.train.v3.cls import CNNLearner
@@ -17,6 +18,7 @@ from horch.train.v3.cls.metrics import Accuracy
 from horch.train.v3.metrics import TrainLoss, Loss
 from horch.transforms.classification import CIFAR10Policy, Cutout
 
+manual_seed(0)
 # torch.backends.cudnn.benchmark = True
 torch.autograd.set_detect_anomaly(True)
 train_transform = Compose([

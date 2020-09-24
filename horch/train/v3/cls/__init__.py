@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 
 from horch.common import convert_tensor
-from horch.train.v3.learner import Learner, backward
+from horch.train.v3.learner import Learner, backward, optimizer_step
 
 
 class CNNLearner(Learner):
@@ -23,16 +24,16 @@ class CNNLearner(Learner):
 
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
         optimizer.zero_grad()
-        outputs = self.model(input)
-        if isinstance(outputs, tuple) and len(outputs) == 2:
-            logits, logits_aux = outputs
-        else:
-            logits = outputs
-        loss = self.criterion(outputs, target)
-        backward(loss, optimizer, self.fp16)
-        if self.clip_grad_norm:
-            nn.utils.clip_grad_norm_(model.parameters(), self.clip_grad_norm)
-        optimizer.step()
+
+        with autocast(enabled=self.fp16):
+            outputs = self.model(input)
+            if isinstance(outputs, tuple) and len(outputs) == 2:
+                logits, logits_aux = outputs
+            else:
+                logits = outputs
+            loss = self.criterion(outputs, target)
+        backward(self, loss)
+        optimizer_step(self, optimizer, model.parameters())
 
         state.update({
             "loss": loss.item(),
