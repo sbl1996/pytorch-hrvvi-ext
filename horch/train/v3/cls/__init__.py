@@ -47,8 +47,9 @@ class CNNLearner(Learner):
 
         model.eval()
         input, target = convert_tensor(batch, self.device)
-        with torch.no_grad():
-            output = model(input)
+        with autocast(enabled=self.fp16):
+            with torch.no_grad():
+                output = model(input)
 
         state.update({
             "batch_size": input.size(0),

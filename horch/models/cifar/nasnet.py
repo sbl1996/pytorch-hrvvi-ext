@@ -2,7 +2,6 @@ from toolz.curried import concat
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from horch.nn import DropPath, GlobalAvgPool
 from horch.models.layers import Act, Pool2d, Conv2d, Linear
