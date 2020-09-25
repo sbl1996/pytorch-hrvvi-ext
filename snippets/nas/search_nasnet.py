@@ -9,7 +9,7 @@ from torchvision.transforms import ToTensor, Normalize, Compose, RandomCrop, Ran
 
 from horch.datasets import train_test_split, CombineDataset
 from horch.defaults import set_defaults
-from horch.nas.nasnet.search.gdas import Network, TauSchedule
+from horch.nas.darts.search.gdas import Network, TauSchedule
 
 from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.train import manual_seed

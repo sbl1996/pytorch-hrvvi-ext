@@ -6,7 +6,7 @@ import torch.nn as nn
 from horch.nn import DropPath, GlobalAvgPool
 from horch.models.layers import Act, Pool2d, Conv2d, Linear
 
-from horch.nas.nasnet.genotypes import Genotype
+from horch.nas.darts.genotypes import Genotype
 from horch.nas.operations import FactorizedReduce, ReLUConvBN, OPS
 
 
@@ -111,7 +111,7 @@ class AuxiliaryHeadCIFAR(nn.Module):
         return x
 
 
-class NASNet(nn.Module):
+class DARTS(nn.Module):
 
     def __init__(self, C, layers, auxiliary, drop_path, num_classes, genotype):
         super().__init__()

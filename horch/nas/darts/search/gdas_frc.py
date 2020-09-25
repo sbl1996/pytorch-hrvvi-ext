@@ -2,14 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.nas.nasnet.search.darts import parse_weights
+from horch.nas.darts.search.darts import parse_weights
 from horch.nn import GlobalAvgPool
 from horch.models.layers import Norm, Conv2d, Act
 
 from horch.nas.operations import ReLUConvBN
-from horch.nas.nasnet.genotypes import Genotype
+from horch.nas.darts.genotypes import Genotype
 from horch.nas.primitives import get_primitives
-from horch.nas.nasnet.search.gdas import Cell, gumbel_sample
+from horch.nas.darts.search.gdas import Cell, gumbel_sample
 
 
 class NormalCell(Cell):

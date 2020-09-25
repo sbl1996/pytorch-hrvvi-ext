@@ -5,9 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from horch.nas.operations import OPS
-from horch.nas.nasnet.genotypes import Genotype
+from horch.nas.darts.genotypes import Genotype
 from horch.nas.primitives import get_primitives
-import horch.nas.nasnet.search.darts as darts
+import horch.nas.darts.search.darts as darts
 
 
 def channel_shuffle(x, g):

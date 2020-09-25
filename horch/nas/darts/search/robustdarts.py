@@ -7,7 +7,7 @@ from horch.models.layers import Seq
 
 from horch.nas.operations import OPS
 from horch.nas.primitives import get_primitives
-from horch.nas.nasnet.search import darts
+from horch.nas.darts.search import darts
 
 
 class MixedOp(nn.Module):

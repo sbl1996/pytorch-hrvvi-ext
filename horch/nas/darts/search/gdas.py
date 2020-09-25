@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from horch.nas.nasnet.search import darts
+from horch.nas.darts.search import darts
 from horch.train.v3.callbacks import Callback
 
 

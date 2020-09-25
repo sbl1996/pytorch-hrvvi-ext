@@ -1,5 +1,5 @@
 import torch.nn.functional as F
-from horch.nas.nasnet.search.gdas import TauSchedule, gumbel_sample
+from horch.nas.darts.search.gdas import TauSchedule, gumbel_sample
 from horch.nas.nas_bench_201.search import darts
 
 

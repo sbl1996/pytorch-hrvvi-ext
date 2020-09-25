@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from horch.nas.nasnet.search.pc_darts import beta_softmax, channel_shuffle
+from horch.nas.darts.search.pc_darts import beta_softmax, channel_shuffle
 from horch.nas.operations import OPS
 from horch.nas.primitives import PRIMITIVES_nas_bench_201
 import horch.nas.nas_bench_201.search.darts as darts

@@ -70,6 +70,8 @@ class Learner(Serializable, metaclass=ABCMeta):
         # epoch -> stage -> metric -> value
         self.metric_history = MetricHistory(["train", "eval", "test"])
 
+        self._terminated = False
+
     def train_batch(self, batch):
         pass
 
@@ -149,6 +151,9 @@ class Learner(Serializable, metaclass=ABCMeta):
                 self._run_one_epoch(val_loader, cbks, 'eval')
                 cbks.after_eval(self._state['eval'])
 
+            if self._terminated:
+                print("Terminated at epoch %d" % epochs)
+                break
         cbks.after_train(state)
 
     def _run_one_epoch(self, data_loader, callbacks, mode):

@@ -9,7 +9,7 @@ from horch.datasets import train_test_split
 from horch.nn import CrossEntropyLoss, DropPath
 from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.models.cifar.nasnet import NASNet
-from horch.nas.nasnet.genotypes import Genotype
+from horch.nas.darts.genotypes import Genotype
 from horch.train import manual_seed
 from horch.train.v3.callbacks import Callback
 
