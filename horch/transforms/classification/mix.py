@@ -12,7 +12,6 @@ def rand_bbox(shape, lam):
     cut_w = np.int(W * cut_rat)
     cut_h = np.int(H * cut_rat)
 
-    # uniform
     cx = np.random.randint(W)
     cy = np.random.randint(H)
 
@@ -58,7 +57,7 @@ class CutMix(Dataset):
             bbx1, bby1, bbx2, bby2 = rand_bbox(image.shape, lam)
             image[:, bby1:bby2, bbx1:bbx2] = image2[:, bby1:bby2, bbx1:bbx2]
 
-            lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (image.shape[1] * image.shape[2]))
+            lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (image.shape[-1] * image.shape[-2]))
             lb_onehot = lb_onehot * lam + lb2_onehot * (1. - lam)
 
         return image, lb_onehot
