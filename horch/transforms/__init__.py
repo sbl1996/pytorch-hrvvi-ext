@@ -56,7 +56,6 @@ class Compose(Transform):
 
     def __call__(self, img, target):
         for t in self.transforms:
-            print(t)
             if isinstance(t, Transform):
                 img, target = t(img, target)
             else:
