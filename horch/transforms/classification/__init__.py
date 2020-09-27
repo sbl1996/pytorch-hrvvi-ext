@@ -58,7 +58,7 @@ class Cutout(Transform):
         return img
 
 
-class PadToSquare(Transform):
+class PadToSquare:
     """Pad the given PIL Image on all sides with the given "pad" value.
 
     Args:

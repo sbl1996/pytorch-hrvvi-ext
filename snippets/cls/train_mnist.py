@@ -12,7 +12,7 @@ from horch.nn import Flatten
 from horch.train import manual_seed
 from horch.optim.lr_scheduler import CosineAnnealingLR
 
-from horch.train.v3.callbacks import Callback
+from horch.train.v3.callbacks import Callback, EMA
 from horch.train.v3.cls import CNNLearner
 from horch.train.v3.metrics import TrainLoss, Loss
 from horch.train.v3.cls.metrics import Accuracy
@@ -87,13 +87,7 @@ train_loader = DataLoader(ds_train, batch_size=128, shuffle=True, num_workers=2,
 val_loader = DataLoader(ds_val, batch_size=128)
 test_loader = DataLoader(ds_test, batch_size=128)
 
-# class TrySave(Callback):
-#
-#     def after_epoch(self, state):
-#         if state['epoch'] == 3:
-#             self.learner.save()
-trainer.fit(train_loader, 5, val_loader=val_loader)
-# trainer.save()
-# print(trainer.fit(train_loader, 2, val_loader=val_loader))
+trainer.fit(train_loader, 5, val_loader=val_loader,
+            callbacks=[EMA(0.99)])
 
 trainer.evaluate(test_loader)
