@@ -1,6 +1,8 @@
 from toolz import curry
 from hhutil.io import time_now
 
+from horch.train.ema import ExponentialMovingAverage
+
 
 @curry
 def log_metrics(stage, metrics, epochs, writer, metric_history, stage_name=None):
@@ -44,9 +46,11 @@ class CallbackList(object):
         self.callbacks = [c for c in callbacks]
         for c in self.callbacks:
             c.learner = learner
+            c.init()
 
     def append(self, callback):
         callback.learner = self.learner
+        callback.init()
         self.callbacks.append(callback)
 
     def __iter__(self):
@@ -105,6 +109,9 @@ class Callback(object):
 
     def __init__(self):
         self.learner = None
+
+    def init(self):
+        pass
 
     def begin_train(self, state):
         pass
@@ -201,3 +208,23 @@ class EvalLogger(Callback):
         if self._is_print():
             log_metrics('eval', state['metrics'], state['epochs'], learner._writer, learner.metric_history,
                         stage_name='valid')
+
+
+class EMA(Callback):
+
+    def __init__(self, decay):
+        super().__init__()
+        self.decay = decay
+
+    def init(self):
+        self.ema = ExponentialMovingAverage(self.learner.model, self.decay)
+        self.ema.register()
+
+    def after_batch(self, state):
+        self.ema.update()
+
+    def begin_eval(self, state):
+        self.ema.apply_shadow()
+
+    def after_eval(self, state):
+        self.ema.restore()
