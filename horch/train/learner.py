@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-from hhutil.io import fmt_path
+from hhutil.io import fmt_path, time_now
 
 from horch.common import CUDA
 from horch.train.base import StatefulList, Serializable
@@ -135,6 +135,8 @@ class Learner(Serializable, metaclass=ABCMeta):
         start_epoch = self._state['train'].get('epoch', 0)
         epochs = epochs + start_epoch
         self.set_global_state("epochs", epochs)
+
+        print("%s Start training" % (time_now(),))
 
         state = self._state['train']
         state['metrics'] = {}
