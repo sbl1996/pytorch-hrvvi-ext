@@ -2,16 +2,13 @@ from abc import ABCMeta, abstractmethod
 from typing import Any
 from toolz.curried import get
 
-from horch.train.callback import Callback
-
-
 class NotComputableError(RuntimeError):
     """
     Exception class to raise if Metric cannot be computed.
     """
 
 
-class Metric(Callback, metaclass=ABCMeta):
+class Metric(metaclass=ABCMeta):
 
     def __init__(self, output_transform=lambda x: x, name=None):
         super().__init__()
@@ -22,49 +19,15 @@ class Metric(Callback, metaclass=ABCMeta):
 
     @abstractmethod
     def reset(self) -> None:
-        """
-        Resets the metric to it's initial state.
-
-        This is called at the start of each epoch.
-        """
         pass
 
     @abstractmethod
     def update(self, output) -> None:
-        """
-        Updates the metric's state using the passed batch output.
-
-        This is called once for each batch.
-
-        Args:
-            output: the is the output from the engine's process function.
-        """
         pass
 
     @abstractmethod
     def compute(self) -> Any:
-        """
-        Computes the metric based on it's accumulated state.
-
-        This is called at the end of each epoch.
-
-        Returns:
-            Any: the actual quantity of interest. However, if a :class:`~collections.abc.Mapping` is returned,
-                 it will be (shallow) flattened into `engine.state.metrics` when
-                 :func:`~ignite.metrics.Metric.completed` is called.
-
-        Raises:
-            NotComputableError: raised when the metric cannot be computed.
-        """
         pass
-
-    def on_epoch_begin(self, engine):
-        self.reset()
-
-    def on_batch_end(self, engine):
-        output = self._output_transform(engine.state.output)
-        self.update(output)
-        engine.state.metrics[self.name] = self.compute()
 
 
 class Average(Metric):
@@ -96,8 +59,8 @@ class TrainLoss(Average):
         super().__init__(output_transform=self.output_transform, name=name)
 
     @staticmethod
-    def output_transform(output):
-        return get(["loss", "batch_size"], output)
+    def output_transform(state):
+        return get(["loss", "batch_size"], state)
 
 
 class Loss(Average):
@@ -106,7 +69,7 @@ class Loss(Average):
         self.criterion = criterion
         super().__init__(output_transform=self.output_transform, name=name)
 
-    def output_transform(self, output):
-        y_true, y_pred = get(["y_true", "y_pred"], output)
+    def output_transform(self, state):
+        y_true, y_pred = get(["y_true", "y_pred"], state)
         loss = self.criterion(y_pred, y_true).item()
         return loss, y_pred.shape[0]

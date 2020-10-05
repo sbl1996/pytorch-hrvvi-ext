@@ -1,5 +1,3 @@
-import torch
-import torch.nn as nn
 from torch.optim import SGD
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10
@@ -11,12 +9,12 @@ from horch.optim.lr_scheduler import CosineAnnealingLR
 from horch.models.cifar.nasnet import NASNet
 from horch.nas.darts.genotypes import Genotype
 from horch.train import manual_seed
-from horch.train.v3.callbacks import Callback
+from horch.train.callbacks import Callback
 
-from horch.train.v3.cls import CNNLearner
-from horch.train.v3.cls.metrics import Accuracy
-from horch.train.v3.metrics import TrainLoss, Loss
-from horch.transforms.classification import CIFAR10Policy, Cutout
+from horch.train.cls import CNNLearner
+from horch.train.cls import Accuracy
+from horch.train.metrics import TrainLoss, Loss
+from horch.transforms.classification import Cutout
 
 manual_seed(0)
 # torch.backends.cudnn.benchmark = True

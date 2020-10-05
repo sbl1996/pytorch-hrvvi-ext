@@ -12,10 +12,10 @@ from horch.nn import Flatten
 from horch.train import manual_seed
 from horch.optim.lr_scheduler import CosineAnnealingLR
 
-from horch.train.v3.callbacks import Callback, EMA
-from horch.train.v3.cls import CNNLearner
-from horch.train.v3.metrics import TrainLoss, Loss
-from horch.train.v3.cls.metrics import Accuracy
+from horch.train.callbacks import EMA
+from horch.train.cls import CNNLearner
+from horch.train.metrics import TrainLoss, Loss
+from horch.train.cls.metrics import Accuracy
 
 manual_seed(0)
 

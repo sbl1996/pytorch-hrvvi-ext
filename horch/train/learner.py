@@ -12,7 +12,7 @@ from hhutil.io import fmt_path
 from horch.common import CUDA
 from horch.train.base import StatefulList, Serializable
 from horch.train.metric_history import MetricHistory
-from horch.train.v3.callbacks import config_callbacks
+from horch.train.callbacks import config_callbacks
 
 
 def find_most_recent(work_dir, pattern):

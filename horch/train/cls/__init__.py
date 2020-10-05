@@ -1,99 +1,72 @@
-from typing import Union, Callable, Optional, Mapping
-
 import torch
-import torch.nn as nn
-from ignite.utils import convert_tensor
-from torch.nn.utils import clip_grad_norm_
-from torch.optim.optimizer import Optimizer
+from torch.cuda.amp import autocast
 
-from horch.common import CUDA
-from horch.train.engine import Engine, backward
-from horch.train.metrics import Metric
-from horch.train.trainer_base import TrainerBase
+from horch.common import convert_tensor
+from horch.train.learner import Learner, backward, optimizer_step
 
 
-def create_supervised_trainer(
-    model: nn.Module,
-    criterion: Union[Callable, nn.Module],
-    optimizer: Optimizer,
-    metrics: Mapping[str, Metric],
-    device: Union[str, torch.device] = 'auto',
-    clip_grad_norm: Optional[float] = None,
-    fp16: bool = False,
-):
-    if device == 'auto':
-        device = 'cuda' if CUDA else "cpu"
+class CNNLearner(Learner):
 
-    def train_batch(engine, batch):
-        engine.model.train()
+    def __init__(self, model, criterion, optimizer, lr_scheduler,
+                 grad_clip_norm=5, **kwargs):
+        super().__init__(model, criterion, optimizer,
+                         lr_scheduler, grad_clip_norm=grad_clip_norm, **kwargs)
 
-        x, y_true = convert_tensor(batch, device)
+    def train_batch(self, batch):
+        state = self._state['train']
+        model = self.model
+        optimizer = self.optimizers[0]
+        lr_scheduler = self.lr_schedulers[0]
 
-        logits = engine.model(x)
-        loss = engine.criterion(logits, y_true)
-        backward(loss, engine.optimizer, fp16)
-        engine.optimizer.step()
-        engine.optimizer.zero_grad()
-        if clip_grad_norm:
-            clip_grad_norm_(model.parameters(), clip_grad_norm)
+        model.train()
+        input, target = convert_tensor(batch, self.device)
 
-        outs = {
+        lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
+        optimizer.zero_grad()
+
+        with autocast(enabled=self.fp16):
+            outputs = self.model(input)
+            if isinstance(outputs, tuple) and len(outputs) == 2:
+                logits, logits_aux = outputs
+            else:
+                logits = outputs
+            loss = self.criterion(outputs, target)
+        backward(self, loss)
+        optimizer_step(self, optimizer, model.parameters())
+
+        state.update({
             "loss": loss.item(),
-            "batch_size": x.size(0),
-            "y_true": y_true,
+            "batch_size": input.size(0),
+            "y_true": target,
             "y_pred": logits.detach(),
-            "lr": engine.optimizer.param_groups[0]['lr'],
-        }
-        return outs
+        })
 
-    callbacks = []
-    for k, v in metrics.items():
-        callbacks.append(v)
-    engine = Engine(
-        train_batch, callbacks,
-        model=model, criterion=criterion, optimizer=optimizer)
-    return engine
+    def eval_batch(self, batch):
+        state = self._state['eval']
+        model = self.model
 
+        model.eval()
+        input, target = convert_tensor(batch, self.device)
+        with autocast(enabled=self.fp16):
+            with torch.no_grad():
+                output = model(input)
 
-def create_supervised_evaluator(
-    model: nn.Module,
-    metrics: Mapping[str, Metric],
-    device: Union[str, torch.device] = 'auto',
-):
-    if device == 'auto':
-        device = 'cuda' if CUDA else "cpu"
+        state.update({
+            "batch_size": input.size(0),
+            "y_true": target,
+            "y_pred": output,
+        })
 
-    def test_batch(engine, batch):
-        engine.model.eval()
+    def test_batch(self, batch):
+        state = self._state['test']
+        model = self.model
 
-        x, y_true = convert_tensor(batch, device)
-
+        model.eval()
+        input = convert_tensor(batch, self.device)
         with torch.no_grad():
-            logits = engine.model(x)
+            output = model(input)
 
-        output = {
-            "y_true": y_true,
-            "y_pred": logits,
-            "batch_size": x.shape[0],
-        }
-
-        return output
-
-    callbacks = []
-    for k, v in metrics.items():
-        callbacks.append(v)
-    engine = Engine(test_batch, callbacks, model=model)
-
-    return engine
-
-
-class Trainer(TrainerBase):
-
-    def _create_train_engine(self):
-        engine = create_supervised_trainer(
-            self.model, self.criterion, self.optimizers[0], self.metrics, self.device, fp16=self.fp16)
-        return engine
-
-    def _create_eval_engine(self):
-        engine = create_supervised_evaluator(self.model, self.test_metrics, self.device)
-        return engine
+        state.update({
+            "batch_size": input.size(0),
+            "y_pred": output,
+        })

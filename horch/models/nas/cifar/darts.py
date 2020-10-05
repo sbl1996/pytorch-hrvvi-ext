@@ -6,8 +6,8 @@ import torch.nn as nn
 from horch.nn import DropPath, GlobalAvgPool
 from horch.models.layers import Act, Pool2d, Conv2d, Linear
 
-from horch.nas.darts.genotypes import Genotype
-from horch.nas.operations import FactorizedReduce, ReLUConvBN, OPS
+from horch.models.nas.genotypes import Genotype
+from horch.models.nas.operations import FactorizedReduce, ReLUConvBN, OPS
 
 
 def standardize(genotype: Genotype):

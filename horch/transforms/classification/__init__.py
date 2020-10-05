@@ -200,3 +200,16 @@ class RandomRotation(object):
         format_string += ', fillcolor={0}'.format(self.fillcolor)
         format_string += ')'
         return format_string
+
+
+# class RandomLighting:
+#
+#     def __init__(self):
+#         self.eigen_vecs = np.array(
+#             [[-0.5675, 0.7192, 0.4009], [-0.5808, -0.0045, -0.8140], [-0.5836, -0.6948, 0.4203]]
+#         )
+#         self.eigen_vals = np.array([0.2175, 0.0188, 0.0045])
+#
+#     def __call__(self, img):
+#         weights = np.random.normal(scale=255, size=3)
+#

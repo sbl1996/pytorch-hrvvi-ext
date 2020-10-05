@@ -32,8 +32,8 @@ class TopKAccuracy(Average):
         name = self._init_name(name)
         super().__init__(self.output_transform, name)
 
-    def output_transform(self, output):
-        y_true, y_pred = get(["y_true", "y_pred"], output)
+    def output_transform(self, state):
+        y_true, y_pred = get(["y_true", "y_pred"], state)
         return topk_accuracy(y_true, y_pred, self.k)
 
     def _init_name(self, name):
@@ -48,8 +48,8 @@ class Accuracy(Average):
         super().__init__(self.output_transform, name)
 
     @staticmethod
-    def output_transform(output):
-        y_true, y_pred = get(["y_true", "y_pred"], output)
+    def output_transform(state):
+        y_true, y_pred = get(["y_true", "y_pred"], state)
         return accuracy(y_true, y_pred)
 
 
@@ -62,8 +62,8 @@ class ROCAUC(Metric):
         self.y_preds = []
         self.y_trues = []
 
-    def update(self, output):
-        y_true, y_pred = get(["y_true", "y_pred"], output)
+    def update(self, state):
+        y_true, y_pred = get(["y_true", "y_pred"], state)
         self.y_preds.append(y_pred)
         self.y_trues.append(y_true)
 
@@ -73,3 +73,24 @@ class ROCAUC(Metric):
         y_score = F.softmax(y_pred, dim=1)[:, 1].cpu().numpy()
         y_true = y_true.cpu().numpy()
         return roc_auc_score(y_true, y_score)
+
+
+class EpochSummary(Metric):
+
+    def __init__(self, metric_func):
+        super().__init__()
+        self.metric_func = metric_func
+
+    def reset(self):
+        self.y_preds = []
+        self.y_trues = []
+
+    def update(self, state):
+        y_true, y_pred = get(["y_true", "y_pred"], state)
+        self.y_preds.append(y_pred)
+        self.y_trues.append(y_true)
+
+    def compute(self):
+        y_pred = torch.cat(self.y_preds, dim=0)
+        y_true = torch.cat(self.y_trues, dim=0)
+        return self.metric_func(y_true, y_pred)
