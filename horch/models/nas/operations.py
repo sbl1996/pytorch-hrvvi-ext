@@ -14,13 +14,13 @@ OPS = {
         Norm(C),
     ),
     'skip_connect': lambda C, stride: nn.Identity() if stride == 1 else FactorizedReduce(C, C),
-    'sep_conv_3x3': lambda C, stride: SepConv(C, C, 3, stride, 1),
-    'sep_conv_5x5': lambda C, stride: SepConv(C, C, 5, stride, 2),
-    'sep_conv_7x7': lambda C, stride: SepConv(C, C, 7, stride, 3),
+    'sep_conv_3x3': lambda C, stride: SepConv(C, C, 3, stride),
+    'sep_conv_5x5': lambda C, stride: SepConv(C, C, 5, stride),
+    'sep_conv_7x7': lambda C, stride: SepConv(C, C, 7, stride),
     'nor_conv_1x1': lambda C, stride: ReLUConvBN(C, C, 1, stride),
     'nor_conv_3x3': lambda C, stride: ReLUConvBN(C, C, 3, stride),
     'dil_conv_3x3': lambda C, stride: DilConv(C, C, 3, stride, 2),
-    'dil_conv_5x5': lambda C, stride: DilConv(C, C, 5, stride, 4),
+    'dil_conv_5x5': lambda C, stride: DilConv(C, C, 5, stride, 2),
     'conv_7x1_1x7': lambda C, stride: nn.Sequential(
         Act('relu', inplace=False),
         Conv2d(C, C, (1, 7), stride=(1, stride), bias=False),
@@ -61,7 +61,7 @@ class DilConv(nn.Module):
 
 class SepConv(nn.Module):
 
-    def __init__(self, C_in, C_out, kernel_size, stride, padding):
+    def __init__(self, C_in, C_out, kernel_size, stride):
         super().__init__()
         self.op = nn.Sequential(
             Act('relu', inplace=False),
@@ -69,8 +69,8 @@ class SepConv(nn.Module):
             Conv2d(C_in, C_in, kernel_size=1, bias=False),
             Norm(C_in),
             Act('relu', inplace=False),
-            nn.Conv2d(C_in, C_in, kernel_size=kernel_size, stride=1, padding=padding, groups=C_in, bias=False),
-            nn.Conv2d(C_in, C_out, kernel_size=1, padding=0, bias=False),
+            Conv2d(C_in, C_in, kernel_size=kernel_size, stride=1, groups=C_in, bias=False),
+            Conv2d(C_in, C_out, kernel_size=1, bias=False),
             Norm(C_out),
         )
 

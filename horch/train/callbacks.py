@@ -228,3 +228,16 @@ class EMA(Callback):
 
     def after_eval(self, state):
         self.ema.restore()
+
+
+class DropPathSchedule(Callback):
+
+    def __init__(self, drop_path):
+        super().__init__()
+        self.drop_path = drop_path
+
+    def begin_epoch(self, state):
+        drop_path = self.drop_path * (state['epoch'] / state['epochs'])
+        for m in self.learner.model.modules():
+            if isinstance(m, DropPath):
+                m.p = drop_path
