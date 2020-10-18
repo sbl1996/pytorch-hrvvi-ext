@@ -44,12 +44,12 @@ class BasicBlock(nn.Sequential):
         super().__init__()
         self.norm1 = Norm(in_channels)
         self.act1 = Act()
-        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3)
+        self.conv1 = Conv2d(in_channels, out_channels, kernel_size=1)
         self.norm2 = Norm(out_channels)
         self.act2 = Act()
         if dropout:
             self.dropout = nn.Dropout(dropout)
-        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3)
+        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, groups=out_channels)
         if use_se:
             self.se = SEModule(out_channels, reduction=8)
         if drop_path:
