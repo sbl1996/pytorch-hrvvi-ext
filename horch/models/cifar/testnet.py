@@ -6,7 +6,7 @@ from horch.models.layers import Act, Conv2d, Norm, Linear
 
 
 class DownBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, dropout=0, use_se=False):
+    def __init__(self, in_channels, out_channels, stride=1, dropout=0, use_se=False, depthwise=True):
         super().__init__()
         self.use_se = use_se
         self._dropout = dropout
@@ -18,7 +18,7 @@ class DownBlock(nn.Module):
         self.act2 = Act()
         if self._dropout:
             self.dropout = nn.Dropout(dropout)
-        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, groups=out_channels)
+        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, groups=out_channels if depthwise else 1)
         if self.use_se:
             self.se = SEModule(out_channels, reduction=8)
 
@@ -40,7 +40,7 @@ class DownBlock(nn.Module):
 
 
 class BasicBlock(nn.Sequential):
-    def __init__(self, in_channels, out_channels, dropout, use_se, drop_path):
+    def __init__(self, in_channels, out_channels, dropout, use_se, drop_path, depthwise):
         super().__init__()
         self.norm1 = Norm(in_channels)
         self.act1 = Act()
@@ -49,7 +49,7 @@ class BasicBlock(nn.Sequential):
         self.act2 = Act()
         if dropout:
             self.dropout = nn.Dropout(dropout)
-        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, groups=out_channels)
+        self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, groups=out_channels if depthwise else 1)
         if use_se:
             self.se = SEModule(out_channels, reduction=8)
         if drop_path:
@@ -62,20 +62,20 @@ class BasicBlock(nn.Sequential):
 class ResNet(nn.Module):
     stages = [16, 16, 32, 64]
 
-    def __init__(self, depth, k, num_classes=10, dropout=0, use_se=False, drop_path=0):
+    def __init__(self, depth, k, num_classes=10, dropout=0, use_se=False, drop_path=0, depthwise=True):
         super().__init__()
         num_blocks = (depth - 4) // 6
         self.stem = Conv2d(3, self.stages[0], kernel_size=3)
 
         self.layer1 = self._make_layer(
             self.stages[0] * 1, self.stages[1] * k, num_blocks, stride=1,
-            dropout=dropout, use_se=use_se, drop_path=drop_path)
+            dropout=dropout, use_se=use_se, drop_path=drop_path, depthwise=depthwise)
         self.layer2 = self._make_layer(
             self.stages[1] * k, self.stages[2] * k, num_blocks, stride=2,
-            dropout=dropout, use_se=use_se, drop_path=drop_path)
+            dropout=dropout, use_se=use_se, drop_path=drop_path, depthwise=depthwise)
         self.layer3 = self._make_layer(
             self.stages[2] * k, self.stages[3] * k, num_blocks, stride=2,
-            dropout=dropout, use_se=use_se, drop_path=drop_path)
+            dropout=dropout, use_se=use_se, drop_path=drop_path, depthwise=depthwise)
 
         self.post_activ = nn.Sequential(
             Norm(self.stages[3] * k),
@@ -88,13 +88,14 @@ class ResNet(nn.Module):
         )
 
     def _make_layer(self, in_channels, out_channels, blocks, stride,
-                    dropout, use_se, drop_path):
+                    dropout, use_se, drop_path, depthwise):
         layers = [DownBlock(in_channels, out_channels, stride=stride,
-                            dropout=dropout, use_se=use_se)]
+                            dropout=dropout, use_se=use_se, depthwise=depthwise)]
         for i in range(1, blocks):
             layers.append(
                 BasicBlock(out_channels, out_channels,
-                           dropout=dropout, use_se=use_se, drop_path=drop_path))
+                           dropout=dropout, use_se=use_se,
+                           drop_path=drop_path, depthwise=depthwise))
         return nn.Sequential(*layers)
 
     def forward(self, x):
