@@ -5,14 +5,8 @@ from horch.models.layers import Conv2d, Act, Norm
 
 OPS = {
     'none': lambda C, stride: Zero(stride),
-    'avg_pool_3x3': lambda C, stride: nn.Sequential(
-        nn.AvgPool2d(3, stride=stride, padding=1, count_include_pad=False),
-        Norm(C),
-    ),
-    'max_pool_3x3': lambda C, stride: nn.Sequential(
-        nn.MaxPool2d(3, stride=stride, padding=1),
-        Norm(C),
-    ),
+    'avg_pool_3x3': lambda C, stride: nn.AvgPool2d(3, stride=stride, padding=1, count_include_pad=False),
+    'max_pool_3x3': lambda C, stride: nn.MaxPool2d(3, stride=stride, padding=1),
     'skip_connect': lambda C, stride: nn.Identity() if stride == 1 else FactorizedReduce(C, C),
     'sep_conv_3x3': lambda C, stride: SepConv(C, C, 3, stride),
     'sep_conv_5x5': lambda C, stride: SepConv(C, C, 5, stride),
