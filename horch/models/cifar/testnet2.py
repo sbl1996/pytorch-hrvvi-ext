@@ -3,9 +3,10 @@ from horch.models.layers import Conv2d, Norm, Act, Linear
 from horch.nn import GlobalAvgPool
 
 
-class PreActResBlock(nn.Sequential):
+class PreActResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, depthwise=True):
-        layers = [
+        super().__init__()
+        self.layers = nn.Sequential(
             Norm(in_channels),
             Act(),
             Conv2d(in_channels, out_channels, kernel_size=1),
@@ -16,15 +17,15 @@ class PreActResBlock(nn.Sequential):
             Norm(out_channels),
             Act(),
             Conv2d(out_channels, out_channels, kernel_size=1),
-        ]
+        )
+
         if in_channels != out_channels or stride != 1:
             self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)
         else:
             self.shortcut = nn.Identity()
-        super().__init__(*layers)
 
     def forward(self, x):
-        return self.shortcut(x) + super().forward(x)
+        return self.shortcut(x) + self.layers(x)
 
 
 class ResNet(nn.Module):
