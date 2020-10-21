@@ -1,6 +1,7 @@
 from toolz import curry
 from hhutil.io import time_now
 
+from horch.nn import DropPath
 from horch.train.ema import ExponentialMovingAverage
 
 
