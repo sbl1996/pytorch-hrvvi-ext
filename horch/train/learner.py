@@ -1,7 +1,6 @@
 from abc import ABCMeta
 from datetime import datetime
 from typing import Sequence, Mapping
-from fastcore.dispatch import patch
 
 import torch
 import torch.nn as nn
@@ -17,7 +16,6 @@ from horch.train.callbacks import config_callbacks
 
 def find_most_recent(work_dir, pattern):
     d = fmt_path(work_dir)
-    pattern = pattern
     saves = list(d.glob(pattern))
     if len(saves) == 0:
         raise FileNotFoundError("No checkpoint to load in %s" % work_dir)
@@ -73,13 +71,13 @@ class Learner(Serializable, metaclass=ABCMeta):
         self._terminated = False
 
     def train_batch(self, batch):
-        pass
+        raise NotImplementedError
 
     def eval_batch(self, batch):
-        pass
+        raise NotImplementedError
 
     def test_batch(self, batch):
-        pass
+        raise NotImplementedError
 
     def state_dict(self):
         return self._state
@@ -207,7 +205,6 @@ class Learner(Serializable, metaclass=ABCMeta):
         pass
 
 
-@patch
 def backward(learner: Learner, loss):
     if learner.fp16:
         scaler = learner.scaler
@@ -216,7 +213,6 @@ def backward(learner: Learner, loss):
         loss.backward()
 
 
-@patch
 def optimizer_step(learner: Learner, optimizer, grad_clip_params=None):
     if learner.fp16:
         scaler = learner.scaler

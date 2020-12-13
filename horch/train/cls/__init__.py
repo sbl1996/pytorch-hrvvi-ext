@@ -7,10 +7,8 @@ from horch.train.learner import Learner, backward, optimizer_step
 
 class CNNLearner(Learner):
 
-    def __init__(self, model, criterion, optimizer, lr_scheduler,
-                 grad_clip_norm=5, **kwargs):
-        super().__init__(model, criterion, optimizer,
-                         lr_scheduler, grad_clip_norm=grad_clip_norm, **kwargs)
+    def __init__(self, model, criterion, optimizer, lr_scheduler, **kwargs):
+        super().__init__(model, criterion, optimizer, lr_scheduler, **kwargs)
 
     def train_batch(self, batch):
         state = self._state['train']

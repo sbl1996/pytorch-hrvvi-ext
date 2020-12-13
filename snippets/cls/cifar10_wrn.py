@@ -1,4 +1,4 @@
-from torch.optim import SGD
+from torch.optim import SGD, Adam
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomCrop, RandomHorizontalFlip
@@ -23,7 +23,7 @@ train_transform = Compose([
     # CIFAR10Policy(),
     ToTensor(),
     Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261)),
-    Cutout(1, 16),
+    # Cutout(1, 16),
 ])
 
 test_transform = Compose([
@@ -36,9 +36,21 @@ ds_train = CIFAR10(data_home, train=True, download=True, transform=train_transfo
 ds_test = CIFAR10(data_home, train=False, download=True, transform=test_transform)
 ds_train = train_test_split(ds_train, test_ratio=0.01)[1]
 ds_test = train_test_split(ds_test, test_ratio=0.01)[1]
+train_loader = DataLoader(ds_train, batch_size=32, shuffle=True, num_workers=2)
+test_loader = DataLoader(ds_test, batch_size=32)
 
 epochs = 200
 # net = PreActResNet(28, 10)
+
+set_defaults({
+    'init': {
+        'mode': 'fan_out',
+        'distribution': 'untruncated_normal'
+    },
+    'bn': {
+        'sync': True,
+    }
+})
 net = ResNet(16, 1)
 criterion = CrossEntropyLoss()
 optimizer = SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4, nesterov=True)
@@ -59,9 +71,8 @@ trainer = CNNLearner(net, criterion, optimizer, lr_scheduler,
 
 # summary(net, (3, 32, 32))
 
-train_loader = DataLoader(ds_train, batch_size=32, shuffle=True, num_workers=2)
-test_loader = DataLoader(ds_test, batch_size=32)
-
 trainer.fit(train_loader, epochs, val_loader=test_loader, val_freq=5)
 
 trainer.evaluate(test_loader)
+
+from torchvision.models import resnet50

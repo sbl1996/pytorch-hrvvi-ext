@@ -62,7 +62,8 @@ class ResNet(nn.Module):
             block = Bottleneck
             layers = [(depth - 2) // 9] * 3
 
-        self.conv = Conv2d(3, self.stages[0], kernel_size=3)
+        self.conv = Conv2d(3, self.stages[0], kernel_size=3,
+                           norm='def', act='def')
 
         self.layer1 = self._make_layer(
             block, self.stages[0], self.stages[1], layers[0], stride=1)
@@ -92,5 +93,3 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
-
-
