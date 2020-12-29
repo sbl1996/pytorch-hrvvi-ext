@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import nn as nn
 
 from horch.defaults import DEFAULTS
-from horch.nn import HardSwish, Swish
+from horch.nn import HardSwish, Swish, GlobalAvgPool
 
 
 def get_groups(channels, ref=32):
@@ -129,16 +129,6 @@ def Pool2d(kernel_size, stride=1, padding='same', type='avg', ceil_mode=False):
         return nn.MaxPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
     else:
         raise NotImplementedError("No activation named %s" % type)
-
-
-class GlobalAvgPool(nn.Module):
-
-    def __init__(self, keep_dim=False):
-        super().__init__()
-        self.keep_dim = keep_dim
-
-    def forward(self, x):
-        return torch.mean(x, dim=(2, 3), keepdim=self.keep_dim)
 
 
 def DWConv2d(in_channels, out_channels, kernel_size=3, stride=1, dilation=1,

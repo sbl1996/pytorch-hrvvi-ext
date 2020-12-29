@@ -99,7 +99,7 @@ class Learner(Serializable, metaclass=ABCMeta):
         for k, v in self.to_save().items():
             state_dict[k] = v.state_dict()
         torch.save(state_dict, path)
-        print('Save trainer to %s' % path)
+        print('Save learner to %s' % path)
 
     def load(self, fp=None):
 
@@ -112,7 +112,7 @@ class Learner(Serializable, metaclass=ABCMeta):
         for k, v in self.to_save().items():
             v.load_state_dict(state_dict[k])
 
-        print("Load trainer from %s" % fp)
+        print("Load learner from %s" % fp)
 
     def load_state_dict(self, state_dict):
         self._state = state_dict
@@ -170,7 +170,6 @@ class Learner(Serializable, metaclass=ABCMeta):
         for metric in getattr(self, mode + '_metrics').values():
             metric.reset()
 
-        t_time = 0
         for step, batch in enumerate(data_loader):
             state.update({
                 "step": step,
@@ -178,7 +177,6 @@ class Learner(Serializable, metaclass=ABCMeta):
             })
 
             callbacks.begin_batch(state)
-            t_start = time.time()
             if mode == 'train':
                 self.train_batch(batch)
                 if self.fp16:
@@ -188,12 +186,11 @@ class Learner(Serializable, metaclass=ABCMeta):
             else:
                 pred = self.test_batch(batch)
                 outputs.append(pred)
-            t_time += time.time() - t_start
+
             for metric in getattr(self, mode + '_metrics').values():
                 metric.update(metric._output_transform(state))
 
             callbacks.after_batch(state)
-        print(t_time)
         for name, metric in getattr(self, mode + '_metrics').items():
             state['metrics'][name] = metric.compute()
 
@@ -230,11 +227,11 @@ def backward(learner: Learner, loss):
 def optimizer_step(learner: Learner, optimizer, grad_clip_params=None):
     if learner.fp16:
         scaler = learner.scaler
-        if learner.grad_clip_norm and grad_clip_params:
+        if learner.grad_clip_norm and grad_clip_params is not None:
             scaler.unscale_(optimizer)
             nn.utils.clip_grad_norm_(grad_clip_params, learner.grad_clip_norm)
         scaler.step(optimizer)
     else:
-        if learner.grad_clip_norm and grad_clip_params:
+        if learner.grad_clip_norm and grad_clip_params is not None:
             nn.utils.clip_grad_norm_(grad_clip_params, learner.grad_clip_norm)
         optimizer.step()
