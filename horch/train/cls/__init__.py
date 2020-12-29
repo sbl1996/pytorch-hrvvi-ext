@@ -22,13 +22,22 @@ class CNNLearner(Learner):
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
         optimizer.zero_grad()
 
-        with autocast(enabled=self.fp16):
+        if self.fp16:
+            with autocast():
+                outputs = forward(self, input)
+                if isinstance(outputs, tuple) and len(outputs) == 2:
+                    logits, logits_aux = outputs
+                else:
+                    logits = outputs
+                loss = self.criterion(outputs, target)
+        else:
             outputs = forward(self, input)
             if isinstance(outputs, tuple) and len(outputs) == 2:
                 logits, logits_aux = outputs
             else:
                 logits = outputs
             loss = self.criterion(outputs, target)
+
         backward(self, loss)
         optimizer_step(self, optimizer, model.parameters())
 
