@@ -1,6 +1,6 @@
 from torch.nn import Module
 
-from horch.models.layers import Conv2d, Act, Identity, GlobalAvgPool, Linear, Sequential
+from horch.models.layers import Conv2d, Act, Identity, GlobalAvgPool, Linear, Pool2d, Sequential
 
 
 class BasicBlock(Module):
@@ -15,12 +15,18 @@ class BasicBlock(Module):
                             norm='def')
 
         if stride != 1 or in_channels != out_channels:
-            self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, norm='def')
+            shortcut = []
+            if stride != 1:
+                shortcut.append(Pool2d(2, 2, type='avg'))
+            shortcut.append(
+                Conv2d(in_channels, out_channels, kernel_size=1, norm='def'))
+            self.shortcut = Sequential(shortcut)
         else:
             self.shortcut = Identity()
+
         self.act = Act() if not erase_relu else Identity()
 
-    def forward(self, x):
+    def call(self, x):
         identity = self.shortcut(x)
         x = self.conv1(x)
         x = self.conv2(x)
@@ -41,13 +47,20 @@ class Bottleneck(Module):
                             norm='def', act='def')
         self.conv3 = Conv2d(channels, out_channels, kernel_size=1,
                             norm='def')
+
         if stride != 1 or in_channels != out_channels:
-            self.shortcut = Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, norm='def')
+            shortcut = [
+                Conv2d(in_channels, out_channels, kernel_size=1, norm='def'),
+            ]
+            if stride != 1:
+                shortcut.insert(0, Pool2d(2, 2, type='avg'))
+            self.shortcut = Sequential(shortcut)
         else:
             self.shortcut = Identity()
+
         self.act = Act() if not erase_relu else Identity()
 
-    def forward(self, x):
+    def call(self, x):
         identity = self.shortcut(x)
         x = self.conv1(x)
         x = self.conv2(x)
@@ -94,7 +107,7 @@ class ResNet(Module):
                                 **kwargs))
         return Sequential(layers)
 
-    def forward(self, x):
+    def call(self, x):
         x = self.stem(x)
 
         x = self.layer1(x)
@@ -104,3 +117,5 @@ class ResNet(Module):
         x = self.avgpool(x)
         x = self.fc(x)
         return x
+
+

@@ -131,6 +131,16 @@ def Pool2d(kernel_size, stride=1, padding='same', type='avg', ceil_mode=False):
         raise NotImplementedError("No activation named %s" % type)
 
 
+class GlobalAvgPool(nn.Module):
+
+    def __init__(self, keep_dim=False):
+        super().__init__()
+        self.keep_dim = keep_dim
+
+    def forward(self, x):
+        return torch.mean(x, dim=(2, 3), keepdim=self.keep_dim)
+
+
 def DWConv2d(in_channels, out_channels, kernel_size=3, stride=1, dilation=1,
              padding='same', bias=None, norm=None, act=None, mid_norm=None):
     return nn.Sequential(
@@ -145,3 +155,9 @@ def Seq(*layers):
         l for l in layers if l is not None
     ]
     return nn.Sequential(*layers) if len(layers) != 1 else layers[0]
+
+
+def Sequential(layers):
+    return nn.Sequential(*layers)
+
+Identity = nn.Identity
