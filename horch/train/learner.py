@@ -1,3 +1,4 @@
+import time
 from abc import ABCMeta
 from datetime import datetime
 from typing import Sequence, Mapping
@@ -168,6 +169,8 @@ class Learner(Serializable, metaclass=ABCMeta):
         })
         for metric in getattr(self, mode + '_metrics').values():
             metric.reset()
+
+        t_time = 0
         for step, batch in enumerate(data_loader):
             state.update({
                 "step": step,
@@ -175,6 +178,7 @@ class Learner(Serializable, metaclass=ABCMeta):
             })
 
             callbacks.begin_batch(state)
+            t_start = time.time()
             if mode == 'train':
                 self.train_batch(batch)
                 if self.fp16:
@@ -184,12 +188,12 @@ class Learner(Serializable, metaclass=ABCMeta):
             else:
                 pred = self.test_batch(batch)
                 outputs.append(pred)
-
+            t_time += time.time() - t_start
             for metric in getattr(self, mode + '_metrics').values():
                 metric.update(metric._output_transform(state))
 
             callbacks.after_batch(state)
-
+        print(t_time)
         for name, metric in getattr(self, mode + '_metrics').items():
             state['metrics'][name] = metric.compute()
 
@@ -219,8 +223,7 @@ def forward(learner: Learner, *args):
 
 def backward(learner: Learner, loss):
     if learner.fp16:
-        scaler = learner.scaler
-        loss = scaler.scale(loss)
+        loss = learner.scaler.scale(loss)
     loss.backward()
 
 
