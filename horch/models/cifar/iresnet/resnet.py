@@ -9,8 +9,14 @@ class BasicBlock(Module):
 
     def __init__(self, in_channels, channels, stride, dropout, drop_path,
                  start_block=False, end_block=False, exclude_bn0=False):
-        out_channels = channels * self.expansion
         super().__init__()
+        # For torch.jit.script
+        self.bn0 = Identity()
+        self.act0 = Identity()
+        self.act2 = Identity()
+        self.bn2 = Identity()
+
+        out_channels = channels * self.expansion
         if not start_block and not exclude_bn0:
             self.bn0 = Norm(in_channels)
 
@@ -75,9 +81,16 @@ class Bottleneck(Module):
     def __init__(self, in_channels, channels, stride, dropout, drop_path,
                  start_block=False, end_block=False, exclude_bn0=False):
         super().__init__()
+        # For torch.jit.script
+        self.bn0 = Identity()
+        self.act0 = Identity()
+        self.bn3 = Identity()
+        self.act3 = Identity()
+
         out_channels = channels * self.expansion
         if not start_block and not exclude_bn0:
             self.bn0 = Norm(in_channels)
+
         if not start_block:
             self.act0 = Act()
         self.conv1 = Conv2d(in_channels, channels, kernel_size=1)

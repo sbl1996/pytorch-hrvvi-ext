@@ -2,7 +2,7 @@ import torch
 from torch.cuda.amp import autocast
 
 from horch.common import convert_tensor
-from horch.train.learner import Learner, backward, optimizer_step
+from horch.train.learner import Learner, forward, backward, optimizer_step
 
 
 class CNNLearner(Learner):
@@ -23,7 +23,7 @@ class CNNLearner(Learner):
         optimizer.zero_grad()
 
         with autocast(enabled=self.fp16):
-            outputs = self.model(input)
+            outputs = forward(self, input)
             if isinstance(outputs, tuple) and len(outputs) == 2:
                 logits, logits_aux = outputs
             else:
@@ -47,7 +47,7 @@ class CNNLearner(Learner):
         input, target = convert_tensor(batch, self.device)
         with autocast(enabled=self.fp16):
             with torch.no_grad():
-                output = model(input)
+                output = forward(self, input)
 
         state.update({
             "batch_size": input.size(0),

@@ -26,7 +26,7 @@ def find_most_recent(work_dir, pattern):
 class Learner(Serializable, metaclass=ABCMeta):
 
     def __init__(self, model, criterion, optimizers, lr_schedulers, train_metrics, eval_metrics, work_dir,
-                 fp16=False, device='auto', grad_clip_norm=0.0):
+                 fp16=False, device='auto', grad_clip_norm=0.0, optimized_execution=False):
         if not isinstance(optimizers, Sequence):
             optimizers = [optimizers]
         optimizers = list(optimizers)
@@ -53,6 +53,10 @@ class Learner(Serializable, metaclass=ABCMeta):
         self.fp16 = fp16
         self.device = device
         self.grad_clip_norm = grad_clip_norm
+        if optimized_execution:
+            assert isinstance(self.model, torch.jit.ScriptModule)
+        self.optimized_execution = optimized_execution
+
 
         self._log_dir = self.work_dir / "runs"
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
@@ -205,12 +209,20 @@ class Learner(Serializable, metaclass=ABCMeta):
         pass
 
 
+def forward(learner: Learner, *args):
+    if learner.optimized_execution:
+        with torch.jit.optimized_execution(True):
+            outputs = learner.model(*args)
+    else:
+        outputs = learner.model(*args)
+    return outputs
+
+
 def backward(learner: Learner, loss):
     if learner.fp16:
         scaler = learner.scaler
-        scaler.scale(loss).backward()
-    else:
-        loss.backward()
+        loss = scaler.scale(loss)
+    loss.backward()
 
 
 def optimizer_step(learner: Learner, optimizer, grad_clip_params=None):
