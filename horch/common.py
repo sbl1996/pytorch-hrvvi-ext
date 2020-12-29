@@ -62,7 +62,7 @@ def convert_tensor(input_, device, non_blocking=True, channel_last=False):
 
     def _func(tensor: torch.Tensor) -> torch.Tensor:
         tensor = tensor.to(device=device, non_blocking=non_blocking) if device is not None else tensor
-        if channel_last:
+        if channel_last and len(tensor.shape) == 4:
             tensor = tensor.to(memory_format=torch.channels_last)
         return tensor
 
