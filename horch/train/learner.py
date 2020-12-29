@@ -53,10 +53,9 @@ class Learner(Serializable, metaclass=ABCMeta):
         self.fp16 = fp16
         self.device = device
         self.grad_clip_norm = grad_clip_norm
-        if optimized_execution:
-            assert isinstance(self.model, torch.jit.ScriptModule)
         self.optimized_execution = optimized_execution
-
+        if self.optimized_execution:
+            self.model = torch.jit.script(self.model)
 
         self._log_dir = self.work_dir / "runs"
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
