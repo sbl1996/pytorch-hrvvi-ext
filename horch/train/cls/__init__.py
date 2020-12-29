@@ -36,7 +36,7 @@ class CNNLearner(Learner):
             "loss": loss.item(),
             "batch_size": input.size(0),
             "y_true": target,
-            "y_pred": logits.detach().contiguous(memory_format=torch.contiguous_format),
+            "y_pred": logits.detach(),
         })
 
     def eval_batch(self, batch):
@@ -53,7 +53,7 @@ class CNNLearner(Learner):
         state.update({
             "batch_size": input.size(0),
             "y_true": target,
-            "y_pred": output.contiguous(memory_format=torch.contiguous_format),
+            "y_pred": output,
         })
 
     def test_batch(self, batch):
@@ -68,5 +68,5 @@ class CNNLearner(Learner):
 
         state.update({
             "batch_size": input.size(0),
-            "y_pred": output.contiguous(memory_format=torch.contiguous_format),
+            "y_pred": output,
         })
