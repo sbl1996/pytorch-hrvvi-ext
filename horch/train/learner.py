@@ -210,9 +210,7 @@ class Learner(Serializable, metaclass=ABCMeta):
 
 
 def convert_tensor(learner: Learner, input):
-    input = c_convert_tensor(input, learner.device)
-    if learner.channels_last:
-        input = input.to(memory_format=torch.channels_last)
+    input = c_convert_tensor(input, learner.device, True, learner.channels_last)
     return input
 
 

@@ -58,10 +58,13 @@ def tuplify(x, n=-1):
         return tuple(x)
 
 
-def convert_tensor(input_, device, non_blocking=True):
+def convert_tensor(input_, device, non_blocking=True, channel_last=False):
 
     def _func(tensor: torch.Tensor) -> torch.Tensor:
-        return tensor.to(device=device, non_blocking=non_blocking) if device is not None else tensor
+        tensor = tensor.to(device=device, non_blocking=non_blocking) if device is not None else tensor
+        if channel_last:
+            tensor = tensor.to(memory_format=torch.channels_last)
+        return tensor
 
     if isinstance(input_, list) and len(input_) == 1 and isinstance(input_[0], dict):
         # DALI
