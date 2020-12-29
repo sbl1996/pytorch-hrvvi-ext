@@ -1,8 +1,7 @@
 import torch
 from torch.cuda.amp import autocast
 
-from horch.common import convert_tensor
-from horch.train.learner import Learner, forward, backward, optimizer_step
+from horch.train.learner import Learner, forward, backward, optimizer_step, convert_tensor
 
 
 class CNNLearner(Learner):
@@ -17,7 +16,7 @@ class CNNLearner(Learner):
         lr_scheduler = self.lr_schedulers[0]
 
         model.train()
-        input, target = convert_tensor(batch, self.device)
+        input, target = convert_tensor(self, batch)
 
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
         optimizer.zero_grad(True)
@@ -37,7 +36,7 @@ class CNNLearner(Learner):
             "loss": loss.item(),
             "batch_size": input.size(0),
             "y_true": target,
-            "y_pred": logits.detach(),
+            "y_pred": logits.detach().contiguous(memory_format=torch.contiguous_format),
         })
 
     def eval_batch(self, batch):
@@ -45,7 +44,8 @@ class CNNLearner(Learner):
         model = self.model
 
         model.eval()
-        input, target = convert_tensor(batch, self.device)
+        input, target = convert_tensor(self, batch)
+
         with autocast(enabled=self.fp16):
             with torch.no_grad():
                 output = forward(self, input)
@@ -53,7 +53,7 @@ class CNNLearner(Learner):
         state.update({
             "batch_size": input.size(0),
             "y_true": target,
-            "y_pred": output,
+            "y_pred": output.contiguous(memory_format=torch.contiguous_format),
         })
 
     def test_batch(self, batch):
@@ -61,11 +61,12 @@ class CNNLearner(Learner):
         model = self.model
 
         model.eval()
-        input = convert_tensor(batch, self.device)
+        input = convert_tensor(self, batch)
+
         with torch.no_grad():
-            output = model(input)
+            output = forward(self, input)
 
         state.update({
             "batch_size": input.size(0),
-            "y_pred": output,
+            "y_pred": output.contiguous(memory_format=torch.contiguous_format),
         })

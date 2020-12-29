@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from hhutil.io import fmt_path, time_now
 
-from horch.common import CUDA
+from horch.common import CUDA, convert_tensor as c_convert_tensor
 from horch.train.base import StatefulList, Serializable
 from horch.train.metric_history import MetricHistory
 from horch.train.callbacks import config_callbacks
@@ -27,7 +27,7 @@ def find_most_recent(work_dir, pattern):
 class Learner(Serializable, metaclass=ABCMeta):
 
     def __init__(self, model, criterion, optimizers, lr_schedulers, train_metrics, eval_metrics, work_dir,
-                 fp16=False, device='auto', grad_clip_norm=0.0, optimized_execution=False):
+                 fp16=False, device='auto', grad_clip_norm=0.0, channels_last=False):
         if not isinstance(optimizers, Sequence):
             optimizers = [optimizers]
         optimizers = list(optimizers)
@@ -54,9 +54,9 @@ class Learner(Serializable, metaclass=ABCMeta):
         self.fp16 = fp16
         self.device = device
         self.grad_clip_norm = grad_clip_norm
-        self.optimized_execution = optimized_execution
-        if self.optimized_execution:
-            self.model = torch.jit.script(self.model)
+        self.channels_last = channels_last
+        if self.channels_last:
+            self.model = self.model.to(memory_format=torch.channels_last)
 
         self._log_dir = self.work_dir / "runs"
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
@@ -209,12 +209,15 @@ class Learner(Serializable, metaclass=ABCMeta):
         pass
 
 
+def convert_tensor(learner: Learner, input):
+    input = c_convert_tensor(input, learner.device)
+    if learner.channels_last:
+        input = input.to(memory_format=torch.channels_last)
+    return input
+
+
 def forward(learner: Learner, *args):
-    if learner.optimized_execution:
-        with torch.jit.optimized_execution(True):
-            outputs = learner.model(*args)
-    else:
-        outputs = learner.model(*args)
+    outputs = learner.model(*args)
     return outputs
 
 
