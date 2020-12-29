@@ -20,7 +20,7 @@ class CNNLearner(Learner):
         input, target = convert_tensor(batch, self.device)
 
         lr_scheduler.step(state['epoch'] + (state['step'] / state['steps']))
-        optimizer.zero_grad()
+        optimizer.zero_grad(True)
 
         with autocast(enabled=self.fp16):
             outputs = forward(self, input)
