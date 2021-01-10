@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import nn as nn
 
-from horch.defaults import DEFAULTS
+from horch.defaults import DEFAULTS, set_default, set_defaults
 from horch.nn import HardSwish, Swish, GlobalAvgPool
 
 
@@ -52,7 +52,7 @@ def Act(type='default', **kwargs):
     elif type == 'hswish':
         return HardSwish(**{**DEFAULTS[type], **kwargs})
     elif type == 'swish':
-        return Swish()
+        return nn.SiLU(**{**DEFAULTS[type], **kwargs})
     else:
         raise NotImplementedError("Activation not implemented: %s" % type)
 

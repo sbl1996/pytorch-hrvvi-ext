@@ -25,6 +25,9 @@ DEFAULTS = {
     'hswish': {
         'inplace': True,
     },
+    'swish': {
+        'inplace': True,
+    },
     'seed': 42,
 }
 
