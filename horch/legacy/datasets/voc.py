@@ -192,7 +192,26 @@ class VOCDetection(Dataset):
         if not self.voc_root.is_dir():
             download_url(self.url, self.root, self.filename, self.md5)
             with tarfile.open(self.root / self.filename, "r") as tar:
-                tar.extractall(path=self.root)
+                def is_within_directory(directory, target):
+                    
+                    abs_directory = os.path.abspath(directory)
+                    abs_target = os.path.abspath(target)
+                
+                    prefix = os.path.commonprefix([abs_directory, abs_target])
+                    
+                    return prefix == abs_directory
+                
+                def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                
+                    for member in tar.getmembers():
+                        member_path = os.path.join(path, member.name)
+                        if not is_within_directory(path, member_path):
+                            raise Exception("Attempted Path Traversal in Tar File")
+                
+                    tar.extractall(path, members, numeric_owner=numeric_owner) 
+                    
+                
+                safe_extract(tar, path=self.root)
 
         if not self.ann_file.exists():
             google_drive_match = re.match(
@@ -282,7 +301,26 @@ class VOCSegmentation(Dataset):
             download_url(self.url, self.root, self.filename, self.md5)
 
             with tarfile.open(self.root / self.filename, "r") as tar:
-                tar.extractall(path=self.root)
+                def is_within_directory(directory, target):
+                    
+                    abs_directory = os.path.abspath(directory)
+                    abs_target = os.path.abspath(target)
+                
+                    prefix = os.path.commonprefix([abs_directory, abs_target])
+                    
+                    return prefix == abs_directory
+                
+                def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                
+                    for member in tar.getmembers():
+                        member_path = os.path.join(path, member.name)
+                        if not is_within_directory(path, member_path):
+                            raise Exception("Attempted Path Traversal in Tar File")
+                
+                    tar.extractall(path, members, numeric_owner=numeric_owner) 
+                    
+                
+                safe_extract(tar, path=self.root)
 
         if self.augmented:
             mask_dir = self.voc_root / 'SegmentationClassAug'
@@ -297,7 +335,26 @@ class VOCSegmentation(Dataset):
 
                 file_path = self.voc_root / filename
                 with tarfile.open(file_path, "r") as tar:
-                    tar.extractall(path=self.voc_root)
+                    def is_within_directory(directory, target):
+                        
+                        abs_directory = os.path.abspath(directory)
+                        abs_target = os.path.abspath(target)
+                    
+                        prefix = os.path.commonprefix([abs_directory, abs_target])
+                        
+                        return prefix == abs_directory
+                    
+                    def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                    
+                        for member in tar.getmembers():
+                            member_path = os.path.join(path, member.name)
+                            if not is_within_directory(path, member_path):
+                                raise Exception("Attempted Path Traversal in Tar File")
+                    
+                        tar.extractall(path, members, numeric_owner=numeric_owner) 
+                        
+                    
+                    safe_extract(tar, path=self.voc_root)
                 split_f = self.voc_root / 'trainaug.txt'
                 splits_dir = self.voc_root / 'ImageSets' / 'Segmentation'
                 split_f.rename(splits_dir / split_f.name)
